@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { PaginatedQueryResult } from "@amzn/innovation-sandbox-commons/data/common-types.js";
+import { GlobalConfigSchema } from "@amzn/innovation-sandbox-commons/data/global-config/global-config.js";
 import {
   MonitoredLease,
   MonitoredLeaseSchema,
@@ -23,7 +24,6 @@ import {
 } from "@amzn/innovation-sandbox-commons/types/isb-types.js";
 import { Logger } from "@aws-lambda-powertools/logger";
 import { Tracer } from "@aws-lambda-powertools/tracer";
-import { GlobalConfigSchema } from "data/global-config/global-config.js";
 import { DateTime } from "luxon";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 

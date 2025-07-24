@@ -2,7 +2,7 @@ openapi: 3.0.0
 info:
   title: Innovation Sandbox on AWS
   description: API documentation for the Innovation Sandbox on AWS solution.
-  version: 1.0.2
+  version: 1.0.3
   license:
     name: Apache 2.0
     url: "http://www.apache.org/licenses/LICENSE-2.0.html"

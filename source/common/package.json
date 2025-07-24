@@ -1,7 +1,7 @@
 {
   "name": "@amzn/innovation-sandbox-commons",
   "description": "Common - Innovation Sandbox on AWS (SO0284)",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "scripts": {
     "build": "tsc",
     "test": "vitest run"
