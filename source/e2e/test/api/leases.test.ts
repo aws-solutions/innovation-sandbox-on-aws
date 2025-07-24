@@ -189,7 +189,7 @@ describe("leases api", () => {
       maxSpend: leaseTemplate.maxSpend,
       budgetThresholds: leaseTemplate.budgetThresholds,
       durationThresholds: leaseTemplate.durationThresholds,
-    } as Lease);
+    } as any as Lease);
 
     await leaseStore.delete({
       userEmail: jsonResponseBody.data.userEmail,

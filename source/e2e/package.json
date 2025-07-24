@@ -1,7 +1,7 @@
 {
   "name": "@amzn/innovation-sandbox-e2e",
   "description": "E2E Tests - Innovation Sandbox on AWS (SO0284)",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "scripts": {
     "build": "tsc",
     "e2e": "vitest run --config ./vitest.config.e2e.ts",

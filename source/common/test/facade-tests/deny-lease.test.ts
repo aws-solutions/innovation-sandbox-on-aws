@@ -4,6 +4,7 @@ import { Logger } from "@aws-lambda-powertools/logger";
 import { Tracer } from "@aws-lambda-powertools/tracer";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
+import { GlobalConfigSchema } from "@amzn/innovation-sandbox-commons/data/global-config/global-config.js";
 import { PendingLeaseSchema } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
 import { LeaseDeniedEvent } from "@amzn/innovation-sandbox-commons/events/lease-denied-event.js";
 import { InnovationSandbox } from "@amzn/innovation-sandbox-commons/innovation-sandbox.js";
@@ -13,7 +14,6 @@ import {
   mockedLeaseStore,
 } from "@amzn/innovation-sandbox-commons/test/mocking/common-mocks.js";
 import { createMockOf } from "@amzn/innovation-sandbox-commons/test/mocking/mock-utils.js";
-import { GlobalConfigSchema } from "data/global-config/global-config.js";
 import { DateTime } from "luxon";
 
 function createMockContext() {

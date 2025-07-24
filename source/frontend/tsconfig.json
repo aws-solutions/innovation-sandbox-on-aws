@@ -19,7 +19,8 @@
     "paths": {
       "@amzn/innovation-sandbox-frontend/*": ["src/*"],
       "@amzn/innovation-sandbox-frontend-test/*": ["test/*"]
-    }
+    },
+    "types": ["vite/client"]
   },
   "include": ["src", "test"],
   "references": [

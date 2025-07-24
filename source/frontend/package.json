@@ -2,7 +2,7 @@
   "name": "@amzn/innovation-sandbox-frontend",
   "description": "Frontend - Innovation Sandbox on AWS (SO0284)",
   "private": true,
-  "version": "1.0.2",
+  "version": "1.0.3",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -36,7 +36,6 @@
     "@typescript-eslint/eslint-plugin": "^8.2.0",
     "@typescript-eslint/parser": "^8.2.0",
     "@vitejs/plugin-react": "^4.4.1",
-    "axios": "^1.8.3",
     "eslint": "^8.57.0",
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-prettier": "^5.2.1",

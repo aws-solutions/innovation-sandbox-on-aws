@@ -8,6 +8,8 @@ node_modules/
 dist
 bom.json
 .env
+git-info
+build
 
 # CDK asset staging directory
 .cdk.staging

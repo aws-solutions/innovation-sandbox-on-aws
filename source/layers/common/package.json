@@ -1,6 +1,6 @@
 {
   "name": "@amzn/innovation-sandbox-layer-commons",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Common Libs - Lambda Layer - Innovation Sandbox on AWS (SO0284)",
   "dependencies": {
     "@amzn/innovation-sandbox-commons": "file:../../common"
