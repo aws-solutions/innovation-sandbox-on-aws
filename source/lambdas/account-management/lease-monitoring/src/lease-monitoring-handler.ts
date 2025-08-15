@@ -79,10 +79,28 @@ export async function performAccountMonitoringScan(
   );
 
   const currentDateTime = now();
+  logger.info("Starting Cost Explorer data retrieval", {
+    accountsWithStartDates: Object.fromEntries(
+      Object.entries(accountsWithStartDates).map(([accountId, date]) => [
+        accountId,
+        date.toISO(),
+      ])
+    ),
+    currentDateTime: currentDateTime.toISO(),
+  });
+
   const latestCostReport = await costExplorerService.getCostForLeases(
     accountsWithStartDates,
     currentDateTime,
   );
+
+  logger.info("Cost Explorer data retrieved successfully (NetUnblendedCost->UnblendedCost)", {
+    totalCostReportValue: latestCostReport.totalCost(),
+    costMapDetails: latestCostReport.costMap,
+    numberOfAccounts: Object.keys(latestCostReport.costMap).length,
+    metricsUsed: "UnblendedCost", // After our modification
+    note: "This now includes credit usage charges (before credit discount application)",
+  });
 
   const eventsToSend = [];
 
@@ -106,9 +124,25 @@ export async function performAccountMonitoringScan(
 
   //update db values
   for (const lease of monitoredLeases) {
+    const currentCost = latestCostReport.getCost(lease.awsAccountId);
+    const previousCost = lease.totalCostAccrued || 0;
+    const costDifference = currentCost - previousCost;
+
+    logger.info("Updating lease cost data", {
+      leaseId: lease.uuid,
+      accountId: lease.awsAccountId,
+      endUser: lease.userEmail,
+      previousTotalCostAccrued: previousCost,
+      newTotalCostAccrued: currentCost,
+      costDifference: costDifference,
+      leaseStartDate: lease.startDate,
+      budgetLimit: lease.maxSpend,
+      budgetUsagePercentage: lease.maxSpend ? (currentCost / lease.maxSpend) * 100 : null,
+    });
+
     await leaseStore.update({
       ...lease,
-      totalCostAccrued: latestCostReport.getCost(lease.awsAccountId),
+      totalCostAccrued: currentCost,
       lastCheckedDate: currentDateTime.toISO(),
     });
   }
@@ -187,8 +221,8 @@ function determineLeaseEvents(props: {
   if (budgetFreezeThreshold) {
     logger.info(
       `Lease (${lease.uuid}) budget freeze threshold crossed ` +
-        `(threshold: $${budgetFreezeThreshold.dollarsSpent}, costAccrued: $${totalCostSpent}) ` +
-        `requesting freeze`,
+      `(threshold: $${budgetFreezeThreshold.dollarsSpent}, costAccrued: $${totalCostSpent}) ` +
+      `requesting freeze`,
       {
         ...searchableLeaseProperties(lease),
       },
@@ -211,8 +245,8 @@ function determineLeaseEvents(props: {
   } else if (durationFreezeThreshold) {
     logger.info(
       `Lease (${lease.uuid}) freezing duration threshold crossed ` +
-        `(threshold: ${durationFreezeThreshold.hoursRemaining} hours remaining) ` +
-        `requesting freeze`,
+      `(threshold: ${durationFreezeThreshold.hoursRemaining} hours remaining) ` +
+      `requesting freeze`,
       {
         ...searchableLeaseProperties(lease),
       },
@@ -240,8 +274,8 @@ function determineLeaseEvents(props: {
   ) {
     logger.info(
       `Lease (${lease.uuid}) budget threshold crossed ` +
-        `(threshold: $${largestBreachedBudgetThreshold.dollarsSpent}, costAccrued: $${totalCostSpent}) ` +
-        `sending message to ISB bus`,
+      `(threshold: $${largestBreachedBudgetThreshold.dollarsSpent}, costAccrued: $${totalCostSpent}) ` +
+      `sending message to ISB bus`,
       {
         ...searchableLeaseProperties(lease),
       },
@@ -267,8 +301,8 @@ function determineLeaseEvents(props: {
   ) {
     logger.info(
       `Lease (${lease.uuid}) duration threshold crossed ` +
-        `(threshold: ${latestBreachedDurationTheshold.hoursRemaining} hours remaining) ` +
-        `sending message to ISB bus`,
+      `(threshold: ${latestBreachedDurationTheshold.hoursRemaining} hours remaining) ` +
+      `sending message to ISB bus`,
       {
         ...searchableLeaseProperties(lease),
       },

@@ -237,7 +237,7 @@ export class CostExplorerService {
     if (
       granularity === Granularity.HOURLY &&
       end.diff(start, "hours").hours >=
-        24 * COST_EXPLORER_CONFIG.MAX_DAYS_FOR_HOURLY
+      24 * COST_EXPLORER_CONFIG.MAX_DAYS_FOR_HOURLY
     ) {
       throw new Error(
         `Hourly data is only available for the last ${COST_EXPLORER_CONFIG.MAX_DAYS_FOR_HOURLY} days.`,
@@ -251,13 +251,37 @@ export class CostExplorerService {
       granularity,
     );
     const command = new GetCostAndUsageCommand(params);
+
+    logger.info("Calling Cost Explorer API", {
+      requestParams: {
+        timePeriod: params.TimePeriod,
+        granularity: params.Granularity,
+        metrics: params.Metrics,
+        filter: params.Filter,
+        groupBy: params.GroupBy,
+      },
+      accountsRequested: accounts,
+    });
+
     const response = await this.costExplorerClient.send(command);
+
+    logger.info("Cost Explorer API response received", {
+      hasResultsByTime: !!response.ResultsByTime,
+      resultsByTimeLength: response.ResultsByTime?.length || 0,
+      rawResponse: {
+        ResultsByTime: response.ResultsByTime,
+        GroupDefinitions: response.GroupDefinitions,
+        DimensionValueAttributes: response.DimensionValueAttributes,
+        NextPageToken: response.NextPageToken,
+      },
+    });
 
     if (!response.ResultsByTime || response.ResultsByTime.length === 0) {
       logger.warn("No cost data available", {
-        start,
-        end,
+        start: start.toISO(),
+        end: end.toISO(),
         accounts,
+        granularity,
       });
       return new AccountsCostReport();
     }
@@ -279,7 +303,29 @@ export class CostExplorerService {
       granularity === Granularity.HOURLY ? hourlyFormat : dailyFormat;
     const startOfUnit = granularity === Granularity.HOURLY ? "hour" : "day";
     const accountsCost = new AccountsCostReport();
+
+    logger.debug("Starting cost calculation for leases", {
+      resultByTimeLength: resultByTime.length,
+      accountsWithStartDates: Object.fromEntries(
+        Object.entries(accountsWithStartDates).map(([accountId, date]) => [
+          accountId,
+          date.toISO(),
+        ])
+      ),
+      granularity,
+      dateFormat,
+      startOfUnit,
+    });
+
     for (const result of resultByTime) {
+      logger.debug("Processing ResultByTime entry", {
+        timePeriod: result.TimePeriod,
+        groupsCount: result.Groups?.length || 0,
+        totalCost: result.Total,
+        estimated: result.Estimated,
+        groups: result.Groups,
+      });
+
       this.accumulateCostForResult(
         result,
         dateFormat,
@@ -288,6 +334,12 @@ export class CostExplorerService {
         accountsCost,
       );
     }
+
+    logger.debug("Cost calculation completed", {
+      finalCostMap: accountsCost.costMap,
+      totalCost: accountsCost.totalCost(),
+    });
+
     return accountsCost;
   }
 
@@ -306,15 +358,31 @@ export class CostExplorerService {
         });
         for (const group of result.Groups) {
           const accountId = group.Keys?.[0];
-          if (
-            accountId &&
-            accountsWithStartDates[accountId]!.startOf(startOfUnit) <=
-              periodStart
-          ) {
+          const leaseStartTime = accountId ? accountsWithStartDates[accountId]?.startOf(startOfUnit) : undefined;
+          const shouldIncludeCost = accountId && leaseStartTime && leaseStartTime <= periodStart;
+
+          logger.debug("Processing cost group", {
+            accountId,
+            periodStart: periodStart.toISO(),
+            leaseStartTime: leaseStartTime?.toISO(),
+            shouldIncludeCost,
+            groupKeys: group.Keys,
+            groupMetrics: group.Metrics,
+            unblendedCostAmount: group.Metrics?.UnblendedCost?.Amount,
+            unblendedCostUnit: group.Metrics?.UnblendedCost?.Unit,
+          });
+
+          if (shouldIncludeCost) {
             const cost = parseFloat(
               group.Metrics?.UnblendedCost?.Amount ?? "0",
             );
-            accountsCost.addCost(accountId, cost);
+            accountsCost.addCost(accountId!, cost);
+
+            logger.debug("Cost added to account", {
+              accountId,
+              costAdded: cost,
+              totalCostForAccount: accountsCost.getCost(accountId!),
+            });
           }
         }
       }
@@ -341,13 +409,36 @@ export class CostExplorerService {
         Granularity.DAILY,
         tag,
       );
+      logger.info("Calling Cost Explorer API for range", {
+        requestParams: {
+          timePeriod: params.TimePeriod,
+          granularity: params.Granularity,
+          metrics: params.Metrics,
+          filter: params.Filter,
+          groupBy: params.GroupBy,
+        },
+        accountsRequested: currentAccounts,
+        batchNumber: currentAccounts[0] ? Math.ceil((Object.keys(accountsWithStartDates).indexOf(currentAccounts[0]) + 1) / 199) : 0,
+      });
+
       const command = new GetCostAndUsageCommand(params);
       const response = await this.costExplorerClient.send(command);
 
+      logger.info("Cost Explorer API range response received", {
+        hasResultsByTime: !!response.ResultsByTime,
+        resultsByTimeLength: response.ResultsByTime?.length || 0,
+        rawResponse: {
+          ResultsByTime: response.ResultsByTime,
+          GroupDefinitions: response.GroupDefinitions,
+          DimensionValueAttributes: response.DimensionValueAttributes,
+          NextPageToken: response.NextPageToken,
+        },
+      });
+
       if (!response.ResultsByTime || response.ResultsByTime.length === 0) {
-        logger.warn("No cost data available", {
-          start,
-          end,
+        logger.warn("No cost data available for range", {
+          start: start.toISO(),
+          end: end.toISO(),
           currentAccounts,
         });
       } else {
