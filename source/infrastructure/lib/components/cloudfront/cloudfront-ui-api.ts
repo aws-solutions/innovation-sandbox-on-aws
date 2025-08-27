@@ -272,6 +272,7 @@ export class CloudfrontUiApi extends Construct {
       priceClass: PriceClass.PRICE_CLASS_ALL,
       httpVersion: HttpVersion.HTTP2,
       minimumProtocolVersion: SecurityPolicyProtocol.TLS_V1_2_2019,
+      enableIpv6: false,
       enableLogging: true,
       logBucket: loggingBucket,
       logIncludesCookies: true,
