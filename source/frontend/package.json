@@ -49,7 +49,7 @@
     "stylelint": "^16.8.2",
     "stylelint-config-standard-scss": "^13.1.0",
     "typescript": "^5.5.4",
-    "vite": "^6.3.5",
+    "vite": "^6.3.6",
     "vite-plugin-markdown": "^2.2.0"
   },
   "license": "Apache-2.0"
