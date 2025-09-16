@@ -108,6 +108,13 @@ export class CostExplorerService {
               },
             },
             {
+              Dimensions: {
+                Key: "RECORD_TYPE",
+                Values: ["Usage"],
+                MatchOptions: ["EQUALS"],
+              },
+            },
+            {
               Tags: {
                 Key: tag.tagName,
                 MatchOptions: ["EQUALS"],
@@ -132,10 +139,21 @@ export class CostExplorerService {
         Granularity: granularity,
         Metrics: ["UnblendedCost"],
         Filter: {
-          Dimensions: {
-            Key: "LINKED_ACCOUNT",
-            Values: accounts,
-          },
+          And: [
+            {
+              Dimensions: {
+                Key: "LINKED_ACCOUNT",
+                Values: accounts,
+              },
+            },
+            {
+              Dimensions: {
+                Key: "RECORD_TYPE",
+                Values: ["Usage"],
+                MatchOptions: ["EQUALS"],
+              },
+            },
+          ]
         },
         GroupBy: [
           {
@@ -237,7 +255,7 @@ export class CostExplorerService {
     if (
       granularity === Granularity.HOURLY &&
       end.diff(start, "hours").hours >=
-        24 * COST_EXPLORER_CONFIG.MAX_DAYS_FOR_HOURLY
+      24 * COST_EXPLORER_CONFIG.MAX_DAYS_FOR_HOURLY
     ) {
       throw new Error(
         `Hourly data is only available for the last ${COST_EXPLORER_CONFIG.MAX_DAYS_FOR_HOURLY} days.`,
@@ -309,7 +327,7 @@ export class CostExplorerService {
           if (
             accountId &&
             accountsWithStartDates[accountId]!.startOf(startOfUnit) <=
-              periodStart
+            periodStart
           ) {
             const cost = parseFloat(
               group.Metrics?.UnblendedCost?.Amount ?? "0",
