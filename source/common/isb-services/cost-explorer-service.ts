@@ -255,7 +255,7 @@ export class CostExplorerService {
     if (
       granularity === Granularity.HOURLY &&
       end.diff(start, "hours").hours >=
-      24 * COST_EXPLORER_CONFIG.MAX_DAYS_FOR_HOURLY
+        24 * COST_EXPLORER_CONFIG.MAX_DAYS_FOR_HOURLY
     ) {
       throw new Error(
         `Hourly data is only available for the last ${COST_EXPLORER_CONFIG.MAX_DAYS_FOR_HOURLY} days.`,
@@ -327,7 +327,7 @@ export class CostExplorerService {
           if (
             accountId &&
             accountsWithStartDates[accountId]!.startOf(startOfUnit) <=
-            periodStart
+              periodStart
           ) {
             const cost = parseFloat(
               group.Metrics?.UnblendedCost?.Amount ?? "0",
