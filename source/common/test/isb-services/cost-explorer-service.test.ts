@@ -120,10 +120,21 @@ describe("CostExplorerService", () => {
         Granularity: Granularity.DAILY,
         Metrics: ["UnblendedCost"],
         Filter: {
-          Dimensions: {
-            Key: "LINKED_ACCOUNT",
-            Values: accounts,
-          },
+          And: [
+            {
+              Dimensions: {
+                Key: "LINKED_ACCOUNT",
+                Values: accounts,
+              },
+            },
+            {
+              Dimensions: {
+                Key: "RECORD_TYPE",
+                Values: ["Usage"],
+                MatchOptions: ["EQUALS"],
+              },
+            },
+          ],
         },
         GroupBy: [
           {
