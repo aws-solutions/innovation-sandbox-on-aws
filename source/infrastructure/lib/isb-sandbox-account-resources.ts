@@ -3,12 +3,12 @@
 import { Stack } from "aws-cdk-lib";
 import {
   AccountPrincipal,
+  CfnServiceLinkedRole,
   Effect,
   PolicyDocument,
   PolicyStatement,
   PrincipalWithConditions,
   Role,
-  ServicePrincipal,
 } from "aws-cdk-lib/aws-iam";
 import { Construct } from "constructs";
 
@@ -63,21 +63,15 @@ export class IsbSandboxAccountResources {
 
     // ECS Service Linked Role
     // This ensures ECS clusters can be created without permission issues
-    const ecsServiceLinkedRole = new Role(scope, "ECSServiceLinkedRole", {
-      roleName: "AWSServiceRoleForECS",
-      description: "Service-linked role for Amazon ECS",
-      assumedBy: new ServicePrincipal("ecs.amazonaws.com"),
-      managedPolicies: [
-        {
-          managedPolicyArn: "arn:aws:iam::aws:policy/aws-service-role/ECSServiceRolePolicy",
-        },
-      ],
-      path: "/aws-service-role/ecs.amazonaws.com/",
+    const ecsServiceLinkedRole = new CfnServiceLinkedRole(scope, "ECSServiceLinkedRole", {
+      awsServiceName: "ecs.amazonaws.com",
+      description: "Role to enable Amazon ECS to manage your cluster.",
     });
 
-    addCfnGuardSuppression(ecsServiceLinkedRole, [
-      "CFN_NO_EXPLICIT_RESOURCE_NAMES",
-      "IAM_NO_INLINE_POLICY_CHECK",
-    ]);
+    // Add cfn-guard suppressions using direct metadata approach
+    // (CfnServiceLinkedRole doesn't support cfnOptions, so we use addMetadata directly)
+    ecsServiceLinkedRole.addMetadata("guard", {
+      SuppressedRules: ["CFN_NO_EXPLICIT_RESOURCE_NAMES"],
+    });
   }
 }

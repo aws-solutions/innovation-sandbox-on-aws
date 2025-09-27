@@ -19912,8 +19912,6 @@ accounts:
           value: "%CLEANUP_ROLE_NAME%" # placeholder CLEANUP_ROLE_NAME will be dynamically replaced during CodeBuild executio
         - type: exact
           value: OrganizationAccountAccessRole
-        - type: exact
-          value: AWSServiceRoleForECS # ECS Service Linked Role
         - type: glob
           value: stacksets-exec-*
         - type: glob
@@ -19929,9 +19927,6 @@ accounts:
         - property: "role:RoleName"
           type: exact
           value: OrganizationAccountAccessRole
-        - property: "role:RoleName"
-          type: exact
-          value: AWSServiceRoleForECS # ECS Service Linked Role
         - property: "role:RoleName"
           type: glob
           value: stacksets-exec-*
@@ -19951,9 +19946,6 @@ accounts:
           type: exact
           value: OrganizationAccountAccessRole
         - property: RoleName
-          type: exact
-          value: AWSServiceRoleForECS # ECS Service Linked Role
-        - property: RoleName
           type: glob
           value: stacksets-exec-*
         - type: glob
@@ -19964,6 +19956,9 @@ accounts:
         - property: RoleName
           type: glob
           value: aws-controltower-*
+      IAMServiceLinkedRole:
+        - type: exact
+          value: AWSServiceRoleForECS # ECS Service Linked Role
       IAMSAMLProvider:
         - type: contains
           value: AWSSSO
@@ -20502,36 +20497,12 @@ exports[`SandboxAccountStack Snapshot > matches the snapshot 1`] = `
     },
   },
   "Resources": {
-    "ECSServiceLinkedRole67CE650F": {
-      "Metadata": {
-        "guard": {
-          "SuppressedRules": [
-            "CFN_NO_EXPLICIT_RESOURCE_NAMES",
-            "IAM_NO_INLINE_POLICY_CHECK",
-          ],
-        },
-      },
+    "ECSServiceLinkedRole": {
       "Properties": {
-        "AssumeRolePolicyDocument": {
-          "Statement": [
-            {
-              "Action": "sts:AssumeRole",
-              "Effect": "Allow",
-              "Principal": {
-                "Service": "ecs.amazonaws.com",
-              },
-            },
-          ],
-          "Version": "2012-10-17",
-        },
-        "Description": "Service-linked role for Amazon ECS",
-        "ManagedPolicyArns": [
-          "arn:aws:iam::aws:policy/aws-service-role/ECSServiceRolePolicy",
-        ],
-        "Path": "/aws-service-role/ecs.amazonaws.com/",
-        "RoleName": "AWSServiceRoleForECS",
+        "AWSServiceName": "ecs.amazonaws.com",
+        "Description": "Role to enable Amazon ECS to manage your cluster.",
       },
-      "Type": "AWS::IAM::Role",
+      "Type": "AWS::IAM::ServiceLinkedRole",
     },
     "SandboxAccountRole39551795": {
       "Metadata": {

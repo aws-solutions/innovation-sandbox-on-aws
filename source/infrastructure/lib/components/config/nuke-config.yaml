@@ -69,8 +69,6 @@ accounts:
           value: "%CLEANUP_ROLE_NAME%" # placeholder CLEANUP_ROLE_NAME will be dynamically replaced during CodeBuild executio
         - type: exact
           value: OrganizationAccountAccessRole
-        - type: exact
-          value: AWSServiceRoleForECS # ECS Service Linked Role
         - type: glob
           value: stacksets-exec-*
         - type: glob
@@ -86,9 +84,6 @@ accounts:
         - property: "role:RoleName"
           type: exact
           value: OrganizationAccountAccessRole
-        - property: "role:RoleName"
-          type: exact
-          value: AWSServiceRoleForECS # ECS Service Linked Role
         - property: "role:RoleName"
           type: glob
           value: stacksets-exec-*
@@ -108,9 +103,6 @@ accounts:
           type: exact
           value: OrganizationAccountAccessRole
         - property: RoleName
-          type: exact
-          value: AWSServiceRoleForECS # ECS Service Linked Role
-        - property: RoleName
           type: glob
           value: stacksets-exec-*
         - type: glob
@@ -121,6 +113,9 @@ accounts:
         - property: RoleName
           type: glob
           value: aws-controltower-*
+      IAMServiceLinkedRole:
+        - type: exact
+          value: AWSServiceRoleForECS # ECS Service Linked Role
       IAMSAMLProvider:
         - type: contains
           value: AWSSSO
