@@ -8,6 +8,7 @@ import {
   PolicyStatement,
   PrincipalWithConditions,
   Role,
+  ServicePrincipal,
 } from "aws-cdk-lib/aws-iam";
 import { Construct } from "constructs";
 
@@ -58,6 +59,25 @@ export class IsbSandboxAccountResources {
       "CFN_NO_EXPLICIT_RESOURCE_NAMES",
       "IAM_NO_INLINE_POLICY_CHECK",
       "IAM_POLICYDOCUMENT_NO_WILDCARD_RESOURCE",
+    ]);
+
+    // ECS Service Linked Role
+    // This ensures ECS clusters can be created without permission issues
+    const ecsServiceLinkedRole = new Role(scope, "ECSServiceLinkedRole", {
+      roleName: "AWSServiceRoleForECS",
+      description: "Service-linked role for Amazon ECS",
+      assumedBy: new ServicePrincipal("ecs.amazonaws.com"),
+      managedPolicies: [
+        {
+          managedPolicyArn: "arn:aws:iam::aws:policy/aws-service-role/ECSServiceRolePolicy",
+        },
+      ],
+      path: "/aws-service-role/ecs.amazonaws.com/",
+    });
+
+    addCfnGuardSuppression(ecsServiceLinkedRole, [
+      "CFN_NO_EXPLICIT_RESOURCE_NAMES",
+      "IAM_NO_INLINE_POLICY_CHECK",
     ]);
   }
 }
