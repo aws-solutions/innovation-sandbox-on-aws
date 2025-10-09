@@ -217,6 +217,9 @@ export class RestApi extends ApiGatewayRestApi {
                   name: "SizeRestrictions_BODY",
                 },
                 {
+                  name: "SizeRestrictions_QUERYSTRING",
+                },
+                {
                   name: "CrossSiteScripting_BODY",
                 },
               ],
