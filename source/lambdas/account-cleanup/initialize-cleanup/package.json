@@ -1,7 +1,7 @@
 {
   "name": "@amzn/innovation-sandbox-initialize-cleanup",
   "description": "Initialize Cleanup - Lambda - Innovation Sandbox on AWS (SO0284)",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "scripts": {
     "build": "tsc",
     "test": "vitest run"

@@ -1,6 +1,6 @@
 {
   "name": "@amzn/innovation-sandbox-on-aws",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "Innovation Sandbox on AWS (SO0284)",
   "scripts": {
     "test": "vitest run --coverage",
