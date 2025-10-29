@@ -1,19 +1,10 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 import {
-  afterEach,
-  beforeAll,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vitest";
-
-import {
   getGlobalConfigForUI,
   GlobalConfigSchema,
 } from "@amzn/innovation-sandbox-commons/data/global-config/global-config.js";
+import { ReportingConfigSchema } from "@amzn/innovation-sandbox-commons/data/reporting-config/reporting-config.js";
 import { ConfigurationLambdaEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/config-lambda-environment.js";
 import { generateSchemaData } from "@amzn/innovation-sandbox-commons/test/generate-schema-data.js";
 import {
@@ -27,9 +18,19 @@ import {
   bulkStubEnv,
   mockAppConfigMiddleware,
 } from "@amzn/innovation-sandbox-commons/test/lambdas/utils.js";
+import {
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 
 const testEnv = generateSchemaData(ConfigurationLambdaEnvironmentSchema);
 const mockedGlobalConfig = generateSchemaData(GlobalConfigSchema);
+const mockedReportingConfig = generateSchemaData(ReportingConfigSchema);
 let handler: typeof import("@amzn/innovation-sandbox-configurations/configurations-handler.js").handler;
 
 beforeAll(async () => {
@@ -44,7 +45,7 @@ beforeAll(async () => {
 
 beforeEach(() => {
   bulkStubEnv(testEnv);
-  mockAppConfigMiddleware(mockedGlobalConfig);
+  mockAppConfigMiddleware(mockedGlobalConfig, mockedReportingConfig);
 });
 
 afterEach(() => {
@@ -84,11 +85,15 @@ describe("Configurations Handler", async () => {
         mockedGlobalConfig,
         context.env.ISB_MANAGED_REGIONS.split(","),
       );
+      const expectedReportingConfig = mockedReportingConfig;
       expect(await handler(event, context)).toEqual({
         statusCode: 200,
         body: JSON.stringify({
           status: "success",
-          data: expectedGlobalConfig,
+          data: {
+            ...expectedGlobalConfig,
+            ...expectedReportingConfig,
+          },
         }),
         headers: responseHeaders,
       });

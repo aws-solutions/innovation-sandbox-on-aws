@@ -8,9 +8,16 @@ import {
   GlobalConfig,
   GlobalConfigSchema,
 } from "@amzn/innovation-sandbox-commons/data/global-config/global-config.js";
+import {
+  ReportingConfig,
+  ReportingConfigSchema,
+} from "@amzn/innovation-sandbox-commons/data/reporting-config/reporting-config.js";
 import { IsbApiContext } from "@amzn/innovation-sandbox-commons/lambda/middleware/api-middleware-bundle.js";
 import { ValidatedEnvironment } from "@amzn/innovation-sandbox-commons/lambda/middleware/environment-validator.js";
-import { ContextWithConfig } from "@amzn/innovation-sandbox-commons/lambda/middleware/isb-config-middleware.js";
+import {
+  ContextWithConfig,
+  ContextWithGlobalAndReportingConfig,
+} from "@amzn/innovation-sandbox-commons/lambda/middleware/isb-config-middleware.js";
 import { generateSchemaData } from "@amzn/innovation-sandbox-commons/test/generate-schema-data.js";
 import {
   IsbUser,
@@ -22,7 +29,7 @@ import {
   APIGatewayRequestAuthorizerEvent,
   CognitoIdentity,
 } from "aws-lambda";
-import crypto from "crypto";
+import { randomUUID } from "crypto";
 
 interface CreateAPIGatewayProxyEventProps {
   httpMethod: string;
@@ -142,10 +149,13 @@ export function mockContext<T>(
 export function mockAuthorizedContext<T>(
   env: T,
   globalConfig?: GlobalConfig,
-): IsbApiContext<T> & ContextWithConfig {
+  reportingConfig?: ReportingConfig,
+): IsbApiContext<T> & ContextWithGlobalAndReportingConfig {
   return {
     ...mockContext(env, globalConfig),
     ...isbAuthorizedUser,
+    reportingConfig:
+      reportingConfig ?? generateSchemaData(ReportingConfigSchema),
     accountId: "000000000000",
     apiId: "test-api-id",
     protocol: "HTTP/1.1",
@@ -180,7 +190,7 @@ export function createErrorResponseBody(message: string) {
 export function createEventBridgeEvent(detailType: string, detail: object) {
   return {
     version: "0",
-    id: crypto.randomUUID(),
+    id: randomUUID(),
     "detail-type": detailType,
     source: "InnovationSandbox-myisb",
     account: "123456789012",

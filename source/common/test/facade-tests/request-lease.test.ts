@@ -4,6 +4,7 @@
 import { PaginatedQueryResult } from "@amzn/innovation-sandbox-commons/data/common-types.js";
 import { GlobalConfigSchema } from "@amzn/innovation-sandbox-commons/data/global-config/global-config.js";
 import { LeaseTemplateSchema } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template.js";
+import { MonitoredLease } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
 import {
   SandboxAccount,
   SandboxAccountSchema,
@@ -79,7 +80,7 @@ describe("InnovationSandbox.requestLease()", () => {
         leaseTemplate: generateSchemaData(LeaseTemplateSchema, {
           requiresApproval: true,
         }),
-        forUser: mockUser,
+        targetUser: mockUser,
       },
       mockContext,
     );
@@ -112,7 +113,7 @@ describe("InnovationSandbox.requestLease()", () => {
         leaseTemplate: generateSchemaData(LeaseTemplateSchema, {
           requiresApproval: false,
         }),
-        forUser: mockUser,
+        targetUser: mockUser,
       },
       mockContext,
     );
@@ -126,5 +127,65 @@ describe("InnovationSandbox.requestLease()", () => {
         approvedBy: "AUTO_APPROVED",
       }),
     );
+  });
+
+  // Lease Assignment Tests
+  describe("Lease Assignment Flow", () => {
+    const managerEmail = "manager@example.com";
+
+    test("Lease assignment auto-approves regardless of template settings", async () => {
+      const mockAvailableAccount = generateSchemaData(SandboxAccountSchema, {
+        status: "Available",
+      });
+
+      mockContext.sandboxAccountStore.findByStatus.mockResolvedValueOnce({
+        result: [mockAvailableAccount],
+      } as PaginatedQueryResult<SandboxAccount>);
+
+      const result = (await InnovationSandbox.requestLease(
+        {
+          leaseTemplate: generateSchemaData(LeaseTemplateSchema, {
+            requiresApproval: true, // Should be auto-approved for assignments
+          }),
+          targetUser: mockUser,
+          createdBy: managerEmail,
+        },
+        mockContext,
+      )) as MonitoredLease;
+
+      // Should be auto-approved
+      expect(
+        mockContext.isbEventBridgeClient.sendIsbEvent,
+      ).toHaveBeenCalledWith(
+        mockContext.tracer,
+        new LeaseApprovedEvent({
+          leaseId: result.uuid,
+          userEmail: mockUser.email,
+          approvedBy: "AUTO_APPROVED",
+        }),
+      );
+
+      expect(result.status).toBe("Active");
+      expect(result.createdBy).toBe(managerEmail);
+      expect(result.userEmail).toBe(mockUser.email);
+      expect(result.approvedBy).toBe("AUTO_APPROVED");
+    });
+
+    test("Lease assignment without createdBy defaults to targetUser", async () => {
+      const result = await InnovationSandbox.requestLease(
+        {
+          leaseTemplate: generateSchemaData(LeaseTemplateSchema, {
+            requiresApproval: true,
+          }),
+          targetUser: mockUser,
+          // No createdBy provided
+        },
+        mockContext,
+      );
+
+      expect(result.createdBy).toBe(mockUser.email);
+      expect(result.userEmail).toBe(mockUser.email);
+      expect(result.status).toBe("PendingApproval");
+    });
   });
 });

@@ -7,6 +7,7 @@ import {
   IdentitystorePaginationConfiguration,
   ListGroupMembershipsCommand,
   ListGroupMembershipsForMemberCommandInput,
+  ResourceNotFoundException,
   User,
   paginateListGroupMembershipsForMember,
 } from "@aws-sdk/client-identitystore";
@@ -239,46 +240,59 @@ export class IdcService {
         },
       },
     });
-    const { UserId: userId } = await this.identityStoreClient.send(command);
-    const descUserCommand = new DescribeUserCommand({
-      IdentityStoreId: config.identityStoreId,
-      UserId: userId,
-    });
-    const user = await this.identityStoreClient.send(descUserCommand);
-    const input: ListGroupMembershipsForMemberCommandInput = {
-      IdentityStoreId: config.identityStoreId,
-      MemberId: {
-        UserId: userId!,
-      },
-    };
-    const paginatorConfig: IdentitystorePaginationConfiguration = {
-      client: this.identityStoreClient,
-    };
-    const paginator = paginateListGroupMembershipsForMember(
-      paginatorConfig,
-      input,
-    );
-    const groupIdToRole: Record<string, IsbRole> = {
-      [config.userGroupId]: "User",
-      [config.managerGroupId]: "Manager",
-      [config.adminGroupId]: "Admin",
-    };
-    const roles: IsbRole[] = [];
-    for await (const page of paginator) {
-      if (page.GroupMemberships) {
-        for (const groupMembership of page.GroupMemberships) {
-          const role = groupIdToRole[groupMembership.GroupId!];
-          if (role) {
-            roles.push(role);
+
+    try {
+      const { UserId: userId } = await this.identityStoreClient.send(command);
+
+      if (!userId) {
+        return undefined;
+      }
+
+      const descUserCommand = new DescribeUserCommand({
+        IdentityStoreId: config.identityStoreId,
+        UserId: userId,
+      });
+      const user = await this.identityStoreClient.send(descUserCommand);
+      const input: ListGroupMembershipsForMemberCommandInput = {
+        IdentityStoreId: config.identityStoreId,
+        MemberId: {
+          UserId: userId,
+        },
+      };
+      const paginatorConfig: IdentitystorePaginationConfiguration = {
+        client: this.identityStoreClient,
+      };
+      const paginator = paginateListGroupMembershipsForMember(
+        paginatorConfig,
+        input,
+      );
+      const groupIdToRole: Record<string, IsbRole> = {
+        [config.userGroupId]: "User",
+        [config.managerGroupId]: "Manager",
+        [config.adminGroupId]: "Admin",
+      };
+      const roles: IsbRole[] = [];
+      for await (const { GroupMemberships } of paginator) {
+        if (GroupMemberships) {
+          for (const groupMembership of GroupMemberships) {
+            const role = groupIdToRole[groupMembership.GroupId!];
+            if (role) {
+              roles.push(role);
+            }
           }
         }
       }
+      if (roles.length === 0) {
+        // the user isn't an ISB user
+        return undefined;
+      }
+      return this.isbUserFromIdcUser(user, roles);
+    } catch (error) {
+      if (error instanceof ResourceNotFoundException) {
+        return undefined;
+      }
+      throw error;
     }
-    if (roles.length === 0) {
-      // the user isn't an ISB user
-      return undefined;
-    }
-    return this.isbUserFromIdcUser(user, roles);
   }
 
   private async grantUserAccess(accountId: string, isbUser: IsbUser) {

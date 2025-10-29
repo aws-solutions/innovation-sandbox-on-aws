@@ -38,6 +38,9 @@ export const authorizationMap: AuthorizationMapType = {
   "/leases/{param}/freeze": {
     POST: ["Manager", "Admin"],
   },
+  "/leases/{param}/unfreeze": {
+    POST: ["Manager", "Admin"],
+  },
   "/leaseTemplates": {
     GET: ["User", "Manager", "Admin"],
     POST: ["Admin", "Manager"],
@@ -49,7 +52,6 @@ export const authorizationMap: AuthorizationMapType = {
   },
   "/configurations": {
     GET: ["Manager", "Admin", "User"],
-    POST: ["Admin"],
   },
   "/accounts": {
     GET: ["Admin"],
@@ -66,8 +68,5 @@ export const authorizationMap: AuthorizationMapType = {
   },
   "/accounts/unregistered": {
     GET: ["Admin"],
-  },
-  "/users": {
-    GET: ["Admin", "Manager"],
   },
 };

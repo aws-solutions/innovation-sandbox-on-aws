@@ -65,10 +65,11 @@ describe("UpdateLeaseTemplate", () => {
       const tabs = wrapper.findTabs();
       expect(tabs).not.toBeNull();
       const tabLinks = tabs!.findTabLinks();
-      expect(tabLinks).toHaveLength(3);
+      expect(tabLinks).toHaveLength(4);
       expect(tabLinks[0].getElement()).toHaveTextContent("Basic Details");
       expect(tabLinks[1].getElement()).toHaveTextContent("Budget");
       expect(tabLinks[2].getElement()).toHaveTextContent("Duration");
+      expect(tabLinks[3].getElement()).toHaveTextContent("Cost Report");
     });
   });
 

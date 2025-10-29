@@ -12,9 +12,12 @@ export const EventDetailTypes = {
   LeaseExpiredAlert: "LeaseExpired",
   LeaseTerminated: "LeaseTerminated",
   LeaseFrozen: "LeaseFrozen",
+  LeaseUnfrozen: "LeaseUnfrozen",
   CleanAccountRequest: "CleanAccountRequest",
   AccountCleanupSuccessful: "AccountCleanupSucceeded",
   AccountCleanupFailure: "AccountCleanupFailed",
   AccountQuarantined: "AccountQuarantined",
   AccountDriftDetected: "AccountDriftDetected",
+  GroupCostReportGenerated: "GroupCostReportGenerated",
+  GroupCostReportGeneratedFailure: "GroupCostReportGeneratedFailure",
 } as const;

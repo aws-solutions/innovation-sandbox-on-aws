@@ -7,7 +7,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { IsbUser } from "@amzn/innovation-sandbox-commons/types/isb-types";
 import logo from "@amzn/innovation-sandbox-frontend/assets/images/logo.png";
 import { useAppContext } from "@amzn/innovation-sandbox-frontend/components/AppContext/context";
 import { AppLayoutProps } from "@amzn/innovation-sandbox-frontend/components/AppLayout";
@@ -21,13 +20,13 @@ import { NavHeader } from "@amzn/innovation-sandbox-frontend/components/AppLayou
 import { FullPageLoader } from "@amzn/innovation-sandbox-frontend/components/FullPageLoader";
 import { MaintenanceBanner } from "@amzn/innovation-sandbox-frontend/components/MaintenanceBanner";
 import { AuthService } from "@amzn/innovation-sandbox-frontend/helpers/AuthService";
-import { useInit } from "@amzn/innovation-sandbox-frontend/hooks/useInit";
+import { useUser } from "@amzn/innovation-sandbox-frontend/hooks/useUser";
 
 export const BaseLayout = ({ children }: AppLayoutProps) => {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const { breadcrumb } = useAppContext();
-  const [user, setUser] = useState<IsbUser | undefined>();
+  const { user } = useUser();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   const onExit = () => {
@@ -35,11 +34,6 @@ export const BaseLayout = ({ children }: AppLayoutProps) => {
     queryClient.clear();
     AuthService.logout();
   };
-
-  useInit(async () => {
-    const currentUser = await AuthService.getCurrentUser();
-    setUser(currentUser);
-  });
 
   const navigationItems = useMemo(() => {
     if (user?.roles?.includes("Admin")) {

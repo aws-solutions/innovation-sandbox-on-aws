@@ -66,7 +66,7 @@ interface NodejsLayerVersionProps {
 class NodejsLayerVersion extends LayerVersion {
   constructor(scope: Construct, id: string, props: NodejsLayerVersionProps) {
     //prettier-ignore
-    execSync("npm install --workspaces=false --install-links", { // NOSONAR typescript:S4036 - only used in cdk synth process
+    execSync("npm ci --workspaces=false --install-links", { // NOSONAR typescript:S4036 - only used in cdk synth process
       cwd: props.path,
     });
     existsSync(path.join(props.path, "dist")) &&

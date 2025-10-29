@@ -107,12 +107,26 @@ async function stepFunctionIsStillRunning(
 ): Promise<boolean> {
   const sfnClient = IsbClients.stepFunctions(env);
 
-  const response = await sfnClient.send(
-    new DescribeExecutionCommand({
-      executionArn: executionArn,
-    }),
-  );
+  try {
+    const response = await sfnClient.send(
+      new DescribeExecutionCommand({
+        executionArn: executionArn,
+      }),
+    );
 
-  // Step Functions execution status can be RUNNING, SUCCEEDED, FAILED, TIMED_OUT, or ABORTED
-  return response.status === "RUNNING";
+    // Step Functions execution status can be RUNNING, SUCCEEDED, FAILED, TIMED_OUT, or ABORTED
+    return response.status === "RUNNING";
+  } catch (error) {
+    // If execution doesn't exist (e.g., history deleted after 90 days),
+    // treat it as not running so cleanup can proceed
+    if (error instanceof Error && error.name === "ExecutionDoesNotExist") {
+      logger.info(
+        `Step Function execution ${executionArn} no longer exists (likely due to history retention), treating as not running`,
+      );
+      return false;
+    }
+
+    // Re-throw other errors as they indicate actual problems
+    throw error;
+  }
 }

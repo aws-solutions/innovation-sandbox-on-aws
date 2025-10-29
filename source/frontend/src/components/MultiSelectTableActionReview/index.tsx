@@ -7,11 +7,11 @@ import {
   Popover,
   SpaceBetween,
   StatusIndicator,
+  Table,
   TableProps,
 } from "@cloudscape-design/components";
 
 import { useModal } from "@amzn/innovation-sandbox-frontend/hooks/useModal";
-import { Table } from "@aws-northstar/ui";
 import { ReactNode, useState } from "react";
 
 type RequestStatus = {
@@ -135,26 +135,25 @@ export const BatchActionReview = <T extends Record<string, any>>({
             {description}
           </Box>
         )}
-        <Table
-          items={itemsWithRequests}
-          trackBy={identifierKey as string}
-          stripedRows
-          variant="borderless"
-          disableRowSelect
-          disableFilters
-          disablePagination
-          disableSettings
-          sortingDisabled
-          columnDefinitions={[
-            ...columnDefinitions,
-            {
-              header: "Status",
-              id: "Status",
-              minWidth: 120,
-              cell: (item: ItemWithRequest<T>) => <StatusCell item={item} />, // NOSONAR typescript:S6478 - the way the table component works requires defining component during render
-            },
-          ]}
-        />
+        <div style={{ maxHeight: "50vh", overflowY: "auto" }}>
+          <Table
+            items={itemsWithRequests}
+            trackBy={identifierKey as string}
+            stripedRows
+            variant="borderless"
+            sortingDisabled
+            stickyHeader
+            columnDefinitions={[
+              ...columnDefinitions,
+              {
+                header: "Status",
+                id: "Status",
+                minWidth: 120,
+                cell: (item: ItemWithRequest<T>) => <StatusCell item={item} />, // NOSONAR typescript:S6478 - the way the table component works requires defining component during render
+              },
+            ]}
+          />
+        </div>
         {footer && <Box>{footer}</Box>}
         <Box float="right">
           <Button variant="link" onClick={hideModal}>

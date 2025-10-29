@@ -49,6 +49,7 @@ export function searchableLeaseProperties(lease: Lease) {
     leaseId: lease.uuid,
     leaseTemplateId: lease.originalLeaseTemplateUuid,
     leaseTemplateName: lease.originalLeaseTemplateName,
+    createdBy: lease.createdBy,
   };
 
   if (isMonitoredLease(lease)) {

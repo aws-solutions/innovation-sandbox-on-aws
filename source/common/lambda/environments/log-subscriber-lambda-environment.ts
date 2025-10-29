@@ -10,6 +10,7 @@ export const LogSubscriberLambdaEnvironmentSchema =
     SOLUTION_ID: z.string(),
     SOLUTION_VERSION: z.string(),
     METRICS_UUID: z.string(),
+    HUB_ACCOUNT_ID: z.string(),
   });
 
 export type LogSubscriberLambdaEnvironment = z.infer<

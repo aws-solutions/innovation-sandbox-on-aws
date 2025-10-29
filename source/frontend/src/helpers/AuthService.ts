@@ -32,7 +32,7 @@ export class AuthService {
 
     if (!currentToken) {
       console.info("No access token found.");
-      return;
+      return undefined;
     }
 
     try {
@@ -62,6 +62,9 @@ export class AuthService {
 
         return this.currentUser;
       }
+
+      // User is not authenticated
+      return undefined;
     } catch (err) {
       console.error("Error authenticating user", err);
       throw err;

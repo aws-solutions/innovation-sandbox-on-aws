@@ -11,6 +11,7 @@ import { showSuccessToast } from "@amzn/innovation-sandbox-frontend/components/T
 import { basicFormFields } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/formFields/basic";
 import { budgetFields } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/formFields/budget";
 import { durationFields } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/formFields/duration";
+import { getVisibilityOption } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/helpers";
 import { useAddLeaseTemplate } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/hooks";
 import {
   LeaseTemplateFormData,
@@ -18,7 +19,8 @@ import {
 } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/types";
 import { useGetConfigurations } from "@amzn/innovation-sandbox-frontend/domains/settings/hooks";
 import { useBreadcrumb } from "@amzn/innovation-sandbox-frontend/hooks/useBreadcrumb";
-import { useInit } from "@amzn/innovation-sandbox-frontend/hooks/useInit";
+import { useEffect } from "react";
+import { costReportFields } from "../formFields/costReport";
 
 export const AddLeaseTemplate = () => {
   const navigate = useNavigate();
@@ -36,13 +38,13 @@ export const AddLeaseTemplate = () => {
     error,
   } = useGetConfigurations();
 
-  useInit(() => {
+  useEffect(() => {
     setBreadcrumb([
       { text: "Home", href: "/" },
       { text: "Lease Templates", href: "/lease_templates" },
       { text: "Add a New Lease Template", href: "/lease_templates/new" },
     ]);
-  });
+  }, []);
 
   const onSubmit = async (data: any) => {
     const {
@@ -50,6 +52,9 @@ export const AddLeaseTemplate = () => {
       maxSpend,
       maxDurationEnabled,
       leaseDurationInHours,
+      visibility,
+      costReportGroupEnabled,
+      selectedCostReportGroup,
       ...rest
     } = data as LeaseTemplateFormData;
 
@@ -58,6 +63,10 @@ export const AddLeaseTemplate = () => {
       maxSpend: maxBudgetEnabled ? maxSpend : undefined,
       leaseDurationInHours: maxDurationEnabled
         ? leaseDurationInHours
+        : undefined,
+      visibility: visibility.value,
+      costReportGroup: costReportGroupEnabled
+        ? selectedCostReportGroup?.value
         : undefined,
     };
 
@@ -93,6 +102,8 @@ export const AddLeaseTemplate = () => {
         requiresApproval: true,
         maxBudgetEnabled: true,
         maxDurationEnabled: true,
+        costReportGroupEnabled: false,
+        visibility: getVisibilityOption("PRIVATE"),
       }}
       schema={{
         header: "Add a New Lease Template",
@@ -111,6 +122,12 @@ export const AddLeaseTemplate = () => {
               {
                 ...durationFields({
                   globalMaxDuration: config?.leases.maxDurationHours,
+                }),
+              },
+              {
+                ...costReportFields({
+                  costReportGroups: config?.costReportGroups,
+                  requireCostReportGroup: config?.requireCostReportGroup,
                 }),
               },
             ],

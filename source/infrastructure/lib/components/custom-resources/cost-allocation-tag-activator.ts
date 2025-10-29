@@ -3,10 +3,7 @@
 
 import { CostAllocationTagActivatorEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/cost-allocation-tag-activator-environment";
 import { IsbLambdaFunctionCustomResource } from "@amzn/innovation-sandbox-infrastructure/components/isb-lambda-function-custom-resource";
-import { getContextFromMapping } from "@amzn/innovation-sandbox-infrastructure/helpers/cdk-context";
-import { ConditionAspect } from "@amzn/innovation-sandbox-infrastructure/helpers/cfn-utils";
 import { isbTagName } from "@amzn/innovation-sandbox-infrastructure/helpers/tagging-helper";
-import { Aspects, CfnCondition, Fn } from "aws-cdk-lib";
 import { PolicyStatement } from "aws-cdk-lib/aws-iam";
 import { Construct } from "constructs";
 import path from "path";
@@ -22,17 +19,6 @@ export class CostAllocationTagActivator extends Construct {
     props: CostAllocationTagActivatorProps,
   ) {
     super(scope, id);
-    const sendAnonymizedMetricsCondition = new CfnCondition(
-      scope,
-      "SendAnonymizedMetricsCondition",
-      {
-        expression: Fn.conditionEquals(
-          getContextFromMapping(scope, "sendAnonymizedUsageMetrics"),
-          "true",
-        ),
-      },
-    );
-    Aspects.of(this).add(new ConditionAspect(sendAnonymizedMetricsCondition));
 
     const costAllocationCR = new IsbLambdaFunctionCustomResource(
       this,

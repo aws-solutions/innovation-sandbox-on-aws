@@ -93,6 +93,8 @@ export class IsbDataResources {
           this.config.globalConfigHostedConfiguration.configurationProfileId,
         nukeConfigConfigurationProfileId:
           this.config.nukeConfigHostedConfiguration.configurationProfileId,
+        reportingConfigConfigurationProfileId:
+          this.config.reportingConfigHostedConfiguration.configurationProfileId,
         accountTable: this.sandboxAccountTable.tableName,
         leaseTemplateTable: this.leaseTemplateTable.tableName,
         leaseTable: this.leaseTable.tableName,

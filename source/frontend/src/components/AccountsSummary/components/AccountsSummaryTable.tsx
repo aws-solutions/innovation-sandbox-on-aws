@@ -117,13 +117,13 @@ export const AccountsSummaryTable = ({
     <Table
       variant="embedded"
       sortingDisabled
-      trackBy="name"
+      trackBy="title"
       items={summary}
       columnDefinitions={[
         {
-          id: "name",
+          id: "title",
           header: "Account Status",
-          sortingField: "name",
+          sortingField: "title",
           // prettier-ignore
           cell: (item) => ( // NOSONAR typescript:S6478 - the way the table component works requires defining component during render
             <StatusCell item={item} onClick={handleClick} filter={filter} />

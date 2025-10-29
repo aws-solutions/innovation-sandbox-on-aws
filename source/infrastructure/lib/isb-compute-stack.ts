@@ -9,7 +9,11 @@ import {
   ParameterWithLabel,
   YesNoParameter,
 } from "@amzn/innovation-sandbox-infrastructure/helpers/cfn-utils";
-import { NamespaceParam } from "@amzn/innovation-sandbox-infrastructure/helpers/namespace-param";
+import {
+  IdcAccountIdParam,
+  NamespaceParam,
+  OrgMgtAccountIdParam,
+} from "@amzn/innovation-sandbox-infrastructure/helpers/shared-cfn-params";
 import {
   getSharedSsmParamValues,
   SharedSpokeConfig,
@@ -28,19 +32,9 @@ export class IsbComputeStack extends Stack {
     /* solution input parameters go here*/
     const namespaceParam = new NamespaceParam(this);
 
-    const orgMgtAccountId = new ParameterWithLabel(this, "OrgMgtAccountId", {
-      label: "Org Management Account Id",
-      description:
-        "The AWS Account Id of the org's management account where the account pool stack is deployed",
-      allowedPattern: "^[0-9]{12}$",
-    });
+    const orgMgtAccountId = new OrgMgtAccountIdParam(this);
 
-    const idcAccountId = new ParameterWithLabel(this, "IdcAccountId", {
-      label: "IDC Account Id",
-      description:
-        "The AWS Account Id where the IAM Identity Center is configured",
-      allowedPattern: "^[0-9]{12}$",
-    });
+    const idcAccountId = new IdcAccountIdParam(this);
 
     const allowListedCidr = new ParameterWithLabel(
       this,
@@ -82,7 +76,7 @@ export class IsbComputeStack extends Stack {
     addParameterGroup(this, {
       label: "Compute Stack Configuration",
       parameters: [
-        namespaceParam.namespace,
+        namespaceParam,
         orgMgtAccountId,
         idcAccountId,
         allowListedCidr,
@@ -93,23 +87,23 @@ export class IsbComputeStack extends Stack {
 
     IsbComputeStack.sharedSpokeConfig = getSharedSsmParamValues(
       this,
-      namespaceParam.namespace.valueAsString,
+      namespaceParam.valueAsString,
       idcAccountId.valueAsString,
       orgMgtAccountId.valueAsString,
     );
 
     new IsbComputeResources(this, {
-      namespace: namespaceParam.namespace.valueAsString,
+      namespace: namespaceParam.valueAsString,
       orgMgtAccountId: orgMgtAccountId.valueAsString,
       idcAccountId: idcAccountId.valueAsString,
       allowListedCidr: allowListedCidr.valueAsList,
-      useStableTaggingCondition: useStableTagging.getCondition(),
+      useStableTaggingParameter: useStableTagging,
     });
 
     new ApplicationInsights(this, "IsbApplicationInsights", {
-      namespace: namespaceParam.namespace.valueAsString,
+      namespace: namespaceParam.valueAsString,
     });
 
-    applyIsbTag(this, `${namespaceParam.namespace.valueAsString}`);
+    applyIsbTag(this, `${namespaceParam.valueAsString}`);
   }
 }

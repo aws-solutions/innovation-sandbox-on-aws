@@ -7,6 +7,7 @@ import {
 import environmentValidatorMiddleware from "@amzn/innovation-sandbox-commons/lambda/middleware/environment-validator.js";
 import { httpErrorHandler } from "@amzn/innovation-sandbox-commons/lambda/middleware/http-error-handler.js";
 import { httpUrlencodeQueryParser } from "@amzn/innovation-sandbox-commons/lambda/middleware/http-urlencode-query-parser.js";
+import { injectSanitizedLambdaContext } from "@amzn/innovation-sandbox-commons/lambda/middleware/inject-sanitized-lambda-context.js";
 import {
   IsbUser,
   JSendResponse,
@@ -14,7 +15,6 @@ import {
 import { decodeJwt } from "@amzn/innovation-sandbox-commons/utils/jwt.js";
 import { MiddlewareFn } from "@aws-lambda-powertools/commons/types";
 import { Logger } from "@aws-lambda-powertools/logger";
-import { injectLambdaContext } from "@aws-lambda-powertools/logger/middleware";
 import { captureLambdaHandler } from "@aws-lambda-powertools/tracer/middleware";
 import middy, { MiddlewareObj } from "@middy/core";
 import httpEventNormalizer, {
@@ -70,12 +70,7 @@ export default function apiMiddlewareBundle<T extends Schema>(
         },
       }),
     )
-    .use(
-      injectLambdaContext(logger, {
-        logEvent: true,
-        resetKeys: true,
-      }),
-    )
+    .use(injectSanitizedLambdaContext(logger))
     .use(captureLambdaHandler(tracer));
 }
 

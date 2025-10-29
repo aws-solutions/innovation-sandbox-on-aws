@@ -35,7 +35,6 @@ import {
   useGetAccounts,
 } from "@amzn/innovation-sandbox-frontend/domains/accounts/hooks";
 import { useBreadcrumb } from "@amzn/innovation-sandbox-frontend/hooks/useBreadcrumb";
-import { useInit } from "@amzn/innovation-sandbox-frontend/hooks/useInit";
 import { useModal } from "@amzn/innovation-sandbox-frontend/hooks/useModal";
 import { useAppLayoutContext } from "@aws-northstar/ui/components/AppLayout";
 
@@ -204,13 +203,13 @@ export const ListAccounts = () => {
     [],
   );
 
-  useInit(async () => {
+  useEffect(() => {
     setBreadcrumb([
       { text: "Home", href: "/" },
       { text: "Accounts", href: "/accounts" },
     ]);
     setTools(<Markdown file="accounts" />);
-  });
+  }, []);
 
   const onCreateClick = () => {
     navigate("/accounts/new");

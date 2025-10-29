@@ -1,16 +1,6 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import {
-  Alert,
-  ContentLayout,
-  Header,
-  SpaceBetween,
-  Tabs,
-} from "@cloudscape-design/components";
-import { useEffect } from "react";
-import { useNavigate, useParams } from "react-router-dom";
-
 import { LeaseTemplate } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template";
 import { ErrorPanel } from "@amzn/innovation-sandbox-frontend/components/ErrorPanel";
 import { Loader } from "@amzn/innovation-sandbox-frontend/components/Loader";
@@ -19,6 +9,10 @@ import {
   BudgetForm,
   BudgetFormData,
 } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/components/BudgetForm";
+import {
+  CostReportForm,
+  CostReportFormData,
+} from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/components/CostReportForm";
 import {
   DurationForm,
   DurationFormData,
@@ -30,6 +24,15 @@ import {
 } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/hooks";
 import { useGetConfigurations } from "@amzn/innovation-sandbox-frontend/domains/settings/hooks";
 import { useBreadcrumb } from "@amzn/innovation-sandbox-frontend/hooks/useBreadcrumb";
+import {
+  Alert,
+  ContentLayout,
+  Header,
+  SpaceBetween,
+  Tabs,
+} from "@cloudscape-design/components";
+import { useEffect } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 
 export const UpdateLeaseTemplate = () => {
   const { uuid } = useParams();
@@ -90,6 +93,18 @@ export const UpdateLeaseTemplate = () => {
   };
 
   const onCancel = () => {
+    navigate("/lease_templates");
+  };
+
+  const onUpdateCostReport = async (data: any) => {
+    const { costReportGroup } = data as CostReportFormData;
+
+    const updatedLeaseTemplate: LeaseTemplate = {
+      ...(leaseTemplate as LeaseTemplate),
+      costReportGroup: costReportGroup ?? undefined,
+    };
+
+    await updateLeaseTemplate(updatedLeaseTemplate);
     navigate("/lease_templates");
   };
 
@@ -167,6 +182,20 @@ export const UpdateLeaseTemplate = () => {
                   onCancel={onCancel}
                   isUpdating={isUpdating}
                   globalMaxDuration={config?.leases.maxDurationHours}
+                />
+              ),
+            },
+            {
+              id: "costReport",
+              label: "Cost Report",
+              content: (
+                <CostReportForm
+                  costReportGroup={leaseTemplate.costReportGroup}
+                  onSubmit={onUpdateCostReport}
+                  onCancel={onCancel}
+                  isUpdating={isUpdating}
+                  costReportGroups={config?.costReportGroups}
+                  requireCostReportGroup={config?.requireCostReportGroup}
                 />
               ),
             },

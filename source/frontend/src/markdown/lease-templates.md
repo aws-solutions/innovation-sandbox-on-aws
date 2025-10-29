@@ -4,12 +4,20 @@ title: Lease Template
 
 The **Lease Templates** page displays all your available lease templates.
 
-A **lease template** defines the conditions that govern the use of the account - such as approval for a user to use a given account, budget threshold actions, and lease duration threshold actions.
+A **lease template** defines the conditions that govern the use of the account - such as approval for a user to use a given account, budget threshold actions, lease duration threshold actions, cost reporting group assignments, and template visibility controls.
+
+**Template Visibility**: Templates can be set as **Public** (visible to all users for self-service requests) or **Private** (visible only to Admins and Managers for direct lease assignment).
 
 ---
 
 **Add new lease template**
-An Admin or a Manager can create a new lease template, set approval methods, and set a maximum budget or duration for the lease template. For more information, refer to the [Creating and managing lease templates](https://docs.aws.amazon.com/solutions/latest/innovation-sandbox-on-aws/manager-guide.html#creating-managing-lease-templates) page.
+An Admin or a Manager can create a new lease template, set approval methods, set a maximum budget or duration for the lease template, set up cost reporting groups, and configure visibility settings. For more information, refer to the [Creating and managing lease templates](https://docs.aws.amazon.com/solutions/latest/innovation-sandbox-on-aws/manager-guide.html#creating-managing-lease-templates) page.
+
+**Template Visibility Options**:
+
+- **Public**: Template appears in the general listing and users can request leases from it
+- **Private**: Template is only visible to Admins and Managers for direct lease assignment to users
+
 We recommend periodically reviewing and deleting unused lease templates to prevent users from using them to request new sandbox accounts.
 
 **Update existing lease templates**

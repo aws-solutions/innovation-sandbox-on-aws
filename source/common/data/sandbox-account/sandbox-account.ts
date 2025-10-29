@@ -3,10 +3,24 @@
 import { z } from "zod";
 
 import { AwsAccountIdSchema } from "@amzn/innovation-sandbox-commons/data/common-schemas.js";
-import { ItemWithMetadataSchema } from "@amzn/innovation-sandbox-commons/data/metadata.js";
+import {
+  createItemWithMetadataSchema,
+  createVersionRangeSchema,
+} from "@amzn/innovation-sandbox-commons/data/metadata.js";
 
 // IMPORTANT -- this value must be updated whenever the schema changes.
 export const SandboxAccountSchemaVersion = 1;
+
+// Define supported version range for backwards compatibility
+const SandboxAccountSupportedVersionsSchema = createVersionRangeSchema(
+  1,
+  SandboxAccountSchemaVersion,
+);
+
+// Create ItemWithMetadata schema with version validation
+const SandboxAccountItemWithMetadataSchema = createItemWithMetadataSchema(
+  SandboxAccountSupportedVersionsSchema,
+);
 
 export const IsbOuSchema = z.enum([
   "Available",
@@ -37,7 +51,7 @@ export const SandboxAccountSchema = z
     status: SandboxAccountStatusSchema,
     driftAtLastScan: z.boolean().optional(),
   })
-  .merge(ItemWithMetadataSchema)
+  .merge(SandboxAccountItemWithMetadataSchema)
   .strict();
 
 export type SandboxAccount = z.infer<typeof SandboxAccountSchema>;

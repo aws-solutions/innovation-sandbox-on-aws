@@ -6,7 +6,7 @@ import { http, HttpResponse } from "msw";
 import { describe, expect, it, vi } from "vitest";
 
 import {
-  getLeasesForCurrentUser,
+  useLeasesForCurrentUser,
   useRequestNewLease,
 } from "@amzn/innovation-sandbox-frontend/domains/leases/hooks";
 import { NewLeaseRequest } from "@amzn/innovation-sandbox-frontend/domains/leases/types";
@@ -23,7 +23,7 @@ vi.mock("@amzn/innovation-sandbox-frontend/helpers/AuthService", () => ({
 }));
 
 describe("Lease hooks", () => {
-  describe("getPendingAndActiveLeasesForCurrentUser", () => {
+  describe("useLeasesForCurrentUser", () => {
     it("should fetch leases successfully", async () => {
       server.use(
         http.get(`${config.ApiUrl}/leases`, () => {
@@ -34,7 +34,7 @@ describe("Lease hooks", () => {
         }),
       );
 
-      const { result } = renderHook(() => getLeasesForCurrentUser(), {
+      const { result } = renderHook(() => useLeasesForCurrentUser(), {
         wrapper: createQueryClientWrapper(),
       });
 
@@ -53,7 +53,7 @@ describe("Lease hooks", () => {
         }),
       );
 
-      const { result } = renderHook(() => getLeasesForCurrentUser(), {
+      const { result } = renderHook(() => useLeasesForCurrentUser(), {
         wrapper: createQueryClientWrapper(),
       });
 

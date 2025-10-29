@@ -24,12 +24,14 @@ import { Settings } from "@amzn/innovation-sandbox-frontend/domains/settings/pag
 import { ModalProvider } from "@amzn/innovation-sandbox-frontend/hooks/useModal";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 // Import local css
+import { AssignLease } from "@amzn/innovation-sandbox-frontend/domains/leases/pages/AssignLease";
 import "./assets/styles/app.scss";
 
 export const App = () => {
   const routes = [
     { path: "/", Element: Home },
     { path: "/request", Element: RequestLease },
+    { path: "/assign", Element: AssignLease },
     { path: "/settings", Element: Settings },
     { path: "/lease_templates", Element: ListLeaseTemplates },
     { path: "/lease_templates/new", Element: AddLeaseTemplate },
@@ -53,9 +55,9 @@ export const App = () => {
   });
 
   return (
-    <Authenticator>
-      <Router>
-        <QueryClientProvider client={queryClient}>
+    <QueryClientProvider client={queryClient}>
+      <Authenticator>
+        <Router>
           <ModalProvider>
             <AppLayout>
               <Routes>
@@ -65,9 +67,9 @@ export const App = () => {
               </Routes>
             </AppLayout>
           </ModalProvider>
-        </QueryClientProvider>
-      </Router>
-      <ToastContainer />
-    </Authenticator>
+        </Router>
+        <ToastContainer />
+      </Authenticator>
+    </QueryClientProvider>
   );
 };

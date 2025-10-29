@@ -50,6 +50,7 @@ describe("lambda handler", () => {
   const testConfigEnvironmentId = "Env111";
   const testGlobalConfigConfigurationProfileId = "Profile111";
   const testNukeConfigConfigurationProfileId = "NukeProfile111";
+  const testReportingConfigConfigurationProfileId = "ReportingProfile111";
   const testAccountTable = "AccountTable";
   const testLeaseTemplateTable = "LeaseTemplateTable";
   const testLeaseTable = "LeaseTable";
@@ -97,6 +98,8 @@ describe("lambda handler", () => {
     configEnvironmentId: testConfigEnvironmentId,
     globalConfigConfigurationProfileId: testGlobalConfigConfigurationProfileId,
     nukeConfigConfigurationProfileId: testNukeConfigConfigurationProfileId,
+    reportingConfigConfigurationProfileId:
+      testReportingConfigConfigurationProfileId,
     accountTable: testAccountTable,
     leaseTemplateTable: testLeaseTemplateTable,
     leaseTable: testLeaseTable,
@@ -138,6 +141,8 @@ describe("lambda handler", () => {
     configEnvironmentId: testConfigEnvironmentId,
     globalConfigConfigurationProfileId: testGlobalConfigConfigurationProfileId,
     nukeConfigConfigurationProfileId: testNukeConfigConfigurationProfileId,
+    reportingConfigConfigurationProfileId:
+      testReportingConfigConfigurationProfileId,
     accountTable: testAccountTable,
     leaseTemplateTable: testLeaseTemplateTable,
     leaseTable: testLeaseTable,

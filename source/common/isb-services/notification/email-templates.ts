@@ -3,6 +3,8 @@
 
 import { AccountCleanupFailureEvent } from "@amzn/innovation-sandbox-commons/events/account-cleanup-failure-event.js";
 import { AccountDriftDetectedAlert } from "@amzn/innovation-sandbox-commons/events/account-drift-detected-alert.js";
+import { GroupCostReportGeneratedEvent } from "@amzn/innovation-sandbox-commons/events/group-cost-report-generated-event.js";
+import { GroupCostReportGeneratedFailureEvent } from "@amzn/innovation-sandbox-commons/events/group-cost-report-generated-failure-event.js";
 import { LeaseApprovedEvent } from "@amzn/innovation-sandbox-commons/events/lease-approved-event.js";
 import { LeaseBudgetThresholdBreachedAlert } from "@amzn/innovation-sandbox-commons/events/lease-budget-threshold-breached-alert.js";
 import { LeaseDeniedEvent } from "@amzn/innovation-sandbox-commons/events/lease-denied-event.js";
@@ -10,6 +12,7 @@ import { LeaseDurationThresholdBreachedAlert } from "@amzn/innovation-sandbox-co
 import { LeaseFrozenEvent } from "@amzn/innovation-sandbox-commons/events/lease-frozen-event.js";
 import { LeaseRequestedEvent } from "@amzn/innovation-sandbox-commons/events/lease-requested-event.js";
 import { LeaseTerminatedEvent } from "@amzn/innovation-sandbox-commons/events/lease-terminated-event.js";
+import { LeaseUnfrozenEvent } from "@amzn/innovation-sandbox-commons/events/lease-unfrozen-event.js";
 import { SynthesizedEmail } from "@amzn/innovation-sandbox-commons/isb-services/notification/email-service.js";
 
 // either to or bcc, but not both
@@ -174,6 +177,71 @@ export namespace EmailTemplates {
         : `
       Untracked account id: ${event.Detail.accountId}  was found in ${event.Detail.actualOu}.
        The account has been moved to the quarantine OU by the system
+      `,
+    };
+  }
+
+  export function LeaseUnfrozen(
+    event: LeaseUnfrozenEvent,
+    context: EmailTemplatesContext,
+  ): SynthesizedEmail {
+    return {
+      to: context.destination.to!,
+      subject: "[Informational] Innovation Sandbox: Lease Unfrozen",
+      htmlBody: `
+      <p> The lease id: ${event.Detail.leaseId.uuid} for account id: ${event.Detail.accountId} has been unfrozen
+      with the new budget limit of \$${event.Detail.maxBudget} and lease duration of ${event.Detail.leaseDurationInHours}
+      hours. Please log into the Innovation Sandbox web application ${context.webAppUrl} to access your sandbox account
+      and use within the prescribed limits.</p>
+    `,
+      textBody: `
+      The lease id: ${event.Detail.leaseId.uuid} for account id: ${event.Detail.accountId} has been unfrozen
+      with the new budget limit of \$${event.Detail.maxBudget} and lease duration of ${event.Detail.leaseDurationInHours}
+      hours. Please log into the Innovation Sandbox web application ${context.webAppUrl} to access your sandbox account
+      and use within the prescribed limits.
+    `,
+    };
+  }
+
+  export function GroupCostReportGenerated(
+    event: GroupCostReportGeneratedEvent,
+    context: EmailTemplatesContext,
+  ): SynthesizedEmail {
+    return {
+      bcc: context.destination.bcc!,
+      subject:
+        "[Informational] Innovation Sandbox: Monthly Cost Report Generated",
+      htmlBody: `
+        <p>Monthly Cost Report Successfully Generated</p>
+        <p>The monthly cost report for ${event.Detail.reportMonth} has been successfully generated and uploaded to S3 s3://${event.Detail.bucketName}/${event.Detail.fileName}.</p>
+
+      `,
+      textBody: `
+        Monthly Cost Report Successfully Generated
+
+        The monthly cost report for ${event.Detail.reportMonth} has been successfully generated and uploaded to S3 s3://${event.Detail.bucketName}/${event.Detail.fileName}.
+      `,
+    };
+  }
+
+  export function GroupCostReportGenerationFailure(
+    event: GroupCostReportGeneratedFailureEvent,
+    context: EmailTemplatesContext,
+  ): SynthesizedEmail {
+    return {
+      bcc: context.destination.bcc!,
+      subject: `Group Cost Report Generation Failed - ${event.Detail.reportMonth}`,
+      htmlBody: `
+        <p>Group Cost Report Generation Failed</p>
+
+        <p>The monthly cost report for ${event.Detail.reportMonth} failed to be generated. Please check the
+        CloudWatch logs ${event.Detail.logName} for more details and retry the cost report generation if needed.</p>
+      `,
+      textBody: `
+        Group Cost Report Generation Failed
+
+        The monthly cost report for ${event.Detail.reportMonth} failed to be generated. Please check the
+        CloudWatch logs ${event.Detail.logName} for more details and retry the cost report generation if needed.
       `,
     };
   }

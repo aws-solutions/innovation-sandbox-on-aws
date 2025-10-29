@@ -36,26 +36,26 @@ import {
 test("LeaseTemplate Schema Version", () => {
   //Changes to this test have critical upgrade path implications as detailed at the top of this file
   expect(objectHash.sha1(LeaseTemplateSchema.shape)).toMatchInlineSnapshot(
-    `"19dc6f9747e7b343e53cf1cdcaee6ffc09f04213"`,
+    `"6ab4d06254f2d6d16686616a8219a77ebe6818b9"`,
   );
-  expect(LeaseTemplateSchemaVersion).toEqual(1);
+  expect(LeaseTemplateSchemaVersion).toEqual(2);
 });
 
 test("Lease Schema Version", () => {
   //Changes to this test have critical upgrade path implications as detailed at the top of this file
   expect(objectHash.sha1(PendingLeaseSchema.shape)).toMatchInlineSnapshot(
-    `"a372699977e8d124535a2cfa5494b9d6e9017d7d"`,
+    `"4096a07dbe58dfb3e4d4e284a3d91c60cefce423"`,
   );
   expect(
     objectHash.sha1(ApprovalDeniedLeaseSchema.shape),
-  ).toMatchInlineSnapshot(`"1ad5c3388cfb4adfd2aaf90895699e99138fd111"`);
+  ).toMatchInlineSnapshot(`"c4f9ac4d3adcc7c9a38e3380372b2f1dc0829dd3"`);
   expect(objectHash.sha1(MonitoredLeaseSchema.shape)).toMatchInlineSnapshot(
-    `"a3cabc98ccef220ca9aa3afee038db34a2d1382f"`,
+    `"b90d5cc121d6ba30fab53ae3909fe54d95b0ea5e"`,
   );
   expect(objectHash.sha1(ExpiredLeaseSchema.shape)).toMatchInlineSnapshot(
-    `"651af226403ce14cbf7b488ade003fb1dc8252da"`,
+    `"200c5da2c425fc1afaf9c7367abf36b7eb5c1ebc"`,
   );
-  expect(LeaseSchemaVersion).toEqual(1);
+  expect(LeaseSchemaVersion).toEqual(2);
 });
 
 test("SandboxAccount Schema Version", () => {

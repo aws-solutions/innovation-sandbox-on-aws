@@ -47,6 +47,9 @@ describe("Settings", () => {
     expect(
       screen.getByRole("tab", { name: "Clean Up Settings" }),
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole("tab", { name: "Cost Reporting Settings" }),
+    ).toBeInTheDocument();
   });
 
   test("sets breadcrumb correctly", () => {
@@ -83,6 +86,17 @@ describe("Settings", () => {
     await user.click(screen.getByRole("tab", { name: "Clean Up Settings" }));
     expect(
       screen.getByRole("tab", { name: "Clean Up Settings", selected: true }),
+    ).toBeInTheDocument();
+
+    // Switch to Cost Reporting Settings tab
+    await user.click(
+      screen.getByRole("tab", { name: "Cost Reporting Settings" }),
+    );
+    expect(
+      screen.getByRole("tab", {
+        name: "Cost Reporting Settings",
+        selected: true,
+      }),
     ).toBeInTheDocument();
   });
 

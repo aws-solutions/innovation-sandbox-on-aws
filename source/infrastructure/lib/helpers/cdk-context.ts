@@ -46,7 +46,6 @@ export const SolutionContextSchema = z
     nukeConfigFilePath: z.string().optional(),
     logLevel: LogLevelSchema.default("INFO"),
     deploymentMode: z.string().default("prod"),
-    sendAnonymizedUsageMetrics: z.string().default("true"),
     cloudWatchLogRetentionInDays:
       CloudWatchLogRetentionInDaysSchema.default(90),
     s3LogsArchiveRetentionInDays: z.coerce.number().default(365),

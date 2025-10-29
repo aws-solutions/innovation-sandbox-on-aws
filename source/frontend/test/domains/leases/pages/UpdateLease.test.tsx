@@ -9,7 +9,10 @@ import { describe, expect, test, vi } from "vitest";
 import { showSuccessToast } from "@amzn/innovation-sandbox-frontend/components/Toast";
 import { UpdateLease } from "@amzn/innovation-sandbox-frontend/domains/leases/pages/UpdateLease";
 import { createActiveLease } from "@amzn/innovation-sandbox-frontend/mocks/factories/leaseFactory";
-import { mockLeaseApi } from "@amzn/innovation-sandbox-frontend/mocks/mockApi";
+import {
+  mockConfigurationApi,
+  mockLeaseApi,
+} from "@amzn/innovation-sandbox-frontend/mocks/mockApi";
 import { server } from "@amzn/innovation-sandbox-frontend/mocks/server";
 import { renderWithQueryClient } from "@amzn/innovation-sandbox-frontend/setupTests";
 
@@ -39,12 +42,16 @@ describe("UpdateLease", () => {
     budgetThresholds: [],
   });
 
-  const renderComponent = () =>
-    renderWithQueryClient(
+  const renderComponent = () => {
+    // Setup configuration mock for cost reporting
+    server.use(mockConfigurationApi.getHandler());
+
+    return renderWithQueryClient(
       <BrowserRouter>
         <UpdateLease />
       </BrowserRouter>,
     );
+  };
 
   test("renders lease details correctly", async () => {
     mockLeaseApi.returns(mockLease);
@@ -71,6 +78,7 @@ describe("UpdateLease", () => {
       expect(screen.getByText("Summary")).toBeInTheDocument();
       expect(screen.getByText("Budget")).toBeInTheDocument();
       expect(screen.getByText("Duration")).toBeInTheDocument();
+      expect(screen.getByText("Cost Report")).toBeInTheDocument();
     });
   });
 
@@ -95,6 +103,39 @@ describe("UpdateLease", () => {
 
     const updateButton = screen.getByRole("button", {
       name: /Update Budget Settings/i,
+    });
+    await user.click(updateButton);
+
+    await waitFor(() => {
+      expect(showSuccessToast).toHaveBeenCalledWith(
+        "Lease updated successfully.",
+      );
+    });
+  });
+
+  test("updates cost report group successfully", async () => {
+    const user = userEvent.setup();
+    mockLeaseApi.returns(mockLease);
+    server.use(mockLeaseApi.getHandler("/:id"));
+    server.use(mockLeaseApi.patchHandler("/:id"));
+
+    renderComponent();
+
+    const costReportTab = await screen.findByRole("tab", {
+      name: "Cost Report",
+    });
+    await user.click(costReportTab);
+
+    await screen.findByRole("tabpanel", { name: "Cost Report" });
+
+    const costReportInput = screen.getByLabelText("Cost Report Group");
+
+    await user.click(costReportInput);
+    await user.keyboard("{Control>}a{/Control}");
+    await user.keyboard("finance-team-a");
+
+    const updateButton = screen.getByRole("button", {
+      name: /Update Cost Report Group/i,
     });
     await user.click(updateButton);
 

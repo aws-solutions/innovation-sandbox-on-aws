@@ -16,6 +16,11 @@ import {
 } from "@amzn/innovation-sandbox-commons/lambda/environments/deployment-summary-lambda-environment.js";
 import baseMiddlewareBundle from "@amzn/innovation-sandbox-commons/lambda/middleware/base-middleware-bundle.js";
 import { ValidatedEnvironment } from "@amzn/innovation-sandbox-commons/lambda/middleware/environment-validator.js";
+import {
+  ContextWithGlobalAndReportingConfig,
+  isbConfigMiddleware,
+  isbReportingConfigMiddleware,
+} from "@amzn/innovation-sandbox-commons/lambda/middleware/isb-config-middleware.js";
 import { SubscribableLog } from "@amzn/innovation-sandbox-commons/observability/log-types.js";
 import { fromTemporaryIsbOrgManagementCredentials } from "@amzn/innovation-sandbox-commons/utils/cross-account-roles.js";
 
@@ -27,11 +32,16 @@ export const handler = baseMiddlewareBundle({
   tracer,
   environmentSchema: DeploymentSummaryLambdaEnvironmentSchema,
   moduleName: "metrics",
-}).handler(summarizeDeployment);
+})
+  .use(isbConfigMiddleware())
+  .use(isbReportingConfigMiddleware())
+  .handler(summarizeDeployment);
 
 async function summarizeDeployment(
   _event: unknown,
-  context: Context & ValidatedEnvironment<DeploymentSummaryLambdaEnvironment>,
+  context: Context &
+    ValidatedEnvironment<DeploymentSummaryLambdaEnvironment> &
+    ContextWithGlobalAndReportingConfig,
 ) {
   const leaseTemplateStore = IsbServices.leaseTemplateStore(context.env);
 
@@ -40,6 +50,26 @@ async function summarizeDeployment(
     numLeaseTemplates: (
       await collect(stream(leaseTemplateStore, leaseTemplateStore.findAll, {}))
     ).length,
+    config: {
+      numCostReportGroups: context.reportingConfig.costReportGroups.length,
+      requireMaxBudget: context.globalConfig.leases.requireMaxBudget,
+      maxBudget: context.globalConfig.leases.maxBudget,
+      requireMaxDuration: context.globalConfig.leases.requireMaxDuration,
+      maxDurationHours: context.globalConfig.leases.maxDurationHours,
+      maxLeasesPerUser: context.globalConfig.leases.maxLeasesPerUser,
+      requireCostReportGroup: context.reportingConfig.requireCostReportGroup,
+      numberOfFailedAttemptsToCancelCleanup:
+        context.globalConfig.cleanup.numberOfFailedAttemptsToCancelCleanup,
+      waitBeforeRetryFailedAttemptSeconds:
+        context.globalConfig.cleanup.waitBeforeRetryFailedAttemptSeconds,
+      numberOfSuccessfulAttemptsToFinishCleanup:
+        context.globalConfig.cleanup.numberOfSuccessfulAttemptsToFinishCleanup,
+      waitBeforeRerunSuccessfulAttemptSeconds:
+        context.globalConfig.cleanup.waitBeforeRerunSuccessfulAttemptSeconds,
+      isStableTaggingEnabled: context.env.IS_STABLE_TAGGING_ENABLED === "Yes",
+      isMultiAccountDeployment:
+        context.env.ORG_MGT_ACCOUNT_ID !== context.env.HUB_ACCOUNT_ID,
+    },
     accountPool: await summarizeAccountPool({
       orgsService: IsbServices.orgsService(
         context.env,

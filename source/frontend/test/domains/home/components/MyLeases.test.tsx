@@ -5,7 +5,7 @@ import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { BrowserRouter as Router } from "react-router-dom";
-import { describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import { MyLeases } from "@amzn/innovation-sandbox-frontend/domains/home/components/MyLeases";
 import { config } from "@amzn/innovation-sandbox-frontend/helpers/config";
@@ -20,6 +20,7 @@ import { renderWithQueryClient } from "@amzn/innovation-sandbox-frontend/setupTe
 import moment from "moment";
 
 const mockNavigate = vi.fn();
+
 vi.mock("react-router-dom", async () => {
   const actual = await vi.importActual("react-router-dom");
   return {
@@ -33,6 +34,19 @@ vi.mock("@amzn/innovation-sandbox-frontend/helpers/AuthService", () => ({
     getCurrentUser: vi.fn().mockResolvedValue({ email: "test@example.com" }),
     getAccessToken: vi.fn().mockReturnValue("mocked-access-token"),
   },
+}));
+
+// Mock the useUser hook to provide immediate user data
+vi.mock("@amzn/innovation-sandbox-frontend/hooks/useUser", () => ({
+  useUser: () => ({
+    user: { email: "test@example.com" },
+    isLoading: false,
+    error: null,
+    isAdmin: false,
+    isManager: false,
+    isUser: true,
+    roles: ["User"],
+  }),
 }));
 
 // Mock the useGetConfigurations hook
@@ -49,6 +63,10 @@ vi.mock("@amzn/innovation-sandbox-frontend/domains/settings/hooks", () => ({
 }));
 
 describe("MyLeases", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   const renderComponent = () =>
     renderWithQueryClient(
       <Router>
@@ -57,6 +75,17 @@ describe("MyLeases", () => {
     );
 
   test("renders loading state", async () => {
+    // Set up a delayed response to catch the loading state
+    server.use(
+      http.get(`${config.ApiUrl}/leases`, async () => {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        return HttpResponse.json({
+          status: "success",
+          data: { result: [], nextPageIdentifier: null },
+        });
+      }),
+    );
+
     renderComponent();
     expect(screen.getByText("Loading your leases...")).toBeInTheDocument();
   });
@@ -130,7 +159,7 @@ describe("MyLeases", () => {
       expect(
         screen.getByText("You currently don't have any leases."),
       ).toBeInTheDocument();
-      expect(screen.getByText("Request a new lease")).toBeInTheDocument();
+      expect(screen.getByText("Request lease")).toBeInTheDocument();
     });
   });
 
@@ -177,17 +206,22 @@ describe("MyLeases", () => {
     });
   });
 
-  test("navigates to request page when 'Request a new lease' is clicked", async () => {
+  test("navigates to request page when 'Request lease' is clicked", async () => {
     mockLeaseApi.returns([]);
     server.use(mockLeaseApi.getHandler());
 
     renderComponent();
 
     await waitFor(() => {
-      expect(screen.getByText("Request a new lease")).toBeInTheDocument();
+      expect(
+        screen.getByText("You currently don't have any leases."),
+      ).toBeInTheDocument();
     });
 
-    await userEvent.click(screen.getByText("Request a new lease"));
+    const requestButton = screen.getByRole("button", { name: "Request lease" });
+    expect(requestButton).toBeInTheDocument();
+
+    await userEvent.click(requestButton);
 
     expect(mockNavigate).toHaveBeenCalledWith("/request");
   });

@@ -30,7 +30,7 @@ describe("LeaseSettings", () => {
       const maxBudgetLabel = screen.getByText("Max Budget");
       expect(maxBudgetLabel).toBeInTheDocument();
       expect(
-        within(maxBudgetLabel.closest("div")!).getByText(
+        within(maxBudgetLabel.closest("dt")!.closest("div")!).getByText(
           `$${mockConfiguration.leases.maxBudget} USD`,
         ),
       ).toBeInTheDocument();
@@ -38,7 +38,7 @@ describe("LeaseSettings", () => {
       const requireMaxBudgetLabel = screen.getByText("Require Max Budget");
       expect(requireMaxBudgetLabel).toBeInTheDocument();
       expect(
-        within(requireMaxBudgetLabel.closest("div")!).getByText(
+        within(requireMaxBudgetLabel.closest("dt")!.closest("div")!).getByText(
           mockConfiguration.leases.requireMaxBudget.toString(),
         ),
       ).toBeInTheDocument();
@@ -47,7 +47,7 @@ describe("LeaseSettings", () => {
       const leaseDurationLabel = screen.getByText("Max Lease Duration");
       expect(leaseDurationLabel).toBeInTheDocument();
       expect(
-        within(leaseDurationLabel.closest("div")!).getByText(
+        within(leaseDurationLabel.closest("dt")!.closest("div")!).getByText(
           `${mockConfiguration.leases.maxDurationHours} hours`,
         ),
       ).toBeInTheDocument();
@@ -57,16 +57,16 @@ describe("LeaseSettings", () => {
       );
       expect(requireMaxDurationLabel).toBeInTheDocument();
       expect(
-        within(requireMaxDurationLabel.closest("div")!).getByText(
-          mockConfiguration.leases.requireMaxDuration.toString(),
-        ),
+        within(
+          requireMaxDurationLabel.closest("dt")!.closest("div")!,
+        ).getByText(mockConfiguration.leases.requireMaxDuration.toString()),
       ).toBeInTheDocument();
 
       // User limits
       const maxLeasesPerUserLabel = screen.getByText("Max leases per user");
       expect(maxLeasesPerUserLabel).toBeInTheDocument();
       expect(
-        within(maxLeasesPerUserLabel.closest("div")!).getByText(
+        within(maxLeasesPerUserLabel.closest("dt")!.closest("div")!).getByText(
           `${mockConfiguration.leases.maxLeasesPerUser}`,
         ),
       ).toBeInTheDocument();

@@ -38,9 +38,19 @@ async function eventHandler(
   event: EventBridgeEvent<string, unknown>,
   context: IsbLambdaContext<EmailNotificationEnvironment> & ContextWithConfig,
 ) {
+  // Early exit if email notifications are not configured
+  const {
+    notification: { emailFrom },
+    auth: { webAppUrl },
+  } = context.globalConfig;
+  if (!emailFrom || emailFrom.trim() === "") {
+    logger.warn("Email notifications are disabled - emailFrom not configured");
+    return;
+  }
+
   const emailService = IsbServices.emailService(context.env, {
-    fromAddress: context.globalConfig.notification.emailFrom,
-    webAppUrl: context.globalConfig.auth.webAppUrl,
+    fromAddress: emailFrom,
+    webAppUrl,
     logger,
   });
 

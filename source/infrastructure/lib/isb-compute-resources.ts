@@ -1,6 +1,6 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
-import { Aws, CfnCondition, CfnOutput } from "aws-cdk-lib";
+import { Aws, CfnOutput } from "aws-cdk-lib";
 import { ServicePrincipal } from "aws-cdk-lib/aws-iam";
 import { LogGroup } from "aws-cdk-lib/aws-logs";
 import { Construct } from "constructs";
@@ -18,14 +18,16 @@ import { IsbLogGroups } from "@amzn/innovation-sandbox-infrastructure/components
 import { LogInsightsQueries } from "@amzn/innovation-sandbox-infrastructure/components/observability/log-insights-queries";
 import { getContextFromMapping } from "@amzn/innovation-sandbox-infrastructure/helpers/cdk-context";
 import { addCfnGuardSuppression } from "@amzn/innovation-sandbox-infrastructure/helpers/cfn-guard";
+import { YesNoParameter } from "@amzn/innovation-sandbox-infrastructure/helpers/cfn-utils";
 import { IntermediateRole } from "@amzn/innovation-sandbox-infrastructure/helpers/isb-roles";
+import { GroupCostReportingLambda } from "./components/observability/group-cost-reporting-lambda";
 
 export interface IsbComputeResourcesProps {
   namespace: string;
   orgMgtAccountId: string;
   idcAccountId: string;
   allowListedCidr: string[];
-  useStableTaggingCondition: CfnCondition;
+  useStableTaggingParameter: YesNoParameter;
 }
 
 export class IsbComputeResources {
@@ -79,7 +81,7 @@ export class IsbComputeResources {
       namespace: props.namespace,
       orgMgtAccountId: props.orgMgtAccountId,
       idcAccountId: props.idcAccountId,
-      useStableTaggingCondition: props.useStableTaggingCondition,
+      useStableTaggingCondition: props.useStableTaggingParameter.getCondition(),
     });
 
     const restApi = new RestApi(scope, "IsbRestApi", {
@@ -106,13 +108,21 @@ export class IsbComputeResources {
       solutionVersion: getContextFromMapping(scope, "version"),
       deploymentUUID: deploymentUUID.deploymentUUID,
       namespace: props.namespace,
+      hubAccountId: props.orgMgtAccountId,
       orgManagementAccountId: props.orgMgtAccountId,
+      isStableTaggingEnabled: props.useStableTaggingParameter.valueAsString,
     });
 
     new CostReportingLambda(scope, "CostReportingLambda", {
       namespace: props.namespace,
       orgMgtAccountId: props.orgMgtAccountId,
       idcAccountId: props.idcAccountId,
+    });
+
+    new GroupCostReportingLambda(scope, "GroupCostReportingLambda", {
+      namespace: props.namespace,
+      orgMgtAccountId: props.orgMgtAccountId,
+      isbEventBus: isbInternalCore.eventBus,
     });
 
     new LogArchiving(scope, "LogArchiving", {

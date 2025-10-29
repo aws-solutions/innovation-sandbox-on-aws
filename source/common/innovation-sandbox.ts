@@ -9,6 +9,7 @@ import { LeaseStore } from "@amzn/innovation-sandbox-commons/data/lease/lease-st
 import {
   ExpiredLeaseStatus,
   isActiveLease,
+  isFrozenLease,
   isMonitoredLease,
   Lease,
   LeaseKeySchema,
@@ -39,6 +40,7 @@ import {
   getLeaseTerminatedReason,
   LeaseTerminatedEvent,
 } from "@amzn/innovation-sandbox-commons/events/lease-terminated-event.js";
+import { LeaseUnfrozenEvent } from "@amzn/innovation-sandbox-commons/events/lease-unfrozen-event.js";
 import { IdcService } from "@amzn/innovation-sandbox-commons/isb-services/idc-service.js";
 import { SandboxOuService } from "@amzn/innovation-sandbox-commons/isb-services/sandbox-ou-service.js";
 import { SubscribableLog } from "@amzn/innovation-sandbox-commons/observability/log-types.js";
@@ -62,7 +64,7 @@ import {
 } from "@amzn/innovation-sandbox-commons/utils/time-utils.js";
 import { Transaction } from "@amzn/innovation-sandbox-commons/utils/transactions.js";
 import { Tracer } from "@aws-lambda-powertools/tracer";
-import crypto from "crypto";
+import { randomUUID } from "crypto";
 
 export class InnovationSandboxError extends Error {}
 export class NoAccountsAvailableError extends InnovationSandboxError {}
@@ -70,6 +72,7 @@ export class MaxNumberOfLeasesExceededError extends InnovationSandboxError {}
 export class AccountNotInQuarantineError extends InnovationSandboxError {}
 export class AccountInCleanUpError extends InnovationSandboxError {}
 export class AccountNotInActiveError extends InnovationSandboxError {}
+export class AccountNotInFrozenError extends InnovationSandboxError {}
 export class CouldNotFindAccountError extends InnovationSandboxError {}
 export class CouldNotRetrieveUserError extends InnovationSandboxError {}
 
@@ -146,7 +149,8 @@ export class InnovationSandbox {
     props: {
       leaseTemplate: LeaseTemplate;
       comments?: string;
-      forUser: IsbUser;
+      targetUser: IsbUser;
+      createdBy?: string;
     },
     context: IsbContext<{
       globalConfig: GlobalConfig;
@@ -157,7 +161,7 @@ export class InnovationSandbox {
       isbEventBridgeClient: IsbEventBridgeClient;
     }>,
   ) {
-    const { leaseTemplate, comments, forUser } = props;
+    const { leaseTemplate, comments, targetUser, createdBy } = props;
     const { logger, tracer, leaseStore, isbEventBridgeClient, globalConfig } =
       context;
 
@@ -169,7 +173,7 @@ export class InnovationSandbox {
     const numOfActiveLeases = (
       await collect(
         stream(leaseStore, leaseStore.findByUserEmail, {
-          userEmail: forUser.email,
+          userEmail: targetUser.email,
         }),
       )
     ).filter((lease) =>
@@ -185,23 +189,26 @@ export class InnovationSandbox {
     }
 
     let newLease: Lease = await leaseStore.create({
-      userEmail: forUser.email,
-      comments,
+      userEmail: targetUser.email,
+      uuid: randomUUID(),
+      status: "PendingApproval",
       originalLeaseTemplateUuid: leaseTemplate.uuid,
       originalLeaseTemplateName: leaseTemplate.name,
-      leaseDurationInHours: leaseTemplate.leaseDurationInHours,
-      uuid: crypto.randomUUID(),
-      approvedBy: null,
-      awsAccountId: null,
-      totalCostAccrued: 0,
-      status: "PendingApproval",
       maxSpend: leaseTemplate.maxSpend,
       budgetThresholds: leaseTemplate.budgetThresholds,
       durationThresholds: leaseTemplate.durationThresholds,
+      leaseDurationInHours: leaseTemplate.leaseDurationInHours,
+      comments,
+      createdBy: createdBy || targetUser.email,
+      totalCostAccrued: 0,
+      approvedBy: null,
+      awsAccountId: null,
     });
 
-    // Approve Lease
-    if (!leaseTemplate.requiresApproval) {
+    // Determine if lease should be auto-approved
+    const isLeaseAssignment = createdBy !== undefined;
+
+    if (!leaseTemplate.requiresApproval || isLeaseAssignment) {
       try {
         newLease = (
           await InnovationSandbox.approveLease(
@@ -231,8 +238,11 @@ export class InnovationSandbox {
       );
     }
 
+    const actionType = isLeaseAssignment ? "assigned" : "requested";
+    const actionBy = isLeaseAssignment ? `by ${createdBy}` : "";
+
     logger.info(
-      `Lease of type (${leaseTemplate.name}) (${leaseTemplate.uuid}) requested for (${forUser.email})`,
+      `Lease of type (${leaseTemplate.name}) (${leaseTemplate.uuid}) ${actionType} for (${targetUser.email}) ${actionBy}`,
       {
         ...searchableLeaseProperties(newLease),
       },
@@ -426,6 +436,88 @@ export class InnovationSandbox {
   }
 
   @logErrors
+  public static async unfreezeLease(
+    props: {
+      lease: Lease;
+    },
+    context: IsbContext<{
+      leaseStore: LeaseStore;
+      sandboxAccountStore: SandboxAccountStore;
+      idcService: IdcService;
+      orgsService: SandboxOuService;
+      eventBridgeClient: IsbEventBridgeClient;
+    }>,
+  ): Promise<PutResult<Lease>> {
+    const { lease } = props;
+    const {
+      logger,
+      tracer,
+      leaseStore,
+      sandboxAccountStore,
+      idcService,
+      orgsService,
+      eventBridgeClient,
+    } = context;
+
+    addCorrelationContext(logger, searchableLeaseProperties(lease));
+
+    if (!isFrozenLease(lease)) {
+      throw new AccountNotInFrozenError("Only frozen leases can be unfrozen");
+    }
+
+    const accountResponse = await sandboxAccountStore.get(lease.awsAccountId);
+    const account = accountResponse.result;
+    if (!account || accountResponse.error) {
+      logger.error(
+        `Error retrieving account ${lease.awsAccountId}: ${accountResponse.error}`,
+      );
+      throw new CouldNotFindAccountError(
+        "Unable to retrieve SandboxAccount information.",
+      );
+    }
+
+    const user = await idcService.getUserFromEmail(lease.userEmail);
+    if (!user) {
+      throw new CouldNotRetrieveUserError(
+        "Unable to retrieve user information.",
+      );
+    }
+    const transactionResult = await new Transaction(
+      leaseStore.transactionalUpdate({
+        ...lease,
+        status: "Active",
+      }),
+      orgsService.transactionalMoveAccount(account, "Frozen", "Active"),
+      idcService.transactionalGrantUserAccess(account.awsAccountId, user),
+    ).complete();
+
+    logger.info(
+      `Lease of type (${lease.originalLeaseTemplateName}) for (${user.email}) unfrozen. Account (${account.awsAccountId}) Active`,
+      {
+        ...searchableAccountProperties(account),
+        ...searchableLeaseProperties(lease),
+        logDetailType: "LeaseUnfrozen",
+      } satisfies SubscribableLog,
+    );
+
+    await eventBridgeClient.sendIsbEvent(
+      tracer,
+      new LeaseUnfrozenEvent({
+        leaseId: {
+          userEmail: lease.userEmail,
+          uuid: lease.uuid,
+        },
+        accountId: account.awsAccountId,
+        maxBudget: lease.maxSpend,
+        leaseDurationInHours: lease.leaseDurationInHours,
+        reason: "Manually unfrozen",
+      }),
+    );
+
+    return transactionResult;
+  }
+
+  @logErrors
   public static async retryCleanup(
     props: {
       sandboxAccount: SandboxAccount;
@@ -472,7 +564,7 @@ export class InnovationSandbox {
   public static async approveLease(
     props: {
       lease: Lease;
-      approver: IsbUser | "AUTO_APPROVED";
+      approver: string;
     },
     context: IsbContext<{
       leaseStore: LeaseStore;
@@ -507,8 +599,7 @@ export class InnovationSandbox {
 
     const approvedLease: MonitoredLease = {
       ...lease,
-      approvedBy:
-        approver == "AUTO_APPROVED" ? "AUTO_APPROVED" : approver.email,
+      approvedBy: approver,
       awsAccountId: freeAccount.awsAccountId,
       status: "Active",
       startDate: nowAsIsoDatetimeString(),
@@ -537,6 +628,11 @@ export class InnovationSandbox {
         maxBudget: approvedLease.maxSpend,
         maxDurationHours: approvedLease.leaseDurationInHours,
         autoApproved: approver == "AUTO_APPROVED",
+        creationMethod:
+          !approvedLease.createdBy ||
+          approvedLease.createdBy === approvedLease.userEmail
+            ? "REQUESTED"
+            : "ASSIGNED",
       } satisfies SubscribableLog,
     );
 
@@ -784,25 +880,74 @@ export class InnovationSandbox {
       sandboxAccountStore: SandboxAccountStore;
     }>,
   ): Promise<SandboxAccount> {
-    const { sandboxAccountStore } = context;
+    const { sandboxAccountStore, logger } = context;
 
     const availableAccounts = await collect(
       stream(sandboxAccountStore, sandboxAccountStore.findByStatus, {
         status: "Available",
-        pageSize: 10,
       }),
-      { maxCount: 10 },
     );
 
-    if (availableAccounts.length > 0) {
-      return availableAccounts[
-        Math.floor(Math.random() * availableAccounts.length) // NOSONAR typescript:S2245 - pseudorandom number generator is used to introduce some randomization to the account claiming process
-      ]!;
-    } else {
+    if (availableAccounts.length === 0) {
       throw new NoAccountsAvailableError(
         "No new sandbox accounts are currently available.",
       );
     }
+
+    // Implement soft cooldown: separate accounts by 24-hour usage threshold
+    const twentyFourHoursAgo = now().minus({ hours: 24 });
+    const preferredAccounts: SandboxAccount[] = [];
+    const fallbackAccounts: SandboxAccount[] = [];
+
+    for (const account of availableAccounts) {
+      const lastCleanupTime =
+        account.cleanupExecutionContext?.stateMachineExecutionStartTime;
+
+      if (!lastCleanupTime) {
+        // No timestamp - preferred (never used or no recent cleanup history)
+        preferredAccounts.push(account);
+      } else if (parseDatetime(lastCleanupTime) <= twentyFourHoursAgo) {
+        // Timestamp > 24 hours old - preferred
+        preferredAccounts.push(account);
+      } else {
+        // Timestamp < 24 hours old - fallback only
+        fallbackAccounts.push(account);
+      }
+    }
+
+    let selectedAccount: SandboxAccount;
+
+    if (preferredAccounts.length > 0) {
+      // Randomly select from preferred accounts (no timestamp or > 24 hours old)
+      selectedAccount =
+        preferredAccounts[
+          Math.floor(Math.random() * preferredAccounts.length) // NOSONAR typescript:S2245 - pseudorandom number generator is used to introduce randomization to the account selection process
+        ]!;
+    } else {
+      // Fallback: randomly select from recently used accounts (< 24 hours old)
+      selectedAccount =
+        fallbackAccounts[
+          Math.floor(Math.random() * fallbackAccounts.length) // NOSONAR typescript:S2245 - pseudorandom number generator is used to introduce randomization to the account selection process
+        ]!;
+
+      const lastCleanupTime =
+        selectedAccount.cleanupExecutionContext
+          ?.stateMachineExecutionStartTime!;
+      const lastLeaseDate = parseDatetime(lastCleanupTime);
+
+      logger.warn(
+        `The account acquired for the lease has been used within the last 24 hours and may result in inaccurate cost data`,
+        {
+          ...searchableAccountProperties(selectedAccount),
+          lastCleanupTime,
+          hoursSinceLastUse: now().diff(lastLeaseDate, "hours").hours,
+          totalAvailableAccounts: availableAccounts.length,
+          preferredAccountsAvailable: preferredAccounts.length,
+        },
+      );
+    }
+
+    return selectedAccount;
   }
 }
 

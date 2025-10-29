@@ -11,7 +11,9 @@ export default defineConfig({
     globals: true,
     environment: "jsdom",
     setupFiles: ["./src/setupTests.tsx"],
-    include: ["test/**/*.test.tsx"],
+    include: ["test/**/*.test.{ts,tsx}"],
+    testTimeout: 10_000,
+    hookTimeout: 10_000,
     coverage: {
       reporter: ["lcov", "text"],
       include: ["src/domains/**/*.{ts,tsx}"],

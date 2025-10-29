@@ -8,8 +8,8 @@ import { InfoLink } from "@amzn/innovation-sandbox-frontend/components/InfoLink"
 import { Markdown } from "@amzn/innovation-sandbox-frontend/components/Markdown";
 import { LeaseTemplatesTable } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/components/LeaseTemplatesTable";
 import { useBreadcrumb } from "@amzn/innovation-sandbox-frontend/hooks/useBreadcrumb";
-import { useInit } from "@amzn/innovation-sandbox-frontend/hooks/useInit";
 import { useAppLayoutContext } from "@aws-northstar/ui/components/AppLayout";
+import { useEffect } from "react";
 
 export const ListLeaseTemplates = () => {
   const navigate = useNavigate();
@@ -17,13 +17,13 @@ export const ListLeaseTemplates = () => {
   const { setTools } = useAppLayoutContext();
 
   // set page breadcrumb on page init
-  useInit(() => {
+  useEffect(() => {
     setBreadcrumb([
       { text: "Home", href: "/" },
       { text: "Lease Templates", href: "/lease_templates" },
     ]);
     setTools(<Markdown file="lease-templates" />);
-  });
+  }, []);
 
   // navigate to new lease template page
   const onCreateClick = () => {

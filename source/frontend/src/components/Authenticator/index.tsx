@@ -1,33 +1,26 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import React, { useState } from "react";
+import React, { useEffect } from "react";
 
-import { IsbUser } from "@amzn/innovation-sandbox-commons/types/isb-types";
 import Animate from "@amzn/innovation-sandbox-frontend/components/Animate";
 import { FullPageLoader } from "@amzn/innovation-sandbox-frontend/components/FullPageLoader";
 import { AuthService } from "@amzn/innovation-sandbox-frontend/helpers/AuthService";
-import { useInit } from "@amzn/innovation-sandbox-frontend/hooks/useInit";
+import { useUser } from "@amzn/innovation-sandbox-frontend/hooks/useUser";
 
 interface AuthenticatorProps {
   children: React.ReactNode;
 }
 
 export const Authenticator = ({ children }: AuthenticatorProps) => {
-  const [isLoading, setLoading] = useState(true);
-  const [currentUser, setCurrentUser] = useState<IsbUser | undefined>();
+  const { user: currentUser, isLoading } = useUser();
 
-  useInit(async () => {
-    const user = await AuthService.getCurrentUser();
-
-    if (user) {
+  useEffect(() => {
+    if (currentUser) {
       // Remove the token from the URL without reloading the page
       window.history.replaceState({}, document.title, window.location.pathname);
     }
-
-    setCurrentUser(user);
-    setLoading(false);
-  });
+  }, [currentUser]);
 
   if (isLoading) {
     return <FullPageLoader label="Authenticating..." />;

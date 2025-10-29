@@ -12,9 +12,11 @@ import {
 import { LeasePanel } from "@amzn/innovation-sandbox-frontend/domains/home/components/LeasePanel";
 import {
   createActiveLease,
+  createExpiredLease,
   createPendingLease,
 } from "@amzn/innovation-sandbox-frontend/mocks/factories/leaseFactory";
 import { renderWithQueryClient } from "@amzn/innovation-sandbox-frontend/setupTests";
+import moment from "moment";
 
 // Mock the AccountLoginLink component
 vi.mock(
@@ -126,8 +128,7 @@ describe("LeasePanel", () => {
   });
 
   test("handles lease without expirationDate", () => {
-    const leaseWithoutExpiry = createActiveLease({
-      expirationDate: undefined,
+    const leaseWithoutExpiry = createPendingLease({
       leaseDurationInHours: 24,
     });
     renderComponent(leaseWithoutExpiry);
@@ -145,4 +146,26 @@ describe("LeasePanel", () => {
 
     expect(screen.getByText("No expiry")).toBeInTheDocument();
   });
+
+  test.each([
+    { amount: 1, unit: "hours", expected: "an hour ago" },
+    { amount: 3, unit: "hours", expected: "3 hours ago" },
+    { amount: 1, unit: "days", expected: "a day ago" },
+    { amount: 3, unit: "days", expected: "3 days ago" },
+    { amount: 1, unit: "months", expected: "a month ago" },
+  ])(
+    "displays proper expiry date for expired lease - $expected",
+    ({ amount, unit, expected }) => {
+      const expirationDate = moment()
+        .subtract(amount, unit as any)
+        .toISOString();
+      const expiredLease = createExpiredLease({
+        endDate: expirationDate,
+      });
+
+      renderComponent(expiredLease);
+
+      expect(screen.getByText(expected)).toBeInTheDocument();
+    },
+  );
 });

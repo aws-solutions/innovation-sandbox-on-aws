@@ -26,6 +26,10 @@ import {
 } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/components/BudgetForm";
 import { useGetConfigurations } from "@amzn/innovation-sandbox-frontend/domains/settings/hooks";
 import { useBreadcrumb } from "@amzn/innovation-sandbox-frontend/hooks/useBreadcrumb";
+import {
+  CostReportForm,
+  CostReportFormData,
+} from "../../leaseTemplates/components/CostReportForm";
 
 export const UpdateLease = () => {
   const { leaseId } = useParams();
@@ -112,6 +116,18 @@ export const UpdateLease = () => {
     showSuccessToast("Lease updated successfully.");
   };
 
+  const onUpdateCostReport = async (data: any) => {
+    const { costReportGroup } = data as CostReportFormData;
+
+    const leasePatchRequest: LeasePatchRequest = {
+      leaseId: lease.leaseId,
+      costReportGroup: costReportGroup ?? null,
+    };
+
+    await updateLease(leasePatchRequest);
+    showSuccessToast("Lease updated successfully.");
+  };
+
   const onCancel = () => {
     navigate("/leases");
   };
@@ -154,6 +170,20 @@ export const UpdateLease = () => {
                 onSubmit={onUpdateDuration}
                 onCancel={onCancel}
                 isUpdating={isUpdating}
+              />
+            ),
+          },
+          {
+            label: "Cost Report",
+            id: "costReport",
+            content: (
+              <CostReportForm
+                costReportGroup={lease.costReportGroup}
+                onSubmit={onUpdateCostReport}
+                onCancel={onCancel}
+                isUpdating={isUpdating}
+                costReportGroups={config?.costReportGroups}
+                requireCostReportGroup={config?.requireCostReportGroup}
               />
             ),
           },

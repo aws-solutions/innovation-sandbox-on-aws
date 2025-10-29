@@ -31,6 +31,7 @@ export class LeasesApi {
       configApplicationId,
       configEnvironmentId,
       globalConfigConfigurationProfileId,
+      reportingConfigConfigurationProfileId,
       leaseTemplateTable,
       leaseTable,
       accountTable,
@@ -61,8 +62,9 @@ export class LeasesApi {
         environment: {
           APP_CONFIG_APPLICATION_ID: configApplicationId,
           APP_CONFIG_PROFILE_ID: globalConfigConfigurationProfileId,
+          REPORTING_CONFIG_PROFILE_ID: reportingConfigConfigurationProfileId,
           APP_CONFIG_ENVIRONMENT_ID: configEnvironmentId,
-          AWS_APPCONFIG_EXTENSION_PREFETCH_LIST: `/applications/${configApplicationId}/environments/${configEnvironmentId}/configurations/${globalConfigConfigurationProfileId}`,
+          AWS_APPCONFIG_EXTENSION_PREFETCH_LIST: `/applications/${configApplicationId}/environments/${configEnvironmentId}/configurations/${globalConfigConfigurationProfileId},/applications/${configApplicationId}/environments/${configEnvironmentId}/configurations/${reportingConfigConfigurationProfileId},`,
           ISB_NAMESPACE: props.namespace,
           ACCOUNT_TABLE_NAME: accountTable,
           LEASE_TABLE_NAME: leaseTable,
@@ -103,6 +105,11 @@ export class LeasesApi {
       leasesLambdaFunction,
       globalConfigConfigurationProfileId,
     );
+    grantIsbAppConfigRead(
+      scope,
+      leasesLambdaFunction,
+      reportingConfigConfigurationProfileId,
+    );
     addAppConfigExtensionLayer(leasesLambdaFunction);
 
     props.isbEventBus.grantPutEventsTo(leasesLambdaFunction.lambdaFunction);
@@ -132,6 +139,9 @@ export class LeasesApi {
 
     const leaseFreezeResource = leaseIdResource.addResource("freeze");
     leaseFreezeResource.addMethod("POST");
+
+    const leaseUnfreezeResource = leaseIdResource.addResource("unfreeze");
+    leaseUnfreezeResource.addMethod("POST");
 
     const leaseTerminateResource = leaseIdResource.addResource("terminate");
     leaseTerminateResource.addMethod("POST");

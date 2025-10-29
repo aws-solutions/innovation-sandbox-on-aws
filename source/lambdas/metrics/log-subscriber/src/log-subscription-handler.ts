@@ -98,17 +98,18 @@ function extractAwsMetric(
     case "LeaseApproved":
       return {
         event_name: "LeaseApproved",
-        context_version: 1,
+        context_version: 2,
         context: {
           maxBudget: log.maxBudget,
           maxDurationHours: log.maxDurationHours,
           autoApproved: log.autoApproved,
+          creationMethod: log.creationMethod,
         },
       };
     case "LeaseTerminated":
       return {
         event_name: "LeaseTerminated",
-        context_version: 1,
+        context_version: 2,
         context: {
           maxBudget: log.maxBudget,
           actualSpend: log.actualSpend,
@@ -117,34 +118,62 @@ function extractAwsMetric(
           reasonForTermination: log.reasonForTermination,
         },
       };
+    case "LeaseUnfrozen":
+      return {
+        event_name: "LeaseUnfrozen",
+        context_version: 1,
+        context: {
+          leaseId: log.leaseId,
+        },
+      };
     case "DeploymentSummary":
       return {
         event_name: "DeploymentSummary",
-        context_version: 1,
+        context_version: 2,
         context: {
           numLeaseTemplates: log.numLeaseTemplates,
+          // Account pool metrics
           activeAccounts: log.accountPool.active,
           availableAccounts: log.accountPool.available,
           cleanupAccounts: log.accountPool.cleanup,
           quarantineAccounts: log.accountPool.quarantine,
           frozenAccounts: log.accountPool.frozen,
+          // Configuration metrics
+          numCostReportGroups: log.config.numCostReportGroups,
+          requireMaxBudget: log.config.requireMaxBudget,
+          maxBudget: log.config.maxBudget,
+          requireMaxDuration: log.config.requireMaxDuration,
+          maxDurationHours: log.config.maxDurationHours,
+          maxLeasesPerUser: log.config.maxLeasesPerUser,
+          requireCostReportGroup: log.config.requireCostReportGroup,
+          numberOfFailedAttemptsToCancelCleanup:
+            log.config.numberOfFailedAttemptsToCancelCleanup,
+          waitBeforeRetryFailedAttemptSeconds:
+            log.config.waitBeforeRetryFailedAttemptSeconds,
+          numberOfSuccessfulAttemptsToFinishCleanup:
+            log.config.numberOfSuccessfulAttemptsToFinishCleanup,
+          waitBeforeRerunSuccessfulAttemptSeconds:
+            log.config.waitBeforeRerunSuccessfulAttemptSeconds,
+          isStableTaggingEnabled: log.config.isStableTaggingEnabled,
+          isMultiAccountDeployment: log.config.isMultiAccountDeployment,
         },
       };
     case "CostReporting":
       return {
         event_name: "CostReporting",
-        context_version: 1,
+        context_version: 2,
         context: {
           startDate: log.startDate,
           endDate: log.endDate,
           sandboxAccountsCost: log.sandboxAccountsCost,
           solutionOperatingCost: log.solutionOperatingCost,
+          numAccounts: log.numAccounts,
         },
       };
     case "AccountCleanupSuccess":
       return {
         event_name: "AccountCleanupSuccess",
-        context_version: 1,
+        context_version: 2,
         context: {
           durationMinutes: log.durationMinutes,
         },
@@ -152,7 +181,7 @@ function extractAwsMetric(
     case "AccountCleanupFailure":
       return {
         event_name: "AccountCleanupFailure",
-        context_version: 1,
+        context_version: 2,
         context: {
           durationMinutes: log.durationMinutes,
         },

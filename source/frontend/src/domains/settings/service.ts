@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { GlobalConfigForUI } from "@amzn/innovation-sandbox-commons/data/global-config/global-config.js";
+import { ReportingConfig } from "@amzn/innovation-sandbox-commons/data/reporting-config/reporting-config.js";
 import {
   ApiProxy,
   IApiProxy,
@@ -14,7 +15,7 @@ export class SettingService {
     this.api = apiProxy ?? new ApiProxy();
   }
 
-  async getConfigurations(): Promise<GlobalConfigForUI> {
-    return this.api.get<GlobalConfigForUI>("/configurations");
+  async getConfigurations(): Promise<GlobalConfigForUI & ReportingConfig> {
+    return this.api.get<GlobalConfigForUI & ReportingConfig>("/configurations");
   }
 }

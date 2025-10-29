@@ -9,10 +9,10 @@ import type {
   CloudFormationCustomResourceUpdateEvent,
   Context,
 } from "aws-lambda";
-import { v4 as uuidv4 } from "uuid";
 
 import { DeploymentUuidLambdaEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/deployment-uuid-lambda-environment.js";
 import baseMiddlewareBundle from "@amzn/innovation-sandbox-commons/lambda/middleware/base-middleware-bundle.js";
+import { randomUUID } from "crypto";
 
 const tracer = new Tracer();
 const logger = new Logger();
@@ -33,7 +33,7 @@ const lambdaHandler = async (
 };
 
 const onCreate = (): CdkCustomResourceResponse => {
-  const uuid = uuidv4();
+  const uuid = randomUUID();
   return {
     Data: {
       DeploymentUUID: uuid,

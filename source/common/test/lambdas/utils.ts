@@ -3,6 +3,7 @@
 import { vi } from "vitest";
 
 import { GlobalConfig } from "@amzn/innovation-sandbox-commons/data/global-config/global-config.js";
+import { ReportingConfig } from "@amzn/innovation-sandbox-commons/data/reporting-config/reporting-config.js";
 import yaml from "js-yaml";
 
 export const bulkStubEnv = (envVars: Record<string, string>) => {
@@ -11,12 +12,23 @@ export const bulkStubEnv = (envVars: Record<string, string>) => {
   }
 };
 
-export const mockAppConfigMiddleware = (globalConfig: GlobalConfig) => {
-  global.fetch = vi.fn().mockImplementation(() => {
-    return Promise.resolve({
-      ok: true,
-      status: 200,
-      text: () => Promise.resolve(yaml.dump({ ...globalConfig })),
-    } as unknown as Response);
+export const mockAppConfigMiddleware = (
+  globalConfig: GlobalConfig,
+  reportingConfig?: ReportingConfig,
+) => {
+  global.fetch = vi.fn().mockImplementation((url: string) => {
+    if (url.includes(process.env.REPORTING_CONFIG_PROFILE_ID || "Reporting")) {
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        text: () => Promise.resolve(yaml.dump({ ...reportingConfig })),
+      } as unknown as Response);
+    } else {
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        text: () => Promise.resolve(yaml.dump({ ...globalConfig })),
+      } as unknown as Response);
+    }
   });
 };

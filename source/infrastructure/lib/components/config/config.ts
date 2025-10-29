@@ -23,6 +23,7 @@ export class Config extends Construct {
   readonly deploymentStrategy: DeploymentStrategy;
   readonly globalConfigHostedConfiguration: HostedConfiguration;
   readonly nukeConfigHostedConfiguration: HostedConfiguration;
+  readonly reportingConfigHostedConfiguration: HostedConfiguration;
   constructor(scope: Construct, id: string, props: ConfigProps) {
     super(scope, id);
 
@@ -73,6 +74,21 @@ export class Config extends Construct {
         content: ConfigurationContent.fromFile(
           getSolutionContext(scope.node).nukeConfigFilePath ||
             path.join(__dirname, "nuke-config.yaml"),
+          "application/x-yaml",
+        ),
+      },
+    );
+
+    this.reportingConfigHostedConfiguration = new HostedConfiguration(
+      this,
+      "ReportingConfigHostedConfiguration",
+      {
+        description: `ReportingConfig AppConfig HostedConfiguration for Innovation Sandbox on AWS - ${props.namespace}`,
+        application: this.application,
+        deployTo: [this.environment],
+        deploymentStrategy: this.deploymentStrategy,
+        content: ConfigurationContent.fromFile(
+          path.join(__dirname, "reporting-config.yaml"),
           "application/x-yaml",
         ),
       },

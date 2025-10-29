@@ -3,6 +3,8 @@
 
 import { AccountCleanupFailureEventSchema } from "@amzn/innovation-sandbox-commons/events/account-cleanup-failure-event.js";
 import { AccountDriftEventSchema } from "@amzn/innovation-sandbox-commons/events/account-drift-detected-alert.js";
+import { GroupCostReportGeneratedEventSchema } from "@amzn/innovation-sandbox-commons/events/group-cost-report-generated-event.js";
+import { GroupCostReportGenerationFailureEventSchema } from "@amzn/innovation-sandbox-commons/events/group-cost-report-generated-failure-event.js";
 import { EventDetailTypes } from "@amzn/innovation-sandbox-commons/events/index.js";
 import { LeaseApprovedEventSchema } from "@amzn/innovation-sandbox-commons/events/lease-approved-event.js";
 import { LeaseBudgetThresholdTriggeredEventSchema } from "@amzn/innovation-sandbox-commons/events/lease-budget-threshold-breached-alert.js";
@@ -34,6 +36,7 @@ import {
   SESServiceException,
 } from "@aws-sdk/client-ses";
 import { mockClient } from "aws-sdk-client-mock";
+import { LeaseUnfrozenEventSchema } from "events/lease-unfrozen-event.js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const managerEmails = ["manager@example.com", "manager2@example.com"];
@@ -531,6 +534,52 @@ describe("SES Service", async () => {
         subject: /\[Informational\] Innovation Sandbox: Account Frozen Action/,
         numSesMockCalls: 1,
         toAddresses: [isbAlert.leaseId.userEmail],
+      });
+    });
+
+    it(`should send email - ${EventDetailTypes.LeaseUnfrozen}`, async () => {
+      const isbAlert = generateSchemaData(LeaseUnfrozenEventSchema);
+      await emailService.sendNotificationEmail(
+        EventDetailTypes.LeaseUnfrozen,
+        isbAlert,
+      );
+      assertSingleEmailActions({
+        subject: /\[Informational\] Innovation Sandbox: Lease Unfrozen/,
+        numSesMockCalls: 1,
+        toAddresses: [isbAlert.leaseId.userEmail],
+      });
+    });
+
+    it(`should send email - ${EventDetailTypes.GroupCostReportGenerated}`, async () => {
+      const isbAlert = generateSchemaData(GroupCostReportGeneratedEventSchema);
+      await emailService.sendNotificationEmail(
+        EventDetailTypes.GroupCostReportGenerated,
+        isbAlert,
+      );
+      assertSingleEmailActions({
+        subject:
+          /\[Informational\] Innovation Sandbox: Monthly Cost Report Generated/,
+        numSesMockCalls: 1,
+        bccAddresses: [...adminEmails],
+        body: isbAlert.reportMonth,
+      });
+    });
+
+    it(`should send email - ${EventDetailTypes.GroupCostReportGeneratedFailure}`, async () => {
+      const isbAlert = generateSchemaData(
+        GroupCostReportGenerationFailureEventSchema,
+      );
+      await emailService.sendNotificationEmail(
+        EventDetailTypes.GroupCostReportGeneratedFailure,
+        isbAlert,
+      );
+      assertSingleEmailActions({
+        subject: new RegExp(
+          `Group Cost Report Generation Failed - ${isbAlert.reportMonth}`,
+        ),
+        numSesMockCalls: 1,
+        bccAddresses: [...adminEmails],
+        body: "Group Cost Report Generation Failed",
       });
     });
 
