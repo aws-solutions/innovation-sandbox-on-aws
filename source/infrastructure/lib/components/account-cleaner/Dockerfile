@@ -1,8 +1,8 @@
-FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:c9a8457247e453f635fda07121cce4fc16c2219290ca4e5494959e6452fc0244
+FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:d6bc771073bf2956ec42fcd0f41c2dedde258096571b690f8dc3b38174736c03
 
 RUN dnf install -y tar gzip awscli jq sed
 
-ADD https://github.com/ekristen/aws-nuke/releases/download/v3.56.1/aws-nuke-v3.56.1-linux-amd64.tar.gz nuke-binary.tar.gz
+ADD https://github.com/ekristen/aws-nuke/releases/download/v3.60.1/aws-nuke-v3.60.1-linux-amd64.tar.gz nuke-binary.tar.gz
 
 RUN mkdir /tmp/aws-nuke && \
     tar -xzvf nuke-binary.tar.gz -C /tmp/aws-nuke && \

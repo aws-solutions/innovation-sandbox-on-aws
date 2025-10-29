@@ -37,13 +37,16 @@ import {
   MonitoredLeaseSchema,
   PendingLeaseSchema,
 } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
+import { ReportingConfig } from "@amzn/innovation-sandbox-commons/data/reporting-config/reporting-config.js";
 import {
   AccountNotInActiveError,
+  AccountNotInFrozenError,
   CouldNotFindAccountError,
   CouldNotRetrieveUserError,
   InnovationSandbox,
   NoAccountsAvailableError,
 } from "@amzn/innovation-sandbox-commons/innovation-sandbox.js";
+import { IsbServices } from "@amzn/innovation-sandbox-commons/isb-services/index.js";
 import { LeaseLambdaEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/lease-lambda-environment.js";
 import { IsbEventBridgeClient } from "@amzn/innovation-sandbox-commons/sdk-clients/event-bridge-client.js";
 import { generateSchemaData } from "@amzn/innovation-sandbox-commons/test/generate-schema-data.js";
@@ -60,14 +63,25 @@ import {
   bulkStubEnv,
   mockAppConfigMiddleware,
 } from "@amzn/innovation-sandbox-commons/test/lambdas/utils.js";
+import { IsbUserSchema } from "@amzn/innovation-sandbox-commons/types/isb-types.js";
 import {
   datetimeAsString,
   now,
 } from "@amzn/innovation-sandbox-commons/utils/time-utils.js";
+import { randomUUID } from "crypto";
 import { DateTime } from "luxon";
 
 let mockedGlobalConfig: GlobalConfig;
+let mockedReportingConfig: ReportingConfig;
 const testEnv = generateSchemaData(LeaseLambdaEnvironmentSchema);
+const testReportingConfig = {
+  costReportGroups: ["valid-group-1", "valid-group-2"],
+  requireCostReportGroup: false,
+};
+const testReportingConfigRequired = {
+  costReportGroups: ["valid-group-1", "valid-group-2"],
+  requireCostReportGroup: true,
+};
 let handler: typeof import("@amzn/innovation-sandbox-leases/leases-handler.js").handler;
 
 beforeAll(async () => {
@@ -83,8 +97,14 @@ beforeEach(() => {
   mockedGlobalConfig.leases.maxDurationHours = 999;
   mockedGlobalConfig.leases.requireMaxBudget = true;
   mockedGlobalConfig.leases.requireMaxDuration = false;
+
+  mockedReportingConfig = {
+    costReportGroups: [],
+    requireCostReportGroup: false,
+  };
+
   bulkStubEnv(testEnv);
-  mockAppConfigMiddleware(mockedGlobalConfig);
+  mockAppConfigMiddleware(mockedGlobalConfig, mockedReportingConfig);
 });
 
 afterEach(() => {
@@ -100,7 +120,16 @@ describe("Leases Handler", async () => {
       httpMethod: "GET",
       path: "/leases",
     });
-    expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
+    expect(
+      await handler(
+        event,
+        mockAuthorizedContext(
+          testEnv,
+          mockedGlobalConfig,
+          mockedReportingConfig,
+        ),
+      ),
+    ).toEqual({
       statusCode: 500,
       body: createErrorResponseBody("An unexpected error occurred."),
       headers: responseHeaders,
@@ -136,7 +165,16 @@ describe("Leases Handler", async () => {
           nextPageIdentifier: null,
         }),
       );
-      expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
+      expect(
+        await handler(
+          event,
+          mockAuthorizedContext(
+            testEnv,
+            mockedGlobalConfig,
+            mockedReportingConfig,
+          ),
+        ),
+      ).toEqual({
         statusCode: 200,
         body: JSON.stringify({
           status: "success",
@@ -164,7 +202,16 @@ describe("Leases Handler", async () => {
           error: "Zod Validation Error",
         }),
       );
-      expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
+      expect(
+        await handler(
+          event,
+          mockAuthorizedContext(
+            testEnv,
+            mockedGlobalConfig,
+            mockedReportingConfig,
+          ),
+        ),
+      ).toEqual({
         statusCode: 200,
         body: JSON.stringify({
           status: "success",
@@ -202,7 +249,16 @@ describe("Leases Handler", async () => {
             nextPageIdentifier: "BBB",
           }),
         );
-      expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
+      expect(
+        await handler(
+          event,
+          mockAuthorizedContext(
+            testEnv,
+            mockedGlobalConfig,
+            mockedReportingConfig,
+          ),
+        ),
+      ).toEqual({
         statusCode: 200,
         body: JSON.stringify({
           status: "success",
@@ -261,7 +317,16 @@ describe("Leases Handler", async () => {
             }),
           );
 
-        expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
+        expect(
+          await handler(
+            event,
+            mockAuthorizedContext(
+              testEnv,
+              mockedGlobalConfig,
+              mockedReportingConfig,
+            ),
+          ),
+        ).toEqual({
           statusCode: 200,
           body: JSON.stringify({
             status: "success",
@@ -304,7 +369,16 @@ describe("Leases Handler", async () => {
             nextPageIdentifier: "BBB",
           }),
         );
-      expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
+      expect(
+        await handler(
+          event,
+          mockAuthorizedContext(
+            testEnv,
+            mockedGlobalConfig,
+            mockedReportingConfig,
+          ),
+        ),
+      ).toEqual({
         statusCode: 400,
         body: createFailureResponseBody({
           field: "pageSize",
@@ -326,7 +400,16 @@ describe("Leases Handler", async () => {
       vi.spyOn(DynamoLeaseStore.prototype, "findAll").mockImplementation(() => {
         throw new Error();
       });
-      expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
+      expect(
+        await handler(
+          event,
+          mockAuthorizedContext(
+            testEnv,
+            mockedGlobalConfig,
+            mockedReportingConfig,
+          ),
+        ),
+      ).toEqual({
         statusCode: 500,
         body: createErrorResponseBody("An unexpected error occurred."),
         headers: responseHeaders,
@@ -341,7 +424,16 @@ describe("Leases Handler", async () => {
           Authorization: `Bearer ${isbAuthorizedUserUserRoleOnly.token}`,
         },
       });
-      expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
+      expect(
+        await handler(
+          event,
+          mockAuthorizedContext(
+            testEnv,
+            mockedGlobalConfig,
+            mockedReportingConfig,
+          ),
+        ),
+      ).toEqual({
         statusCode: 403,
         body: createFailureResponseBody({
           message: `User is not authorized to get all leases.`,
@@ -364,7 +456,16 @@ describe("Leases Handler", async () => {
           Authorization: `Bearer ${isbAuthorizedUserUserRoleOnly.token}`,
         },
       });
-      expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
+      expect(
+        await handler(
+          event,
+          mockAuthorizedContext(
+            testEnv,
+            mockedGlobalConfig,
+            mockedReportingConfig,
+          ),
+        ),
+      ).toEqual({
         statusCode: 403,
         body: createFailureResponseBody({
           message: `User is not authorized to get the requested leases.`,
@@ -384,7 +485,16 @@ describe("Leases Handler", async () => {
           Authorization: `Bearer ${isbAuthorizedUser.token}`,
         },
       });
-      expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
+      expect(
+        await handler(
+          event,
+          mockAuthorizedContext(
+            testEnv,
+            mockedGlobalConfig,
+            mockedReportingConfig,
+          ),
+        ),
+      ).toEqual({
         statusCode: 415,
         body: createFailureResponseBody({ message: "Body not provided." }),
         headers: responseHeaders,
@@ -401,7 +511,16 @@ describe("Leases Handler", async () => {
           Authorization: `Bearer ${isbAuthorizedUser.token}`,
         },
       });
-      expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
+      expect(
+        await handler(
+          event,
+          mockAuthorizedContext(
+            testEnv,
+            mockedGlobalConfig,
+            mockedReportingConfig,
+          ),
+        ),
+      ).toEqual({
         statusCode: 415,
         body: createFailureResponseBody({
           message: "Invalid or malformed JSON was provided.",
@@ -422,7 +541,16 @@ describe("Leases Handler", async () => {
           Authorization: `Bearer ${isbAuthorizedUser.token}`,
         },
       });
-      expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
+      expect(
+        await handler(
+          event,
+          mockAuthorizedContext(
+            testEnv,
+            mockedGlobalConfig,
+            mockedReportingConfig,
+          ),
+        ),
+      ).toEqual({
         statusCode: 400,
         body: createFailureResponseBody(
           { field: "leaseTemplateUuid", message: "Required" },
@@ -487,7 +615,16 @@ describe("Leases Handler", async () => {
           nextPageIdentifier: null,
         }),
       );
-      expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
+      expect(
+        await handler(
+          event,
+          mockAuthorizedContext(
+            testEnv,
+            mockedGlobalConfig,
+            mockedReportingConfig,
+          ),
+        ),
+      ).toEqual({
         statusCode: 409,
         body: createFailureResponseBody({
           message:
@@ -519,10 +656,19 @@ describe("Leases Handler", async () => {
           result: undefined,
         }),
       );
-      expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
+      expect(
+        await handler(
+          event,
+          mockAuthorizedContext(
+            testEnv,
+            mockedGlobalConfig,
+            mockedReportingConfig,
+          ),
+        ),
+      ).toEqual({
         statusCode: 404,
         body: createFailureResponseBody({
-          message: `Unknown lease template.`,
+          message: "Lease template not found.",
         }),
         headers: responseHeaders,
       });
@@ -580,7 +726,16 @@ describe("Leases Handler", async () => {
         "sendIsbEvents",
       ).mockResolvedValue({} as any);
 
-      expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
+      expect(
+        await handler(
+          event,
+          mockAuthorizedContext(
+            testEnv,
+            mockedGlobalConfig,
+            mockedReportingConfig,
+          ),
+        ),
+      ).toEqual({
         statusCode: 409,
         body: createFailureResponseBody({
           message: "No accounts are available to lease.",
@@ -636,7 +791,16 @@ describe("Leases Handler", async () => {
           nextPageIdentifier: null,
         }),
       );
-      expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
+      expect(
+        await handler(
+          event,
+          mockAuthorizedContext(
+            testEnv,
+            mockedGlobalConfig,
+            mockedReportingConfig,
+          ),
+        ),
+      ).toEqual({
         statusCode: 201,
         body: JSON.stringify({
           status: "success",
@@ -699,7 +863,16 @@ describe("Leases Handler", async () => {
           $metadata: {},
         }),
       );
-      expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
+      expect(
+        await handler(
+          event,
+          mockAuthorizedContext(
+            testEnv,
+            mockedGlobalConfig,
+            mockedReportingConfig,
+          ),
+        ),
+      ).toEqual({
         statusCode: 409,
         body: createFailureResponseBody({
           message:
@@ -762,7 +935,16 @@ describe("Leases Handler", async () => {
           $metadata: {},
         }),
       );
-      expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
+      expect(
+        await handler(
+          event,
+          mockAuthorizedContext(
+            testEnv,
+            mockedGlobalConfig,
+            mockedReportingConfig,
+          ),
+        ),
+      ).toEqual({
         statusCode: 409,
         body: createFailureResponseBody({
           message:
@@ -825,7 +1007,16 @@ describe("Leases Handler", async () => {
           $metadata: {},
         }),
       );
-      expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
+      expect(
+        await handler(
+          event,
+          mockAuthorizedContext(
+            testEnv,
+            mockedGlobalConfig,
+            mockedReportingConfig,
+          ),
+        ),
+      ).toEqual({
         statusCode: 429,
         body: createFailureResponseBody({
           message:
@@ -895,13 +1086,285 @@ describe("Leases Handler", async () => {
         }),
       );
 
-      expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
+      expect(
+        await handler(
+          event,
+          mockAuthorizedContext(
+            testEnv,
+            mockedGlobalConfig,
+            mockedReportingConfig,
+          ),
+        ),
+      ).toEqual({
         statusCode: 201,
         body: JSON.stringify({
           status: "success",
           data: approvedLease,
         }),
         headers: responseHeaders,
+      });
+    });
+
+    describe("Lease Assignment Flow", () => {
+      const targetUserEmail = "target.user@example.com";
+      const targetUser = generateSchemaData(IsbUserSchema, {
+        email: targetUserEmail,
+      });
+
+      it("should return 201 when admin creates lease for another user", async () => {
+        const leaseRequest = {
+          leaseTemplateUuid: randomUUID(),
+          userEmail: targetUserEmail,
+          comments: "Lease assigned for training",
+        };
+
+        const event = createAPIGatewayProxyEvent({
+          httpMethod: "POST",
+          path: "/leases",
+          body: JSON.stringify(leaseRequest),
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${isbAuthorizedUser.token}`,
+          },
+        });
+
+        const leaseTemplate = generateSchemaData(LeaseTemplateSchema, {
+          uuid: leaseRequest.leaseTemplateUuid,
+          requiresApproval: true,
+          visibility: "PRIVATE",
+        });
+
+        const resultLease = generateSchemaData(MonitoredLeaseSchema, {
+          userEmail: targetUserEmail,
+          createdBy: isbAuthorizedUser.user.email,
+          comments: leaseRequest.comments,
+          status: "Active",
+          approvedBy: isbAuthorizedUser.user.email,
+        });
+
+        // Mock template retrieval
+        vi.spyOn(DynamoLeaseTemplateStore.prototype, "get").mockReturnValue(
+          Promise.resolve({
+            result: leaseTemplate,
+          }),
+        );
+
+        // Mock user lookup in IDC
+        vi.spyOn(IsbServices, "idcService").mockReturnValue({
+          getUserFromEmail: vi.fn().mockResolvedValue(targetUser),
+        } as any);
+
+        // Mock the requestLease call
+        const requestLeaseSpy = vi
+          .spyOn(InnovationSandbox, "requestLease")
+          .mockResolvedValue(resultLease);
+
+        const response = await handler(event, mockAuthorizedContext(testEnv));
+
+        expect(response).toEqual({
+          statusCode: 201,
+          body: JSON.stringify({
+            status: "success",
+            data: resultLease,
+          }),
+          headers: responseHeaders,
+        });
+
+        expect(requestLeaseSpy).toHaveBeenCalledWith(
+          {
+            leaseTemplate,
+            targetUser,
+            createdBy: isbAuthorizedUser.user.email,
+            comments: leaseRequest.comments,
+          },
+          expect.any(Object),
+        );
+      });
+
+      it("should return 403 when user role tries to create lease for another user", async () => {
+        const leaseRequest = {
+          leaseTemplateUuid: randomUUID(),
+          userEmail: targetUserEmail,
+          comments: "Should be denied",
+        };
+
+        const event = createAPIGatewayProxyEvent({
+          httpMethod: "POST",
+          path: "/leases",
+          body: JSON.stringify(leaseRequest),
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${isbAuthorizedUserUserRoleOnly.token}`, // Not authorized
+          },
+        });
+
+        // Mock template retrieval
+        vi.spyOn(DynamoLeaseTemplateStore.prototype, "get").mockReturnValue(
+          Promise.resolve({
+            result: generateSchemaData(LeaseTemplateSchema, {
+              visibility: "PUBLIC",
+            }),
+          }),
+        );
+
+        // Spy on requestLease
+        const requestLeaseSpy = vi.spyOn(InnovationSandbox, "requestLease");
+
+        const response = await handler(event, mockAuthorizedContext(testEnv));
+
+        expect(response).toEqual({
+          statusCode: 403,
+          body: createFailureResponseBody({
+            message:
+              "Access denied. You do not have permission to create leases for other users.",
+          }),
+          headers: responseHeaders,
+        });
+
+        expect(requestLeaseSpy).not.toHaveBeenCalled();
+      });
+
+      it("should return 404 when target user does not exist in Identity Center", async () => {
+        const nonExistentUserEmail = "nonexistent@example.com";
+        const leaseRequest = {
+          leaseTemplateUuid: randomUUID(),
+          userEmail: nonExistentUserEmail,
+          comments: "User does not exist",
+        };
+
+        const event = createAPIGatewayProxyEvent({
+          httpMethod: "POST",
+          path: "/leases",
+          body: JSON.stringify(leaseRequest),
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${isbAuthorizedUser.token}`,
+          },
+        });
+
+        // Mock template retrieval
+        vi.spyOn(DynamoLeaseTemplateStore.prototype, "get").mockReturnValue(
+          Promise.resolve({
+            result: generateSchemaData(LeaseTemplateSchema, {
+              visibility: "PUBLIC",
+            }),
+          }),
+        );
+
+        // Mock user lookup failure in IDC
+        vi.spyOn(IsbServices, "idcService").mockReturnValue({
+          getUserFromEmail: vi.fn().mockResolvedValue(null),
+        } as any);
+
+        // Spy on requestLease call
+        const requestLeaseSpy = vi.spyOn(InnovationSandbox, "requestLease");
+
+        const response = await handler(event, mockAuthorizedContext(testEnv));
+
+        expect(response).toEqual({
+          statusCode: 404,
+          body: createFailureResponseBody({
+            message: `User not found in Identity Center: ${nonExistentUserEmail}`,
+          }),
+          headers: responseHeaders,
+        });
+
+        expect(requestLeaseSpy).not.toHaveBeenCalled();
+      });
+
+      it("should return 404 when user role tries to access private lease template", async () => {
+        const leaseRequest = {
+          leaseTemplateUuid: randomUUID(),
+          comments: "Should be denied - private template",
+        };
+
+        const event = createAPIGatewayProxyEvent({
+          httpMethod: "POST",
+          path: "/leases",
+          body: JSON.stringify(leaseRequest),
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${isbAuthorizedUserUserRoleOnly.token}`,
+          },
+        });
+
+        // Mock private template retrieval
+        vi.spyOn(DynamoLeaseTemplateStore.prototype, "get").mockReturnValue(
+          Promise.resolve({
+            result: generateSchemaData(LeaseTemplateSchema, {
+              visibility: "PRIVATE",
+            }),
+          }),
+        );
+
+        const requestLeaseSpy = vi.spyOn(InnovationSandbox, "requestLease");
+
+        const response = await handler(event, mockAuthorizedContext(testEnv));
+
+        expect(response).toEqual({
+          statusCode: 404,
+          body: createFailureResponseBody({
+            message: "Lease template not found.",
+          }),
+          headers: responseHeaders,
+        });
+
+        // Spy on requestLease call
+        expect(requestLeaseSpy).not.toHaveBeenCalled();
+      });
+
+      it("should return 201 and allow manager to access private lease template for self", async () => {
+        const leaseRequest = {
+          leaseTemplateUuid: randomUUID(),
+          comments: "Manager accessing private template",
+        };
+
+        const event = createAPIGatewayProxyEvent({
+          httpMethod: "POST",
+          path: "/leases",
+          body: JSON.stringify(leaseRequest),
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${isbAuthorizedUser.token}`,
+          },
+        });
+
+        const leaseTemplate = generateSchemaData(LeaseTemplateSchema, {
+          visibility: "PRIVATE",
+          requiresApproval: true,
+        });
+
+        const resultLease = generateSchemaData(PendingLeaseSchema, {
+          userEmail: isbAuthorizedUser.user.email,
+          createdBy: isbAuthorizedUser.user.email,
+          comments: leaseRequest.comments,
+        });
+
+        // Mock private template retrieval
+        vi.spyOn(DynamoLeaseTemplateStore.prototype, "get").mockReturnValue(
+          Promise.resolve({
+            result: leaseTemplate,
+          }),
+        );
+
+        // Mock the requestLease call
+        const requestLeaseSpy = vi
+          .spyOn(InnovationSandbox, "requestLease")
+          .mockResolvedValue(resultLease);
+
+        const response = await handler(event, mockAuthorizedContext(testEnv));
+
+        expect(response.statusCode).toBe(201);
+        expect(JSON.parse(response.body).status).toBe("success");
+
+        expect(requestLeaseSpy).toHaveBeenCalledWith(
+          {
+            leaseTemplate,
+            targetUser: isbAuthorizedUser.user,
+            comments: leaseRequest.comments,
+          },
+          expect.any(Object),
+        );
       });
     });
   });
@@ -915,7 +1378,16 @@ describe("Leases Handler", async () => {
           Authorization: `Bearer ${isbAuthorizedUser.token}`,
         },
       });
-      expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
+      expect(
+        await handler(
+          event,
+          mockAuthorizedContext(
+            testEnv,
+            mockedGlobalConfig,
+            mockedReportingConfig,
+          ),
+        ),
+      ).toEqual({
         statusCode: 400,
         body: createFailureResponseBody({
           field: "leaseId",
@@ -941,7 +1413,16 @@ describe("Leases Handler", async () => {
         }), // record does not exist
       );
 
-      expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
+      expect(
+        await handler(
+          event,
+          mockAuthorizedContext(
+            testEnv,
+            mockedGlobalConfig,
+            mockedReportingConfig,
+          ),
+        ),
+      ).toEqual({
         statusCode: 404,
         body: createFailureResponseBody({
           message: `Lease not found.`,
@@ -968,7 +1449,16 @@ describe("Leases Handler", async () => {
         }),
       );
 
-      expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
+      expect(
+        await handler(
+          event,
+          mockAuthorizedContext(
+            testEnv,
+            mockedGlobalConfig,
+            mockedReportingConfig,
+          ),
+        ),
+      ).toEqual({
         statusCode: 200,
         body: JSON.stringify({
           status: "success",
@@ -999,7 +1489,16 @@ describe("Leases Handler", async () => {
         }),
       );
 
-      expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
+      expect(
+        await handler(
+          event,
+          mockAuthorizedContext(
+            testEnv,
+            mockedGlobalConfig,
+            mockedReportingConfig,
+          ),
+        ),
+      ).toEqual({
         statusCode: 200,
         body: JSON.stringify({
           status: "success",
@@ -1030,7 +1529,16 @@ describe("Leases Handler", async () => {
         }),
       );
 
-      expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
+      expect(
+        await handler(
+          event,
+          mockAuthorizedContext(
+            testEnv,
+            mockedGlobalConfig,
+            mockedReportingConfig,
+          ),
+        ),
+      ).toEqual({
         statusCode: 403,
         body: createFailureResponseBody({
           message: `Active user is not authorized to view leases of requested user.`,
@@ -1053,7 +1561,16 @@ describe("Leases Handler", async () => {
       vi.spyOn(DynamoLeaseStore.prototype, "get").mockImplementation(() => {
         throw new Error();
       });
-      expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
+      expect(
+        await handler(
+          event,
+          mockAuthorizedContext(
+            testEnv,
+            mockedGlobalConfig,
+            mockedReportingConfig,
+          ),
+        ),
+      ).toEqual({
         statusCode: 500,
         body: createErrorResponseBody("An unexpected error occurred."),
         headers: responseHeaders,
@@ -1071,7 +1588,16 @@ describe("Leases Handler", async () => {
           Authorization: `Bearer ${isbAuthorizedUser.token}`,
         },
       });
-      expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
+      expect(
+        await handler(
+          event,
+          mockAuthorizedContext(
+            testEnv,
+            mockedGlobalConfig,
+            mockedReportingConfig,
+          ),
+        ),
+      ).toEqual({
         statusCode: 415,
         body: createFailureResponseBody({ message: "Body not provided." }),
         headers: responseHeaders,
@@ -1103,7 +1629,16 @@ describe("Leases Handler", async () => {
           Authorization: `Bearer ${isbAuthorizedUser.token}`,
         },
       });
-      expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
+      expect(
+        await handler(
+          event,
+          mockAuthorizedContext(
+            testEnv,
+            mockedGlobalConfig,
+            mockedReportingConfig,
+          ),
+        ),
+      ).toEqual({
         statusCode: 400,
         body: createFailureResponseBody({
           field: "input",
@@ -1135,7 +1670,16 @@ describe("Leases Handler", async () => {
         }),
       );
 
-      expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
+      expect(
+        await handler(
+          event,
+          mockAuthorizedContext(
+            testEnv,
+            mockedGlobalConfig,
+            mockedReportingConfig,
+          ),
+        ),
+      ).toEqual({
         statusCode: 404,
         body: createFailureResponseBody({
           message: `Lease not found.`,
@@ -1172,7 +1716,16 @@ describe("Leases Handler", async () => {
           Authorization: `Bearer ${isbAuthorizedUser.token}`,
         },
       });
-      expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
+      expect(
+        await handler(
+          event,
+          mockAuthorizedContext(
+            testEnv,
+            mockedGlobalConfig,
+            mockedReportingConfig,
+          ),
+        ),
+      ).toEqual({
         statusCode: 400,
         body: createFailureResponseBody({
           field: "input",
@@ -1214,7 +1767,16 @@ describe("Leases Handler", async () => {
           Authorization: `Bearer ${isbAuthorizedUser.token}`,
         },
       });
-      expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
+      expect(
+        await handler(
+          event,
+          mockAuthorizedContext(
+            testEnv,
+            mockedGlobalConfig,
+            mockedReportingConfig,
+          ),
+        ),
+      ).toEqual({
         statusCode: 400,
         body: createFailureResponseBody({
           message: "Can only update an active lease",
@@ -1261,7 +1823,16 @@ describe("Leases Handler", async () => {
             Authorization: `Bearer ${isbAuthorizedUser.token}`,
           },
         });
-        expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
+        expect(
+          await handler(
+            event,
+            mockAuthorizedContext(
+              testEnv,
+              mockedGlobalConfig,
+              mockedReportingConfig,
+            ),
+          ),
+        ).toEqual({
           statusCode: 400,
           body: createFailureResponseBody({
             message: "Can only update an active lease",
@@ -1347,7 +1918,75 @@ describe("Leases Handler", async () => {
             Authorization: `Bearer ${isbAuthorizedUser.token}`,
           },
         });
-        expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
+        expect(
+          await handler(
+            event,
+            mockAuthorizedContext(
+              testEnv,
+              mockedGlobalConfig,
+              mockedReportingConfig,
+            ),
+          ),
+        ).toEqual({
+          statusCode: 400,
+          body: createFailureResponseBody({
+            message: expectedError,
+          }),
+          headers: responseHeaders,
+        });
+      },
+    );
+
+    it.each([
+      {
+        costReportGroup: "invalid-group",
+        reportingConfig: testReportingConfig,
+        expectedError: "Cost report group: invalid-group is not valid",
+      },
+      {
+        costReportGroup: undefined,
+        reportingConfig: testReportingConfigRequired,
+        expectedError:
+          "A cost report group must be provided as required by administrator settings. Please contact your administrator if you need to create a lease without specifying a cost report group.",
+      },
+    ])(
+      "should return 400 when the patch would violate cost reporting constraints",
+      async ({ costReportGroup, reportingConfig, expectedError }) => {
+        mockAppConfigMiddleware(mockedGlobalConfig, reportingConfig);
+
+        const leaseCompositeKey = generateSchemaData(LeaseKeySchema);
+        const leaseId = base64EncodeCompositeKey(leaseCompositeKey);
+        const oldLease = generateSchemaData(MonitoredLeaseSchema, {
+          ...leaseCompositeKey,
+          costReportGroup: costReportGroup,
+        });
+
+        vi.spyOn(DynamoLeaseStore.prototype, "get").mockReturnValue(
+          Promise.resolve({
+            result: oldLease,
+          }),
+        );
+
+        const requestJsonBody = {
+          maxSpend: 20,
+          costReportGroup,
+        };
+
+        const event = createAPIGatewayProxyEvent({
+          httpMethod: "PATCH",
+          path: `/leases/${leaseId}`,
+          body: JSON.stringify(requestJsonBody),
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${isbAuthorizedUser.token}`,
+          },
+        });
+        expect(
+          await handler(
+            event,
+            mockAuthorizedContext(testEnv, mockedGlobalConfig, reportingConfig),
+          ),
+        ).toEqual({
           statusCode: 400,
           body: createFailureResponseBody({
             message: expectedError,
@@ -1366,6 +2005,7 @@ describe("Leases Handler", async () => {
           ...leaseCompositeKey,
           status: <"Active" | "Frozen">status,
           leaseDurationInHours: 48,
+          costReportGroup: undefined,
         });
 
         vi.spyOn(DynamoLeaseStore.prototype, "get").mockReturnValue(
@@ -1382,6 +2022,7 @@ describe("Leases Handler", async () => {
           ...generateSchemaData(
             DurationConfigSchema.omit({ leaseDurationInHours: true }),
           ),
+          costReportGroup: undefined,
         };
 
         const updatedLease = generateSchemaData(MonitoredLeaseSchema, {
@@ -1408,7 +2049,16 @@ describe("Leases Handler", async () => {
             }),
           );
 
-        expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
+        expect(
+          await handler(
+            event,
+            mockAuthorizedContext(
+              testEnv,
+              mockedGlobalConfig,
+              mockedReportingConfig,
+            ),
+          ),
+        ).toEqual({
           statusCode: 200,
           body: JSON.stringify({
             status: "success",
@@ -1427,10 +2077,10 @@ describe("Leases Handler", async () => {
     it("should return 200 when nullable values are used to clear data", async () => {
       const leaseCompositeKey = generateSchemaData(LeaseKeySchema);
       const leaseId = base64EncodeCompositeKey(leaseCompositeKey);
-      const oldLease = generateSchemaData(
-        MonitoredLeaseSchema,
-        leaseCompositeKey,
-      );
+      const oldLease = generateSchemaData(MonitoredLeaseSchema, {
+        ...leaseCompositeKey,
+        costReportGroup: undefined,
+      });
 
       vi.spyOn(DynamoLeaseStore.prototype, "get").mockReturnValue(
         Promise.resolve({
@@ -1473,7 +2123,16 @@ describe("Leases Handler", async () => {
           }),
         );
 
-      expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
+      expect(
+        await handler(
+          event,
+          mockAuthorizedContext(
+            testEnv,
+            mockedGlobalConfig,
+            mockedReportingConfig,
+          ),
+        ),
+      ).toEqual({
         statusCode: 200,
         body: JSON.stringify({
           status: "success",
@@ -1520,7 +2179,16 @@ describe("Leases Handler", async () => {
           oldItem: mockedLease,
         });
 
-      expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
+      expect(
+        await handler(
+          event,
+          mockAuthorizedContext(
+            testEnv,
+            mockedGlobalConfig,
+            mockedReportingConfig,
+          ),
+        ),
+      ).toEqual({
         statusCode: 200,
         body: JSON.stringify({
           status: "success",
@@ -1559,7 +2227,16 @@ describe("Leases Handler", async () => {
         .spyOn(InnovationSandbox, "denyLease")
         .mockResolvedValue();
 
-      expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
+      expect(
+        await handler(
+          event,
+          mockAuthorizedContext(
+            testEnv,
+            mockedGlobalConfig,
+            mockedReportingConfig,
+          ),
+        ),
+      ).toEqual({
         statusCode: 200,
         body: JSON.stringify({
           status: "success",
@@ -1598,7 +2275,16 @@ describe("Leases Handler", async () => {
           oldItem: mockedLease,
         });
 
-      expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
+      expect(
+        await handler(
+          event,
+          mockAuthorizedContext(
+            testEnv,
+            mockedGlobalConfig,
+            mockedReportingConfig,
+          ),
+        ),
+      ).toEqual({
         statusCode: 400,
         body: createFailureResponseBody({
           field: "leaseId",
@@ -1641,7 +2327,16 @@ describe("Leases Handler", async () => {
           oldItem: mockedLease,
         });
 
-      expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
+      expect(
+        await handler(
+          event,
+          mockAuthorizedContext(
+            testEnv,
+            mockedGlobalConfig,
+            mockedReportingConfig,
+          ),
+        ),
+      ).toEqual({
         statusCode: 400,
         body: createFailureResponseBody({
           field: "input",
@@ -1683,7 +2378,16 @@ describe("Leases Handler", async () => {
           oldItem: mockedLease,
         });
 
-      expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
+      expect(
+        await handler(
+          event,
+          mockAuthorizedContext(
+            testEnv,
+            mockedGlobalConfig,
+            mockedReportingConfig,
+          ),
+        ),
+      ).toEqual({
         statusCode: 404,
         body: createFailureResponseBody({
           message: `Lease not found.`,
@@ -1724,7 +2428,16 @@ describe("Leases Handler", async () => {
           oldItem: mockedLease,
         });
 
-      expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
+      expect(
+        await handler(
+          event,
+          mockAuthorizedContext(
+            testEnv,
+            mockedGlobalConfig,
+            mockedReportingConfig,
+          ),
+        ),
+      ).toEqual({
         statusCode: 409,
         body: createFailureResponseBody({
           message: `Only leases in a pending state can be approved/denied.`,
@@ -1762,7 +2475,16 @@ describe("Leases Handler", async () => {
         .spyOn(InnovationSandbox, "approveLease")
         .mockRejectedValue(new Error("Unexpected error"));
 
-      expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
+      expect(
+        await handler(
+          event,
+          mockAuthorizedContext(
+            testEnv,
+            mockedGlobalConfig,
+            mockedReportingConfig,
+          ),
+        ),
+      ).toEqual({
         statusCode: 500,
         body: createErrorResponseBody("An unexpected error occurred."),
         headers: responseHeaders,
@@ -1798,7 +2520,16 @@ describe("Leases Handler", async () => {
         .spyOn(InnovationSandbox, "freezeLease")
         .mockResolvedValue();
 
-      expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
+      expect(
+        await handler(
+          event,
+          mockAuthorizedContext(
+            testEnv,
+            mockedGlobalConfig,
+            mockedReportingConfig,
+          ),
+        ),
+      ).toEqual({
         statusCode: 200,
         body: JSON.stringify({
           status: "success",
@@ -1831,7 +2562,16 @@ describe("Leases Handler", async () => {
         .spyOn(InnovationSandbox, "freezeLease")
         .mockResolvedValue();
 
-      expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
+      expect(
+        await handler(
+          event,
+          mockAuthorizedContext(
+            testEnv,
+            mockedGlobalConfig,
+            mockedReportingConfig,
+          ),
+        ),
+      ).toEqual({
         statusCode: 400,
         body: createFailureResponseBody({
           field: "leaseId",
@@ -1867,7 +2607,16 @@ describe("Leases Handler", async () => {
         .spyOn(InnovationSandbox, "freezeLease")
         .mockResolvedValue();
 
-      expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
+      expect(
+        await handler(
+          event,
+          mockAuthorizedContext(
+            testEnv,
+            mockedGlobalConfig,
+            mockedReportingConfig,
+          ),
+        ),
+      ).toEqual({
         statusCode: 404,
         body: createFailureResponseBody({
           message: `Lease not found.`,
@@ -1902,7 +2651,16 @@ describe("Leases Handler", async () => {
         .spyOn(InnovationSandbox, "freezeLease")
         .mockResolvedValue();
 
-      expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
+      expect(
+        await handler(
+          event,
+          mockAuthorizedContext(
+            testEnv,
+            mockedGlobalConfig,
+            mockedReportingConfig,
+          ),
+        ),
+      ).toEqual({
         statusCode: 409,
         body: createFailureResponseBody({
           message: `Only active leases can be frozen.`,
@@ -1943,7 +2701,16 @@ describe("Leases Handler", async () => {
           .spyOn(InnovationSandbox, "freezeLease")
           .mockRejectedValue(new error(error.name));
 
-        expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
+        expect(
+          await handler(
+            event,
+            mockAuthorizedContext(
+              testEnv,
+              mockedGlobalConfig,
+              mockedReportingConfig,
+            ),
+          ),
+        ).toEqual({
           statusCode: statusCode,
           body: createFailureResponseBody({
             message: error.name,
@@ -1979,7 +2746,16 @@ describe("Leases Handler", async () => {
         .spyOn(InnovationSandbox, "freezeLease")
         .mockRejectedValue(new Error("Unexpected error"));
 
-      expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
+      expect(
+        await handler(
+          event,
+          mockAuthorizedContext(
+            testEnv,
+            mockedGlobalConfig,
+            mockedReportingConfig,
+          ),
+        ),
+      ).toEqual({
         statusCode: 500,
         body: createErrorResponseBody("An unexpected error occurred."),
         headers: responseHeaders,
@@ -2015,7 +2791,16 @@ describe("Leases Handler", async () => {
         .spyOn(InnovationSandbox, "terminateLease")
         .mockResolvedValue();
 
-      expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
+      expect(
+        await handler(
+          event,
+          mockAuthorizedContext(
+            testEnv,
+            mockedGlobalConfig,
+            mockedReportingConfig,
+          ),
+        ),
+      ).toEqual({
         statusCode: 200,
         body: JSON.stringify({
           status: "success",
@@ -2052,7 +2837,16 @@ describe("Leases Handler", async () => {
         .spyOn(InnovationSandbox, "terminateLease")
         .mockResolvedValue();
 
-      expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
+      expect(
+        await handler(
+          event,
+          mockAuthorizedContext(
+            testEnv,
+            mockedGlobalConfig,
+            mockedReportingConfig,
+          ),
+        ),
+      ).toEqual({
         statusCode: 404,
         body: createFailureResponseBody({
           message: `Lease not found.`,
@@ -2087,7 +2881,16 @@ describe("Leases Handler", async () => {
         .spyOn(InnovationSandbox, "terminateLease")
         .mockResolvedValue();
 
-      expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
+      expect(
+        await handler(
+          event,
+          mockAuthorizedContext(
+            testEnv,
+            mockedGlobalConfig,
+            mockedReportingConfig,
+          ),
+        ),
+      ).toEqual({
         statusCode: 409,
         body: createFailureResponseBody({
           message: `Only [Active, Frozen] leases can be terminated.`,
@@ -2127,7 +2930,16 @@ describe("Leases Handler", async () => {
           .spyOn(InnovationSandbox, "terminateLease")
           .mockRejectedValue(new error(error.name));
 
-        expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
+        expect(
+          await handler(
+            event,
+            mockAuthorizedContext(
+              testEnv,
+              mockedGlobalConfig,
+              mockedReportingConfig,
+            ),
+          ),
+        ).toEqual({
           statusCode: statusCode,
           body: createFailureResponseBody({ message: error.name }),
           headers: responseHeaders,
@@ -2161,13 +2973,316 @@ describe("Leases Handler", async () => {
         .spyOn(InnovationSandbox, "terminateLease")
         .mockRejectedValue(new Error());
 
-      expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
+      expect(
+        await handler(
+          event,
+          mockAuthorizedContext(
+            testEnv,
+            mockedGlobalConfig,
+            mockedReportingConfig,
+          ),
+        ),
+      ).toEqual({
         statusCode: 500,
         body: createErrorResponseBody("An unexpected error occurred."),
         headers: responseHeaders,
       });
       expect(getLeaseSpy).toHaveBeenCalledOnce();
       expect(terminateLeaseSpy).toHaveBeenCalledOnce();
+    });
+  });
+
+  describe("POST /leases/{leaseId}/unfreeze", () => {
+    it("should return 200 and invoke the unfreezeLease action", async () => {
+      const mockedLease = generateSchemaData(MonitoredLeaseSchema, {
+        status: "Frozen",
+      });
+      const mockedLeaseId = base64EncodeCompositeKey({
+        userEmail: mockedLease.userEmail,
+        uuid: mockedLease.uuid,
+      });
+      const event = createAPIGatewayProxyEvent({
+        httpMethod: "POST",
+        path: `/leases/${mockedLeaseId}/unfreeze`,
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${isbAuthorizedUser.token}`,
+        },
+      });
+
+      const getLeaseSpy = vi
+        .spyOn(DynamoLeaseStore.prototype, "get")
+        .mockResolvedValue({
+          result: mockedLease,
+        });
+
+      const unfreezeLeaseSpy = vi
+        .spyOn(InnovationSandbox, "unfreezeLease")
+        .mockResolvedValue({
+          newItem: mockedLease,
+          oldItem: mockedLease,
+        });
+
+      expect(
+        await handler(
+          event,
+          mockAuthorizedContext(
+            testEnv,
+            mockedGlobalConfig,
+            mockedReportingConfig,
+          ),
+        ),
+      ).toEqual({
+        statusCode: 200,
+        body: JSON.stringify({
+          status: "success",
+          data: {
+            ...mockedLease,
+            leaseId: mockedLeaseId,
+          },
+        }),
+        headers: responseHeaders,
+      });
+      expect(getLeaseSpy).toHaveBeenCalledOnce();
+      expect(unfreezeLeaseSpy).toHaveBeenCalledOnce();
+    });
+    it("should return 400 when the leaseId path parameter is invalid", async () => {
+      const mockedLease = generateSchemaData(MonitoredLeaseSchema);
+      const mockedLeaseId = "INVALID_ID";
+      const event = createAPIGatewayProxyEvent({
+        httpMethod: "POST",
+        path: `/leases/${mockedLeaseId}/unfreeze`,
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${isbAuthorizedUser.token}`,
+        },
+      });
+
+      const getLeaseSpy = vi
+        .spyOn(DynamoLeaseStore.prototype, "get")
+        .mockResolvedValue({
+          result: mockedLease,
+        });
+
+      const unfreezeLeaseSpy = vi
+        .spyOn(InnovationSandbox, "unfreezeLease")
+        .mockResolvedValue({
+          newItem: mockedLease,
+          oldItem: mockedLease,
+        });
+
+      expect(
+        await handler(
+          event,
+          mockAuthorizedContext(
+            testEnv,
+            mockedGlobalConfig,
+            mockedReportingConfig,
+          ),
+        ),
+      ).toEqual({
+        statusCode: 400,
+        body: createFailureResponseBody({
+          field: "leaseId",
+          message: "Invalid base64",
+        }),
+        headers: responseHeaders,
+      });
+      expect(getLeaseSpy).not.toHaveBeenCalled();
+      expect(unfreezeLeaseSpy).not.toHaveBeenCalled();
+    });
+
+    it("should return 404 when the lease does not exist", async () => {
+      const mockedLease = generateSchemaData(MonitoredLeaseSchema);
+      const mockedLeaseId = base64EncodeCompositeKey({
+        userEmail: mockedLease.userEmail,
+        uuid: mockedLease.uuid,
+      });
+      const event = createAPIGatewayProxyEvent({
+        httpMethod: "POST",
+        path: `/leases/${mockedLeaseId}/unfreeze`,
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${isbAuthorizedUser.token}`,
+        },
+      });
+
+      const getLeaseSpy = vi
+        .spyOn(DynamoLeaseStore.prototype, "get")
+        .mockResolvedValue({
+          result: undefined,
+        });
+
+      const unfreezeLeaseSpy = vi
+        .spyOn(InnovationSandbox, "unfreezeLease")
+        .mockResolvedValue({
+          newItem: mockedLease,
+          oldItem: mockedLease,
+        });
+
+      expect(
+        await handler(
+          event,
+          mockAuthorizedContext(
+            testEnv,
+            mockedGlobalConfig,
+            mockedReportingConfig,
+          ),
+        ),
+      ).toEqual({
+        statusCode: 404,
+        body: createFailureResponseBody({
+          message: `Lease not found.`,
+        }),
+        headers: responseHeaders,
+      });
+      expect(getLeaseSpy).toHaveBeenCalledOnce();
+      expect(unfreezeLeaseSpy).not.toHaveBeenCalled();
+    });
+
+    it("should return 409 when the lease is not frozen", async () => {
+      const mockedLease = generateSchemaData(PendingLeaseSchema);
+      const mockedLeaseId = base64EncodeCompositeKey({
+        userEmail: mockedLease.userEmail,
+        uuid: mockedLease.uuid,
+      });
+      const event = createAPIGatewayProxyEvent({
+        httpMethod: "POST",
+        path: `/leases/${mockedLeaseId}/unfreeze`,
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${isbAuthorizedUser.token}`,
+        },
+      });
+
+      const getLeaseSpy = vi
+        .spyOn(DynamoLeaseStore.prototype, "get")
+        .mockResolvedValue({
+          result: mockedLease,
+        });
+
+      const unfreezeLeaseSpy = vi
+        .spyOn(InnovationSandbox, "unfreezeLease")
+        .mockResolvedValue({
+          newItem: mockedLease,
+          oldItem: mockedLease,
+        });
+
+      expect(
+        await handler(
+          event,
+          mockAuthorizedContext(
+            testEnv,
+            mockedGlobalConfig,
+            mockedReportingConfig,
+          ),
+        ),
+      ).toEqual({
+        statusCode: 409,
+        body: createFailureResponseBody({
+          message: `Only frozen leases can be unfrozen.`,
+        }),
+        headers: responseHeaders,
+      });
+      expect(getLeaseSpy).toHaveBeenCalledOnce();
+      expect(unfreezeLeaseSpy).not.toHaveBeenCalled();
+    });
+    it.each([
+      { statusCode: 409, error: AccountNotInFrozenError },
+      { statusCode: 404, error: CouldNotFindAccountError },
+      { statusCode: 404, error: CouldNotRetrieveUserError },
+    ])(
+      "should return $statusCode when $error.name is thrown by unfreeze call",
+      async ({ statusCode, error }) => {
+        const mockedLease = generateSchemaData(MonitoredLeaseSchema, {
+          status: "Frozen",
+        });
+        const mockedLeaseId = base64EncodeCompositeKey({
+          userEmail: mockedLease.userEmail,
+          uuid: mockedLease.uuid,
+        });
+        const event = createAPIGatewayProxyEvent({
+          httpMethod: "POST",
+          path: `/leases/${mockedLeaseId}/unfreeze`,
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${isbAuthorizedUser.token}`,
+          },
+        });
+
+        const getLeaseSpy = vi
+          .spyOn(DynamoLeaseStore.prototype, "get")
+          .mockResolvedValue({
+            result: mockedLease,
+          });
+
+        const unfreezeLeaseSpy = vi
+          .spyOn(InnovationSandbox, "unfreezeLease")
+          .mockRejectedValue(new error(error.name));
+
+        expect(
+          await handler(
+            event,
+            mockAuthorizedContext(
+              testEnv,
+              mockedGlobalConfig,
+              mockedReportingConfig,
+            ),
+          ),
+        ).toEqual({
+          statusCode: statusCode,
+          body: createFailureResponseBody({
+            message: error.name,
+          }),
+          headers: responseHeaders,
+        });
+        expect(getLeaseSpy).toHaveBeenCalledOnce();
+        expect(unfreezeLeaseSpy).toHaveBeenCalledOnce();
+      },
+    );
+    it("should return 500 when an unexpected error occurs", async () => {
+      const mockedLease = generateSchemaData(MonitoredLeaseSchema, {
+        status: "Frozen",
+      });
+      const mockedLeaseId = base64EncodeCompositeKey({
+        userEmail: mockedLease.userEmail,
+        uuid: mockedLease.uuid,
+      });
+      const event = createAPIGatewayProxyEvent({
+        httpMethod: "POST",
+        path: `/leases/${mockedLeaseId}/unfreeze`,
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${isbAuthorizedUser.token}`,
+        },
+      });
+
+      const getLeaseSpy = vi
+        .spyOn(DynamoLeaseStore.prototype, "get")
+        .mockResolvedValue({
+          result: mockedLease,
+        });
+
+      const unfreezeLeaseSpy = vi
+        .spyOn(InnovationSandbox, "unfreezeLease")
+        .mockRejectedValue(new Error("Unexpected error"));
+
+      expect(
+        await handler(
+          event,
+          mockAuthorizedContext(
+            testEnv,
+            mockedGlobalConfig,
+            mockedReportingConfig,
+          ),
+        ),
+      ).toEqual({
+        statusCode: 500,
+        body: createErrorResponseBody("An unexpected error occurred."),
+        headers: responseHeaders,
+      });
+      expect(getLeaseSpy).toHaveBeenCalledOnce();
+      expect(unfreezeLeaseSpy).toHaveBeenCalledOnce();
     });
   });
 });

@@ -7,35 +7,29 @@ import {
   Header,
   SpaceBetween,
 } from "@cloudscape-design/components";
-import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { IsbUser } from "@amzn/innovation-sandbox-commons/types/isb-types";
 import { Divider } from "@amzn/innovation-sandbox-frontend/components/Divider";
 import { InfoLink } from "@amzn/innovation-sandbox-frontend/components/InfoLink";
 import { Markdown } from "@amzn/innovation-sandbox-frontend/components/Markdown";
 import { AccountsPanel } from "@amzn/innovation-sandbox-frontend/domains/home/components/AccountsPanel";
 import { ApprovalsPanel } from "@amzn/innovation-sandbox-frontend/domains/home/components/ApprovalsPanel";
 import { MyLeases } from "@amzn/innovation-sandbox-frontend/domains/home/components/MyLeases";
-import { AuthService } from "@amzn/innovation-sandbox-frontend/helpers/AuthService";
 import { useBreadcrumb } from "@amzn/innovation-sandbox-frontend/hooks/useBreadcrumb";
-import { useInit } from "@amzn/innovation-sandbox-frontend/hooks/useInit";
+import { useUser } from "@amzn/innovation-sandbox-frontend/hooks/useUser";
 import { useAppLayoutContext } from "@aws-northstar/ui/components/AppLayout";
+import { useEffect } from "react";
 
 export const Home = () => {
   const navigate = useNavigate();
   const setBreadcrumb = useBreadcrumb();
-  const [user, setUser] = useState<IsbUser>();
   const { setTools } = useAppLayoutContext();
+  const { user, isAdmin, isManager } = useUser();
 
-  useInit(async () => {
+  useEffect(() => {
     setBreadcrumb([{ text: "Home", href: "/" }]);
     setTools(<Markdown file={"home"} />);
-
-    // get user details
-    const currentUser = await AuthService.getCurrentUser();
-    setUser(currentUser);
-  });
+  }, []);
 
   const body = () => {
     if (user?.roles?.includes("Admin")) {
@@ -76,9 +70,16 @@ export const Home = () => {
         <Header
           variant="h1"
           actions={
-            <Button onClick={() => navigate("/request")} variant="primary">
-              Request a new lease
-            </Button>
+            <SpaceBetween direction="horizontal" size="xs">
+              <Button onClick={() => navigate("/request")} variant="primary">
+                Request lease
+              </Button>
+              {(isAdmin || isManager) && (
+                <Button onClick={() => navigate("/assign")} variant="normal">
+                  Assign lease
+                </Button>
+              )}
+            </SpaceBetween>
           }
           info={<InfoLink markdown="home" />}
         >

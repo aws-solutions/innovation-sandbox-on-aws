@@ -3,7 +3,11 @@
 
 import { UseQueryResult } from "@tanstack/react-query";
 
-import { LeaseTemplate } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template";
+import {
+  LeaseTemplate,
+  Visibility,
+} from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template";
+import { basicFormFields } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/formFields/basic";
 
 export const generateBreadcrumb = (
   query: UseQueryResult<LeaseTemplate | undefined, unknown>,
@@ -31,4 +35,18 @@ export const generateBreadcrumb = (
   });
 
   return breadcrumbItems;
+};
+
+/**
+ * Gets the visibility option object for form initialization
+ * @param visibility - The visibility value ("PUBLIC" or "PRIVATE")
+ * @returns The complete option object with label and value
+ */
+export const getVisibilityOption = (visibility: Visibility) => {
+  const visibilityField = basicFormFields().fields.find(
+    (field) => field.name === "visibility",
+  );
+  return visibilityField?.options?.find(
+    (option: any) => option.value === visibility,
+  );
 };

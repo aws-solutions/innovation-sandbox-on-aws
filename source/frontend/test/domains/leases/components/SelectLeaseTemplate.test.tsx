@@ -1,12 +1,11 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { FieldInputProps } from "@aws-northstar/ui";
 import createWrapper from "@cloudscape-design/components/test-utils/dom";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
-import { describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import { LeaseTemplate } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template.js";
 import { SelectLeaseTemplate } from "@amzn/innovation-sandbox-frontend/domains/leases/components/SelectLeaseTemplate";
@@ -25,30 +24,16 @@ import {
 import { MemoryRouter } from "react-router-dom";
 
 describe("SelectLeaseTemplate", () => {
-  const mockInputElement = document.createElement("input");
-  mockInputElement.value = "";
+  const mockOnChange = vi.fn();
 
-  const mockInput: FieldInputProps<HTMLInputElement, HTMLElement> = {
-    name: "leaseTemplate",
-    value: mockInputElement,
-    onChange: vi.fn(),
-    onBlur: vi.fn(),
-    onFocus: vi.fn(),
-  };
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
 
-  const mockMeta = {
-    error: undefined,
-  };
-
-  const renderComponent = () =>
+  const renderComponent = (value = "") =>
     renderWithQueryClient(
       <MemoryRouter>
-        <SelectLeaseTemplate
-          input={mockInput}
-          meta={mockMeta}
-          data={{}}
-          showError={false}
-        />
+        <SelectLeaseTemplate value={value} onChange={mockOnChange} />
       </MemoryRouter>,
     );
 
@@ -120,9 +105,7 @@ describe("SelectLeaseTemplate", () => {
     const basicTemplateCard = screen.getByText(mockBasicLeaseTemplate.name);
     await user.click(basicTemplateCard);
 
-    expect(mockInput.onChange).toHaveBeenCalledWith(
-      mockBasicLeaseTemplate.uuid,
-    );
+    expect(mockOnChange).toHaveBeenCalledWith(mockBasicLeaseTemplate.uuid);
   });
 
   test("displays no templates message when no templates are available", async () => {
@@ -144,20 +127,18 @@ describe("SelectLeaseTemplate", () => {
     });
   });
 
-  test("displays error message when showError is true", async () => {
-    const errorMeta = { ...mockMeta, error: "Please select an option" };
-
-    renderWithQueryClient(
-      <SelectLeaseTemplate
-        input={mockInput}
-        meta={errorMeta}
-        data={{}}
-        showError={true}
-      />,
-    );
+  test("handles value prop correctly", async () => {
+    renderComponent(mockBasicLeaseTemplate.uuid);
 
     await waitFor(() => {
-      expect(screen.getByText("Please select an option")).toBeInTheDocument();
+      expect(screen.getByText(mockBasicLeaseTemplate.name)).toBeInTheDocument();
+    });
+
+    // Check that the template with the given value is selected
+    await waitFor(() => {
+      const cards = createWrapper().findCards();
+      const selectedItems = cards?.findSelectedItems();
+      expect(selectedItems).toHaveLength(1);
     });
   });
 
@@ -201,6 +182,10 @@ describe("SelectLeaseTemplate", () => {
           : "No approval required",
       ),
     ).toBeInTheDocument();
+
+    // Check visibility indicators are displayed
+    const visibilityLabels = screen.getAllByText(/Public|Private/);
+    expect(visibilityLabels.length).toBeGreaterThan(0);
   });
 
   test("filters templates when searching by name", async () => {

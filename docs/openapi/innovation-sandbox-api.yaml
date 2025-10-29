@@ -2,7 +2,7 @@ openapi: 3.0.0
 info:
   title: Innovation Sandbox on AWS
   description: API documentation for the Innovation Sandbox on AWS solution.
-  version: 1.0.5
+  version: 1.1.0
   license:
     name: Apache 2.0
     url: "http://www.apache.org/licenses/LICENSE-2.0.html"
@@ -231,6 +231,17 @@ components:
       format: email
       description: Email of the user who created the template
       example: "admin@example.com"
+    Visibility:
+      type: string
+      enum: [PUBLIC, PRIVATE]
+      description: Visibility of the lease template - PUBLIC templates are visible to all users, PRIVATE templates are only visible to Admin and Manager roles
+      example: "PUBLIC"
+    CostReportGroup:
+      type: string
+      description: Cost report group identifier for cost allocation and reporting. Must be one of the values configured in costReportGroups if requireCostReportGroup is enabled.
+      example: "Engineering"
+      maxLength: 50
+      nullable: true
     MetaData:
       type: object
       properties:
@@ -324,6 +335,8 @@ components:
           $ref: "#/components/schemas/DurationThresholds"
         comments:
           $ref: "#/components/schemas/Comments"
+        costReportGroup:
+          $ref: "#/components/schemas/CostReportGroup"
         awsAccountId:
           $ref: "#/components/schemas/AwsAccountId"
         leaseId:
@@ -356,6 +369,8 @@ components:
           $ref: "#/components/schemas/RequiresApproval"
         createdBy:
           $ref: "#/components/schemas/UserEmail"
+        visibility:
+          $ref: "#/components/schemas/Visibility"
         maxSpend:
           $ref: "#/components/schemas/MaxSpend"
         budgetThresholds:
@@ -364,6 +379,8 @@ components:
           $ref: "#/components/schemas/LeaseDurationInHours"
         durationThresholds:
           $ref: "#/components/schemas/DurationThresholds"
+        costReportGroup:
+          $ref: "#/components/schemas/CostReportGroup"
         meta:
           $ref: "#/components/schemas/MetaData"
     GlobalConfiguration:
@@ -454,6 +471,18 @@ components:
               type: string
               format: email
               description: The email address to send notifications from
+        costReportGroups:
+          type: array
+          items:
+            type: string
+            maxLength: 50
+          maxItems: 100
+          description: List of valid cost report groups that can be used in lease templates
+          example: ["Engineering", "DataScience", "Marketing"]
+        requireCostReportGroup:
+          type: boolean
+          description: Whether cost report group is required when creating/updating lease templates
+          example: false
   parameters:
     PageIdentifier:
       name: pageIdentifier
@@ -587,6 +616,7 @@ paths:
       tags:
         - leases
       summary: Request a new lease
+      description: "Request a new lease for the authenticated user or, if userEmail is provided and the user has Admin/Manager permissions, for another user. The target user must exist in AWS Identity Center."
       requestBody:
         required: true
         content:
@@ -600,6 +630,9 @@ paths:
                   $ref: "#/components/schemas/LeaseTemplateUuid"
                 comments:
                   $ref: "#/components/schemas/Comments"
+                userEmail:
+                  $ref: "#/components/schemas/UserEmail"
+                  description: "Optional email of the user to create the lease for. Only Admin/Manager roles can create leases for other users. If not provided, the lease will be created for the authenticated user."
       responses:
         "201":
           description: Success
@@ -669,6 +702,8 @@ paths:
                   $ref: "#/components/schemas/ExpirationDate"
                 durationThresholds:
                   $ref: "#/components/schemas/DurationThresholds"
+                costReportGroup:
+                  $ref: "#/components/schemas/CostReportGroup"
       responses:
         "200":
           description: Success
@@ -777,6 +812,36 @@ paths:
           $ref: "#/components/responses/ConflictResponse"
         "500":
           $ref: "#/components/responses/ErrorResponse"
+  /leases/{leaseId}/unfreeze:
+    parameters:
+      - $ref: "#/components/parameters/LeaseId"
+    post:
+      tags:
+        - leases
+      summary: Unfreeze a frozen lease
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponseBody"
+                  - type: object
+                    properties:
+                      data:
+                        allOf:
+                          - $ref: "#/components/schemas/Lease"
+        "400":
+          $ref: "#/components/responses/BadRequestResponse"
+        "403":
+          $ref: "#/components/responses/UnauthorizedResponse"
+        "404":
+          $ref: "#/components/responses/ResourceNotFoundResponse"
+        "409":
+          $ref: "#/components/responses/ConflictResponse"
+        "500":
+          $ref: "#/components/responses/ErrorResponse"
 
   # Lease Template endpoints
   /leaseTemplates:
@@ -784,6 +849,7 @@ paths:
       tags:
         - leaseTemplates
       summary: Get paginated list of lease templates
+      description: Returns all lease templates visible to the current user. Users with Admin or Manager roles can see all templates (PUBLIC and PRIVATE), while regular users can only see PUBLIC templates.
       parameters:
         - $ref: "#/components/parameters/PageIdentifier"
         - $ref: "#/components/parameters/PageSize"
@@ -833,6 +899,8 @@ paths:
                   $ref: "#/components/schemas/LeaseTemplateName"
                 description:
                   $ref: "#/components/schemas/LeaseTemplateDescription"
+                visibility:
+                  $ref: "#/components/schemas/Visibility"
                 maxSpend:
                   $ref: "#/components/schemas/MaxSpend"
                 leaseDurationInHours:
@@ -845,6 +913,8 @@ paths:
                   type: boolean
                   example: true
                   description: Whether leases created from this template require approval
+                costReportGroup:
+                  $ref: "#/components/schemas/CostReportGroup"
       responses:
         "201":
           description: Success
@@ -872,6 +942,7 @@ paths:
       tags:
         - leaseTemplates
       summary: Get lease template by id
+      description: Returns a specific lease template by ID. Users with Admin or Manager roles can access any template, while regular users can only access PUBLIC templates. Attempting to access a PRIVATE template as a regular user will return a 404 Resource Not Found.
       responses:
         "200":
           description: Success
@@ -917,6 +988,8 @@ paths:
                   type: string
                 description:
                   type: string
+                visibility:
+                  $ref: "#/components/schemas/Visibility"
                 requiresApproval:
                   type: boolean
                 maxSpend:
@@ -929,6 +1002,8 @@ paths:
                   $ref: "#/components/schemas/DurationThresholds"
                 createdBy:
                   $ref: "#/components/schemas/CreatedBy"
+                costReportGroup:
+                  $ref: "#/components/schemas/CostReportGroup"
       responses:
         "200":
           description: Success

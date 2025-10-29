@@ -9,8 +9,12 @@ import {
   OptionalParameter,
   ParameterWithLabel,
 } from "@amzn/innovation-sandbox-infrastructure/helpers/cfn-utils";
-import { HubAccountIdParam } from "@amzn/innovation-sandbox-infrastructure/helpers/hub-account-id-param";
-import { NamespaceParam } from "@amzn/innovation-sandbox-infrastructure/helpers/namespace-param";
+
+import {
+  HubAccountIdParam,
+  NamespaceParam,
+  OrgMgtAccountIdParam,
+} from "@amzn/innovation-sandbox-infrastructure/helpers/shared-cfn-params";
 import { applyIsbTag } from "@amzn/innovation-sandbox-infrastructure/helpers/tagging-helper";
 import { IsbIdcResources } from "@amzn/innovation-sandbox-infrastructure/isb-idc-resources";
 
@@ -25,6 +29,9 @@ export class IsbIdcStack extends Stack {
     super(scope, id, props);
 
     const namespaceParam = new NamespaceParam(this);
+
+    const orgManagementAccountIdParam = new OrgMgtAccountIdParam(this);
+
     const hubAccountIdParam = new HubAccountIdParam(this);
 
     const identityStoreId = new ParameterWithLabel(this, "IdentityStoreId", {
@@ -46,28 +53,29 @@ export class IsbIdcStack extends Stack {
       label: "Admin Group Name (Optional)",
       description:
         "A custom name to provide for the admin group (value if left empty: <namespace>_IsbAdminsGroup).",
-      valueIfEmpty: `${namespaceParam.namespace.valueAsString}_IsbAdminsGroup`,
+      valueIfEmpty: `${namespaceParam.valueAsString}_IsbAdminsGroup`,
     });
 
     const managerGroupName = new OptionalParameter(this, "ManagerGroupName", {
       label: "Manager Group Name (Optional)",
       description:
         "A custom name to provide for the manager group (value if left empty: <namespace>_IsbManagersGroup).",
-      valueIfEmpty: `${namespaceParam.namespace.valueAsString}_IsbManagersGroup`,
+      valueIfEmpty: `${namespaceParam.valueAsString}_IsbManagersGroup`,
     });
 
     const userGroupName = new OptionalParameter(this, "UserGroupName", {
       label: "User Group Name (Optional)",
       description:
         "A custom name to provide for the user group (value if left empty: <namespace>_IsbUsersGroup).",
-      valueIfEmpty: `${namespaceParam.namespace.valueAsString}_IsbUsersGroup`,
+      valueIfEmpty: `${namespaceParam.valueAsString}_IsbUsersGroup`,
     });
 
     addParameterGroup(this, {
       label: "IDC Stack Configuration",
       parameters: [
-        namespaceParam.namespace,
-        hubAccountIdParam.hubAccountId,
+        namespaceParam,
+        orgManagementAccountIdParam,
+        hubAccountIdParam,
         identityStoreId,
         ssoInstanceArn,
         adminGroupName,
@@ -77,16 +85,17 @@ export class IsbIdcStack extends Stack {
     });
 
     new IsbIdcResources(this, {
-      hubAccountId: hubAccountIdParam.hubAccountId.valueAsString,
+      orgMgtAccountId: orgManagementAccountIdParam.valueAsString,
+      hubAccountId: hubAccountIdParam.valueAsString,
       identityStoreId: identityStoreId.valueAsString,
       ssoInstanceArn: ssoInstanceArn.valueAsString,
       adminGroupName: adminGroupName.resolve(),
       managerGroupName: managerGroupName.resolve(),
       userGroupName: userGroupName.resolve(),
-      namespace: namespaceParam.namespace.valueAsString,
+      namespace: namespaceParam.valueAsString,
       solutionVersion: getContextFromMapping(this, "version"),
     });
 
-    applyIsbTag(this, `${namespaceParam.namespace.valueAsString}`);
+    applyIsbTag(this, `${namespaceParam.valueAsString}`);
   }
 }

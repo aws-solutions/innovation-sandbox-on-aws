@@ -52,6 +52,7 @@ const DataConfigSchema = z.object({
   configEnvironmentId: z.string(),
   globalConfigConfigurationProfileId: z.string(),
   nukeConfigConfigurationProfileId: z.string(),
+  reportingConfigConfigurationProfileId: z.string(),
   accountTable: z.string(),
   leaseTemplateTable: z.string(),
   leaseTable: z.string(),
@@ -152,6 +153,8 @@ const onCreateOrUpdate = async (
         validatedDataConfig.globalConfigConfigurationProfileId,
       nukeConfigConfigurationProfileId:
         validatedDataConfig.nukeConfigConfigurationProfileId,
+      reportingConfigConfigurationProfileId:
+        validatedDataConfig.reportingConfigConfigurationProfileId,
       accountTable: validatedDataConfig.accountTable,
       leaseTemplateTable: validatedDataConfig.leaseTemplateTable,
       leaseTable: validatedDataConfig.leaseTable,

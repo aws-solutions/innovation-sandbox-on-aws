@@ -24,7 +24,6 @@ page.
     - [Post Deployment Tasks](#post-deployment-tasks)
   - [Running Tests](#running-tests)
     - [Unit Tests](#unit-tests)
-    - [E2E Tests](#e2e-tests)
   - [Using Private ECR Repository](#using-private-ecr-repository)
   - [Uninstalling the Solution](#uninstalling-the-solution)
   - [Cost Scaling](#cost-scaling)
@@ -128,24 +127,6 @@ To also update snapshot tests run the following command from the repository root
 npm run test:update-snapshots
 ```
 
-### E2E Tests
-
-First make sure that the `E2E Test Configs` section of the `.env` file is configured.
-
-> **Note:** The E2E tests assume that all stacks are deployed into the same AWS Account for testing purposes. The test suite will not run if you have multi-account deployment.
-
-To run the E2E tests run the following command:
-
-```shell
-npm run e2e
-```
-
-Additionally, if you want to run the full test suite including slower tests such as those for the account cleaner, run the following command:
-
-```shell
-npm run e2e:slow
-```
-
 ## Using Private ECR Repository
 
 For development purposes it may be useful to use a custom ECR image to test updates to AWS Nuke or just host the image in your account.
@@ -201,7 +182,6 @@ root
 ├── scripts/                        # scripts used to run checks on the repository
 ├── source/                         # source code separated into multiple stand alone packages
 │   ├── common                          # common libraries used across the solution
-│   ├── e2e                             # e2e test suite
 │   ├── frontend                        # frontend vite application
 │   ├── infrastructure                  # cdk application consisting of solution infrastructure
 │   ├── lambdas                         # lambda function runtime code, contains multiple lambdas each of which is its own package
@@ -238,7 +218,7 @@ For more information on pre-commit, refer to the official documentation [here](h
 
 ## Collection of Operational Metrics
 
-This solution collects anonymous operational metrics to help AWS improve the quality and features of the solution. For more information, including how to disable this capability, please see the [implementation guide](https://docs.aws.amazon.com/solutions/latest/innovation-sandbox-on-aws/reference.html#anonymized-data-collection).
+This solution sends operational metrics to AWS (the “Data”) about the use of this solution. We use this Data to better understand how customers use this solution and related services and products. AWS’s collection of this Data is subject to the [AWS Privacy Notice](https://aws.amazon.com/privacy/).
 
 ## License
 

@@ -9,6 +9,7 @@ import { IdcConfigurerLambdaEnvironmentSchema } from "@amzn/innovation-sandbox-c
 import { IsbLambdaFunctionCustomResource } from "@amzn/innovation-sandbox-infrastructure/components/isb-lambda-function-custom-resource";
 
 export type IdcConfigurerProps = {
+  orgMgtAccountId: string;
   namespace: string;
   identityStoreId: string;
   ssoInstanceArn: string;
@@ -78,6 +79,7 @@ export class IdcConfigurer extends Construct {
       service: "identitystore",
       resource: "identitystore",
       region: "",
+      account: props.orgMgtAccountId,
       arnFormat: ArnFormat.SLASH_RESOURCE_NAME,
       resourceName: props.identityStoreId,
     });

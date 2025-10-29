@@ -3,8 +3,10 @@
 import { Stack, type StackProps } from "aws-cdk-lib";
 import { Construct } from "constructs";
 
-import { HubAccountIdParam } from "@amzn/innovation-sandbox-infrastructure/helpers/hub-account-id-param";
-import { NamespaceParam } from "@amzn/innovation-sandbox-infrastructure/helpers/namespace-param";
+import {
+  HubAccountIdParam,
+  NamespaceParam,
+} from "@amzn/innovation-sandbox-infrastructure/helpers/shared-cfn-params";
 import { IsbSandboxAccountResources } from "@amzn/innovation-sandbox-infrastructure/isb-sandbox-account-resources";
 
 export class IsbSandboxAccountStack extends Stack {
@@ -15,8 +17,8 @@ export class IsbSandboxAccountStack extends Stack {
     const hubAccountIdParam = new HubAccountIdParam(this);
 
     new IsbSandboxAccountResources(this, {
-      hubAccountId: hubAccountIdParam.hubAccountId.valueAsString,
-      namespace: namespaceParam.namespace.valueAsString,
+      hubAccountId: hubAccountIdParam.valueAsString,
+      namespace: namespaceParam.valueAsString,
     });
   }
 }

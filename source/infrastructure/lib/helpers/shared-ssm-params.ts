@@ -84,6 +84,8 @@ export function getSharedSsmParamValues(
         sharedJsonParamResolver.globalConfigConfigurationProfileId,
       nukeConfigConfigurationProfileId:
         sharedJsonParamResolver.nukeConfigConfigurationProfileId,
+      reportingConfigConfigurationProfileId:
+        sharedJsonParamResolver.reportingConfigConfigurationProfileId,
       accountTable: sharedJsonParamResolver.accountTable,
       leaseTemplateTable: sharedJsonParamResolver.leaseTemplateTable,
       leaseTable: sharedJsonParamResolver.leaseTable,

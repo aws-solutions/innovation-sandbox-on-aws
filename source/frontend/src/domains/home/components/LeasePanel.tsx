@@ -15,13 +15,13 @@ import {
   isExpiredLease,
   isMonitoredLease,
   LeaseWithLeaseId,
-  MonitoredLease,
 } from "@amzn/innovation-sandbox-commons/data/lease/lease";
 import { AccountLoginLink } from "@amzn/innovation-sandbox-frontend/components/AccountLoginLink";
 import { BudgetProgressBar } from "@amzn/innovation-sandbox-frontend/components/BudgetProgressBar";
 import { Divider } from "@amzn/innovation-sandbox-frontend/components/Divider";
 import { DurationStatus } from "@amzn/innovation-sandbox-frontend/components/DurationStatus";
 import { LeaseStatusBadge } from "@amzn/innovation-sandbox-frontend/domains/leases/components/LeaseStatusBadge";
+import { getLeaseExpiryInfo } from "@amzn/innovation-sandbox-frontend/helpers/LeaseExpiryInfo";
 
 interface LeasePanelProps {
   lease: LeaseWithLeaseId;
@@ -69,10 +69,7 @@ export const LeasePanel = ({ lease }: LeasePanelProps) => {
 
           <Box>
             <FormField label="Expiry" />
-            <DurationStatus
-              date={(lease as MonitoredLease).expirationDate}
-              durationInHours={lease.leaseDurationInHours}
-            />
+            <DurationStatus {...getLeaseExpiryInfo(lease)} />
           </Box>
 
           <Box>

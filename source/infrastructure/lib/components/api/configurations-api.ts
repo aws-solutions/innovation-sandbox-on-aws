@@ -20,6 +20,7 @@ export class ConfigurationsApi {
       configApplicationId,
       configEnvironmentId,
       globalConfigConfigurationProfileId,
+      reportingConfigConfigurationProfileId,
     } = IsbComputeStack.sharedSpokeConfig.data;
 
     const configurationsLambdaFunction = new IsbLambdaFunction(
@@ -46,7 +47,8 @@ export class ConfigurationsApi {
           APP_CONFIG_APPLICATION_ID: configApplicationId,
           APP_CONFIG_ENVIRONMENT_ID: configEnvironmentId,
           APP_CONFIG_PROFILE_ID: globalConfigConfigurationProfileId,
-          AWS_APPCONFIG_EXTENSION_PREFETCH_LIST: `/applications/${configApplicationId}/environments/${configEnvironmentId}/configurations/${globalConfigConfigurationProfileId}`,
+          REPORTING_CONFIG_PROFILE_ID: reportingConfigConfigurationProfileId,
+          AWS_APPCONFIG_EXTENSION_PREFETCH_LIST: `/applications/${configApplicationId}/environments/${configEnvironmentId}/configurations/${globalConfigConfigurationProfileId},/applications/${configApplicationId}/environments/${configEnvironmentId}/configurations/${reportingConfigConfigurationProfileId}`,
           ISB_MANAGED_REGIONS:
             IsbComputeStack.sharedSpokeConfig.accountPool.isbManagedRegions,
         },
@@ -59,6 +61,11 @@ export class ConfigurationsApi {
       scope,
       configurationsLambdaFunction,
       globalConfigConfigurationProfileId,
+    );
+    grantIsbAppConfigRead(
+      scope,
+      configurationsLambdaFunction,
+      reportingConfigConfigurationProfileId,
     );
     addAppConfigExtensionLayer(configurationsLambdaFunction);
 

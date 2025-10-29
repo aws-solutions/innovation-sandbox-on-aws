@@ -34,6 +34,7 @@ export class SharedJsonParamResolver extends Construct {
   public readonly configEnvironmentId: string;
   public readonly globalConfigConfigurationProfileId: string;
   public readonly nukeConfigConfigurationProfileId: string;
+  public readonly reportingConfigConfigurationProfileId: string;
   public readonly accountTable: string;
   public readonly leaseTemplateTable: string;
   public readonly leaseTable: string;
@@ -143,6 +144,10 @@ export class SharedJsonParamResolver extends Construct {
     this.nukeConfigConfigurationProfileId =
       sharedJsonParamCR.customResource.getAttString(
         "nukeConfigConfigurationProfileId",
+      );
+    this.reportingConfigConfigurationProfileId =
+      sharedJsonParamCR.customResource.getAttString(
+        "reportingConfigConfigurationProfileId",
       );
     this.accountTable =
       sharedJsonParamCR.customResource.getAttString("accountTable");

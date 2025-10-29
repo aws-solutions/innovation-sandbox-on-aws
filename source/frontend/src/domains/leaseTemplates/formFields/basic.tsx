@@ -27,6 +27,30 @@ export const basicFormFields = () => ({
       description: "Optional",
     },
     {
+      component: componentTypes.SELECT,
+      name: "visibility",
+      label: "Visibility",
+      description: "Controls who can see and use this lease template",
+      isRequired: true,
+      options: [
+        {
+          label:
+            "Private - Hidden from users, visible only to admins and managers",
+          value: "PRIVATE",
+        },
+        {
+          label: "Public - Visible to all users",
+          value: "PUBLIC",
+        },
+      ],
+      validate: [
+        {
+          type: validatorTypes.REQUIRED,
+          message: "Please select a visibility setting",
+        },
+      ],
+    },
+    {
       component: componentTypes.SWITCH,
       name: "requiresApproval",
       label: "Approval required",

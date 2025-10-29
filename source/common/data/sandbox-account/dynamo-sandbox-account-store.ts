@@ -46,7 +46,7 @@ export class DynamoSandboxAccountStore extends SandboxAccountStore {
     this.ddbClient = props.client;
   }
 
-  @validateItem(SandboxAccountSchemaVersion, SandboxAccountSchema)
+  @validateItem(SandboxAccountSchema)
   @withMetadata(SandboxAccountSchemaVersion)
   public async put(
     account: SandboxAccount,

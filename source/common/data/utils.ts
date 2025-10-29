@@ -5,7 +5,6 @@ import {
   SingleItemResult,
 } from "@amzn/innovation-sandbox-commons/data/common-types.js";
 import {
-  checkSchema,
   ItemWithMetadata,
   withUpdatedMetadata,
 } from "@amzn/innovation-sandbox-commons/data/metadata.js";
@@ -55,14 +54,11 @@ function replaceNullWithUndefined<T>(val: T) {
 }
 
 /**
- * returns a decorator that validates the item against the schema version and the zod schema
- * @param schemaVersion
- * @param schema
+ * returns a decorator that validates the item against the provided schema
+ * The schema should include version validation in its metadata field
+ * @param schema zod schema for data validation (including version validation)
  */
-export function validateItem<U extends z.ZodSchema<any>>(
-  schemaVersion: number,
-  schema: U,
-) {
+export function validateItem<U extends z.ZodSchema<any>>(schema: U) {
   return function <
     T extends ItemWithMetadata,
     OtherParams extends any[],
@@ -76,7 +72,6 @@ export function validateItem<U extends z.ZodSchema<any>>(
       param: T,
       ...otherParams: OtherParams
     ): ReturnType {
-      checkSchema(param, schemaVersion);
       schema.parse(param);
       return value.call(this, param, ...otherParams);
     };
@@ -113,11 +108,11 @@ function formatErrors(errors: z.ZodError[]) {
   return `${errorCount} invalid records found: ${errorMessages}`;
 }
 
-export function parseResults<T>(
+export function parseResults<T extends z.ZodSchema>(
   items: Record<string, any>[] | undefined,
-  schema: z.ZodSchema<T>,
+  schema: T,
 ): {
-  result: T[];
+  result: z.infer<T>[];
   error?: string;
 } {
   if (!items) {
@@ -140,10 +135,10 @@ export function parseResults<T>(
   };
 }
 
-export function parseSingleItemResult<T>(
+export function parseSingleItemResult<T extends z.ZodSchema>(
   item: Record<string, any> | undefined,
-  schema: z.ZodSchema<T>,
-): SingleItemResult<T> {
+  schema: T,
+): SingleItemResult<z.infer<T>> {
   if (!item) {
     return {
       result: undefined,

@@ -144,11 +144,11 @@ describe("Home", () => {
     ]);
   });
 
-  test("navigates to request page when 'Request a new lease' is clicked", async () => {
+  test("navigates to request page when 'Request lease' is clicked", async () => {
     const user = userEvent.setup();
     renderComponent();
 
-    const requestButton = await screen.findByText("Request a new lease");
+    const requestButton = await screen.findByText("Request lease");
     await user.click(requestButton);
 
     expect(mockNavigate).toHaveBeenCalledWith("/request");

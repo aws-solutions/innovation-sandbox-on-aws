@@ -49,7 +49,7 @@ export class DynamoLeaseTemplateStore extends LeaseTemplateStore {
     this.ddbClient = props.client;
   }
 
-  @validateItem(LeaseTemplateSchemaVersion, LeaseTemplateSchema)
+  @validateItem(LeaseTemplateSchema)
   @withMetadata(LeaseTemplateSchemaVersion)
   public async create(leaseTemplate: LeaseTemplate): Promise<LeaseTemplate> {
     try {
@@ -73,7 +73,7 @@ export class DynamoLeaseTemplateStore extends LeaseTemplateStore {
     }
   }
 
-  @validateItem(LeaseTemplateSchemaVersion, LeaseTemplateSchema)
+  @validateItem(LeaseTemplateSchema)
   @withMetadata(LeaseTemplateSchemaVersion)
   public async update(
     leaseTemplate: LeaseTemplate,

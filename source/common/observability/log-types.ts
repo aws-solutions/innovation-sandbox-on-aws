@@ -20,6 +20,7 @@ export const LeaseApprovedLogSchema = z.object({
   maxBudget: z.number().optional(),
   maxDurationHours: z.number().optional(),
   autoApproved: z.boolean(),
+  creationMethod: z.enum(["REQUESTED", "ASSIGNED"]),
 });
 
 export const LeaseTerminatedLogSchema = z.object({
@@ -36,9 +37,31 @@ export const LeaseTerminatedLogSchema = z.object({
   reasonForTermination: LeaseTerminatedReasonTypeSchema,
 });
 
+export const LeaseUnfrozenLogSchema = z.object({
+  logDetailType: z.literal("LeaseUnfrozen"),
+  leaseId: z.string(),
+  leaseTemplateId: z.string(),
+  accountId: AwsAccountIdSchema,
+});
+
 export const DeploymentSummaryLogSchema = z.object({
   logDetailType: z.literal("DeploymentSummary"),
   numLeaseTemplates: z.number().nonnegative(),
+  config: z.object({
+    numCostReportGroups: z.number().nonnegative(),
+    requireMaxBudget: z.boolean(),
+    maxBudget: z.number().nonnegative(),
+    requireMaxDuration: z.boolean(),
+    maxDurationHours: z.number().nonnegative(),
+    maxLeasesPerUser: z.number().nonnegative(),
+    requireCostReportGroup: z.boolean(),
+    numberOfFailedAttemptsToCancelCleanup: z.number().nonnegative(),
+    waitBeforeRetryFailedAttemptSeconds: z.number().nonnegative(),
+    numberOfSuccessfulAttemptsToFinishCleanup: z.number().nonnegative(),
+    waitBeforeRerunSuccessfulAttemptSeconds: z.number().nonnegative(),
+    isStableTaggingEnabled: z.boolean(),
+    isMultiAccountDeployment: z.boolean(),
+  }),
   accountPool: z.object({
     available: z.number().nonnegative(),
     active: z.number().nonnegative(),
@@ -58,7 +81,7 @@ export const CostReportingSchema = z.object({
 });
 
 export const AccountCleanupFailure = z.object({
-  logDetailType: z.literal("AccountCleanupSuccess"),
+  logDetailType: z.literal("AccountCleanupFailure"),
   accountId: AwsAccountIdSchema,
   durationMinutes: z.number(),
   stateMachineExecutionArn: z.string(),
@@ -66,7 +89,7 @@ export const AccountCleanupFailure = z.object({
 });
 
 export const AccountCleanupSuccess = z.object({
-  logDetailType: z.literal("AccountCleanupFailure"),
+  logDetailType: z.literal("AccountCleanupSuccess"),
   accountId: AwsAccountIdSchema,
   durationMinutes: z.number(),
   stateMachineExecutionArn: z.string(),
@@ -77,6 +100,7 @@ export const SubscribableLogSchema = z.discriminatedUnion("logDetailType", [
   AccountDriftLogSchema,
   LeaseTerminatedLogSchema,
   LeaseApprovedLogSchema,
+  LeaseUnfrozenLogSchema,
   DeploymentSummaryLogSchema,
   CostReportingSchema,
   AccountCleanupFailure,

@@ -72,3 +72,19 @@ Object.defineProperty(window, "scrollTo", {
 // Adding global mocks
 global.fetch = vi.fn();
 global.URL.createObjectURL = vi.fn();
+
+// Mock sessionStorage to provide access token for tests
+Object.defineProperty(window, "sessionStorage", {
+  value: {
+    getItem: vi.fn((key) => {
+      if (key === "isb-jwt") {
+        return "mock-jwt-token";
+      }
+      return null;
+    }),
+    setItem: vi.fn(),
+    removeItem: vi.fn(),
+    clear: vi.fn(),
+  },
+  writable: true,
+});

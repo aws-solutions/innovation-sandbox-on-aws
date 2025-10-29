@@ -18,6 +18,7 @@ import { LeaseTemplate } from "@amzn/innovation-sandbox-commons/data/lease-templ
 import { ErrorPanel } from "@amzn/innovation-sandbox-frontend/components/ErrorPanel";
 import { TextLink } from "@amzn/innovation-sandbox-frontend/components/TextLink";
 import { showSuccessToast } from "@amzn/innovation-sandbox-frontend/components/Toast";
+import { VisibilityIndicator } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/components/VisibilityIndicator";
 import {
   useDeleteLeaseTemplates,
   useGetLeaseTemplates,
@@ -54,6 +55,14 @@ const ExpiryCell = ({ item }: { item: LeaseTemplate }) => (
     )}
   </>
 );
+
+const CostReportCell = ({ item }: { item: LeaseTemplate }) => {
+  return item.costReportGroup ? (
+    <span>{item.costReportGroup}</span>
+  ) : (
+    <StatusIndicator type="info">Not assigned</StatusIndicator>
+  );
+};
 
 export const LeaseTemplatesTable = () => {
   // get lease templates using react query hook
@@ -135,6 +144,18 @@ export const LeaseTemplatesTable = () => {
             header: "Created by",
             sortingField: "createdBy",
             cell: (item: LeaseTemplate) => item.createdBy,
+          },
+          {
+            id: "costReportGroup",
+            header: "Cost Report Group",
+            sortingField: "costReportGroup",
+            cell: (item: LeaseTemplate) => <CostReportCell item={item} />, // NOSONAR typescript:S6478 - the way the table component works requires defining component during render
+          },
+          {
+            id: "visibility",
+            header: "Visibility",
+            sortingField: "visibility",
+            cell: (item: LeaseTemplate) => <VisibilityIndicator item={item} />, // NOSONAR typescript:S6478 - the way the table component works requires defining component during render
           },
           {
             id: "maxSpend",

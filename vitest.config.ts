@@ -4,13 +4,13 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
+    projects: ["source/**/vitest.config.ts"],
     coverage: {
       provider: "v8",
       reporter: ["text", "html", "clover", "json", "lcov"],
       reportsDirectory: "coverage",
       include: ["source/**/*.{ts,tsx}"],
       exclude: [
-        "source/e2e",
         "source/**/*.test.{ts,tsx}",
         "**/vitest.config.ts",
         "source/lambdas/lambda-test-utils",

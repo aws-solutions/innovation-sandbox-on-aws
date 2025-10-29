@@ -7,6 +7,7 @@ import { BaseLambdaEnvironmentSchema } from "@amzn/innovation-sandbox-commons/la
 export const LeaseLambdaEnvironmentSchema = BaseLambdaEnvironmentSchema.extend({
   APP_CONFIG_APPLICATION_ID: z.string(),
   APP_CONFIG_PROFILE_ID: z.string(),
+  REPORTING_CONFIG_PROFILE_ID: z.string(),
   APP_CONFIG_ENVIRONMENT_ID: z.string(),
   ISB_NAMESPACE: z.string(),
   LEASE_TABLE_NAME: z.string(),

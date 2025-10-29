@@ -1,13 +1,11 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { FieldInputProps } from "@aws-northstar/ui";
 import {
   Alert,
   Box,
   Cards,
   ColumnLayout,
-  Container,
   FormField,
   Input,
   Pagination,
@@ -18,71 +16,69 @@ import moment from "moment";
 import { useEffect, useMemo, useState } from "react";
 
 import { LeaseTemplate } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template";
+import { Divider } from "@amzn/innovation-sandbox-frontend/components/Divider";
 import { ErrorPanel } from "@amzn/innovation-sandbox-frontend/components/ErrorPanel";
 import { Loader } from "@amzn/innovation-sandbox-frontend/components/Loader";
+import { VisibilityIndicator } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/components/VisibilityIndicator";
 import { useGetLeaseTemplates } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/hooks";
 import { formatCurrency } from "@amzn/innovation-sandbox-frontend/helpers/util";
 
 interface SelectLeaseTemplateProps {
-  input: FieldInputProps<HTMLInputElement>;
-  data: Record<string, object>;
-  label?: string;
-  description?: string;
-  showError: boolean;
-  meta: {
-    error: string | undefined;
-  };
+  value: string;
+  onChange: (templateId: string) => void;
 }
 
 const LEASE_TEMPLATES_PER_PAGE = 12;
 const LeaseTemplateCardContent = ({ option }: { option: LeaseTemplate }) => (
-  <SpaceBetween size="l">
-    <div>{option.description}</div>
-    <Container>
-      <SpaceBetween size="l">
-        <ColumnLayout columns={3} minColumnWidth={150} variant="text-grid">
-          <Box>
-            <FormField data-nowrap label="Max Budget:" />
-            {option.maxSpend ? (
-              formatCurrency(option.maxSpend)
-            ) : (
-              <StatusIndicator type="info">No max budget</StatusIndicator>
-            )}
-          </Box>
+  <Box>
+    <Divider />
+    <SpaceBetween size="l">
+      <Box>
+        <FormField data-nowrap label="Description:" />
+        {option.description ?? "No description"}
+      </Box>
+      <Box>
+        <FormField data-nowrap label="Max Budget:" />
+        {option.maxSpend ? (
+          formatCurrency(option.maxSpend)
+        ) : (
+          <StatusIndicator type="info">No max budget</StatusIndicator>
+        )}
+      </Box>
 
-          <Box>
-            <FormField data-nowrap label="Expires:" />
-            {option.leaseDurationInHours ? (
-              `after ${moment.duration(option.leaseDurationInHours, "hours").humanize()}`
-            ) : (
-              <StatusIndicator type="info">No expiry</StatusIndicator>
-            )}
-          </Box>
+      <Box>
+        <FormField data-nowrap label="Expires:" />
+        {option.leaseDurationInHours ? (
+          `after ${moment.duration(option.leaseDurationInHours, "hours").humanize()}`
+        ) : (
+          <StatusIndicator type="info">No expiry</StatusIndicator>
+        )}
+      </Box>
 
-          <Box>
-            <FormField data-nowrap label="Approval:" />
-            {option.requiresApproval ? (
-              <StatusIndicator type="warning">
-                <span data-wrap>Requires approval</span>
-              </StatusIndicator>
-            ) : (
-              <StatusIndicator type="success">
-                <span data-wrap>No approval required</span>
-              </StatusIndicator>
-            )}
-          </Box>
-        </ColumnLayout>
-      </SpaceBetween>
-    </Container>
-  </SpaceBetween>
+      <Box>
+        <FormField data-nowrap label="Visibility:" />
+        <VisibilityIndicator item={option} />
+      </Box>
+
+      <Box>
+        <FormField data-nowrap label="Approval:" />
+        {option.requiresApproval ? (
+          <StatusIndicator type="warning">
+            <span data-wrap>Requires approval</span>
+          </StatusIndicator>
+        ) : (
+          <StatusIndicator type="success">
+            <span data-wrap>No approval required</span>
+          </StatusIndicator>
+        )}
+      </Box>
+    </SpaceBetween>
+  </Box>
 );
 
 export const SelectLeaseTemplate = ({
-  input,
-  showError,
-  label,
-  description,
-  meta: { error },
+  value,
+  onChange,
 }: SelectLeaseTemplateProps) => {
   const [selectedLeaseTemplates, setSelectedLeaseTemplates] = useState<
     LeaseTemplate[]
@@ -101,9 +97,9 @@ export const SelectLeaseTemplate = ({
   const handleSelectionChange = ({ detail }: { detail: any }) => {
     if (detail.selectedItems.length > 0) {
       const leaseTemplate = detail.selectedItems[0];
-      input.onChange(leaseTemplate.uuid);
+      onChange(leaseTemplate.uuid);
     } else {
-      input.onChange(undefined);
+      onChange("");
     }
   };
 
@@ -125,16 +121,17 @@ export const SelectLeaseTemplate = ({
 
   // Update selected templates
   useEffect(() => {
-    if (!input.value || !leaseTemplates) return;
-
-    const leaseTemplate = leaseTemplates.find(
-      (x) => x.uuid === input.value.toString(),
-    );
-
-    if (leaseTemplate) {
-      setSelectedLeaseTemplates([leaseTemplate]);
+    if (!leaseTemplates) {
+      setSelectedLeaseTemplates([]);
+      return;
     }
-  }, [input.value, leaseTemplates]);
+
+    const selectedTemplate = value
+      ? leaseTemplates.find((template) => template.uuid === value)
+      : null;
+
+    setSelectedLeaseTemplates(selectedTemplate ? [selectedTemplate] : []);
+  }, [value, leaseTemplates]);
 
   // Calculate paginated items
   const paginatedLeaseTemplates = useMemo(() => {
@@ -182,7 +179,6 @@ export const SelectLeaseTemplate = ({
   if (!isLoading) {
     return (
       <SpaceBetween size="s">
-        <FormField label={label} description={description} />
         <ColumnLayout columns={2}>
           <Box>
             <Input
@@ -224,6 +220,11 @@ export const SelectLeaseTemplate = ({
               onSelectionChange={handleSelectionChange}
               entireCardClickable
               selectionType="single"
+              cardsPerRow={[
+                { cards: 1 },
+                { minWidth: 500, cards: 2 },
+                { minWidth: 800, cards: 3 },
+              ]}
               cardDefinition={{
                 header: (option) => option.name,
                 sections: [
@@ -235,7 +236,6 @@ export const SelectLeaseTemplate = ({
               }}
             />
           )}
-          <FormField errorText={showError && error}></FormField>
         </Box>
       </SpaceBetween>
     );

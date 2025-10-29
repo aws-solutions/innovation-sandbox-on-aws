@@ -23,40 +23,6 @@ const testContext = {
   env: testEnv,
 };
 
-vi.mock(
-  "@amzn/innovation-sandbox-authorizer/authorization-map.js",
-  async () => {
-    return {
-      ...(await vi.importActual(
-        "@amzn/innovation-sandbox-authorizer/authorization-map.js",
-      )),
-      authorizationMap: {
-        "/leases": {
-          GET: ["Manager", "Admin"],
-          POST: ["Manager", "Admin"],
-        },
-        "/leases/{param}": {
-          GET: ["User", "Manager", "Admin"],
-        },
-        "/leaseTemplates": {
-          GET: ["Manager", "Admin"],
-          POST: ["Admin"],
-        },
-        "/leaseTemplates/{param}": {
-          PUT: ["Admin"],
-          GET: ["Manager", "Admin"],
-        },
-        "/configurations": {
-          ALL: ["Admin"],
-        },
-        "/accounts/{param}/eject": {
-          POST: ["Admin"],
-        },
-      },
-    };
-  },
-);
-
 describe("authorization", () => {
   const methodArnPrefix =
     "arn:aws:execute-api:us-east-1:123456789012:aaaaaaaaaa/prod";
@@ -146,136 +112,295 @@ describe("authorization", () => {
     expect(result).toBeNull();
   });
 
-  it("should authorize GET /leases for Admin", async () => {
-    const methodArn = methodArnPrefix + "/GET/leases";
-    const testUser: IsbUser = {
-      ...testUserBase,
-      roles: ["Admin", "User"],
-    };
-    const authorizationToken = jwt.sign({ user: testUser }, jwtSecret);
-    expect(
-      await isAuthorized({ methodArn, authorizationToken }, testContext),
-    ).toEqual(true);
-  });
+  it.each([
+    { role: "Admin", authorized: true },
+    { role: "Manager", authorized: true },
+    { role: "User", authorized: true },
+  ] as const)(
+    "GET /leases authorization for $role",
+    async ({ role, authorized }) => {
+      const methodArn = methodArnPrefix + "/GET/leases";
+      const testUser: IsbUser = {
+        ...testUserBase,
+        roles: role ? [role] : [],
+      };
+      const authorizationToken = jwt.sign({ user: testUser }, jwtSecret);
+      expect(
+        await isAuthorized({ methodArn, authorizationToken }, testContext),
+      ).toEqual(authorized);
+    },
+  );
 
-  it("should not authorize POST /leases for User", async () => {
-    const methodArn = methodArnPrefix + "/GET/leases";
-    const testUser: IsbUser = {
-      ...testUserBase,
-    };
-    const authorizationToken = jwt.sign({ user: testUser }, jwtSecret);
-    expect(
-      await isAuthorized({ methodArn, authorizationToken }, testContext),
-    ).toEqual(false);
-  });
+  it.each([
+    { role: "Admin", authorized: true },
+    { role: "Manager", authorized: true },
+    { role: "User", authorized: true },
+  ] as const)(
+    "POST /leases authorization for $role -> expected: $authorized",
+    async ({ role, authorized }) => {
+      const methodArn = methodArnPrefix + "/POST/leases";
+      const testUser: IsbUser = {
+        ...testUserBase,
+        roles: [role],
+      };
+      const authorizationToken = jwt.sign({ user: testUser }, jwtSecret);
+      expect(
+        await isAuthorized({ methodArn, authorizationToken }, testContext),
+      ).toEqual(authorized);
+    },
+  );
 
-  it("should authorize GET /configurations for Admin", async () => {
-    const methodArn = methodArnPrefix + "/GET/configurations";
-    const testUser: IsbUser = {
-      ...testUserBase,
-      roles: ["Admin"],
-    };
-    const authorizationToken = jwt.sign({ user: testUser }, jwtSecret);
-    expect(
-      await isAuthorized({ methodArn, authorizationToken }, testContext),
-    ).toEqual(true);
-  });
+  it.each([
+    { role: "Admin", authorized: true },
+    { role: "Manager", authorized: true },
+    { role: "User", authorized: true },
+  ] as const)(
+    "GET /configurations authorization for $role -> expected: $authorized",
+    async ({ role, authorized }) => {
+      const methodArn = methodArnPrefix + "/GET/configurations";
+      const testUser: IsbUser = {
+        ...testUserBase,
+        roles: role ? [role] : [],
+      };
+      const authorizationToken = jwt.sign({ user: testUser }, jwtSecret);
+      expect(
+        await isAuthorized({ methodArn, authorizationToken }, testContext),
+      ).toEqual(authorized);
+    },
+  );
 
-  it("should not authorize GET /configurations for Manager / User", async () => {
-    const methodArn = methodArnPrefix + "/GET/configurations";
-    const testUser: IsbUser = {
-      ...testUserBase,
-      roles: ["Manager", "User"],
-    };
-    const authorizationToken = jwt.sign({ user: testUser }, jwtSecret);
-    expect(
-      await isAuthorized({ methodArn, authorizationToken }, testContext),
-    ).toEqual(false);
-  });
+  it.each([
+    { role: "Admin", authorized: true },
+    { role: "Manager", authorized: true },
+    { role: "User", authorized: true },
+  ] as const)(
+    "GET /leases/{param} authorization for $role -> expected: $authorized",
+    async ({ role, authorized }) => {
+      const methodArn = methodArnPrefix + "/GET/leases/Lease101";
+      const testUser: IsbUser = {
+        ...testUserBase,
+        roles: role ? [role] : [],
+      };
+      const authorizationToken = jwt.sign({ user: testUser }, jwtSecret);
+      expect(
+        await isAuthorized({ methodArn, authorizationToken }, testContext),
+      ).toEqual(authorized);
+    },
+  );
 
-  it("should authorize GET /leases/{param} for User", async () => {
-    const methodArn = methodArnPrefix + "/GET/leases/Lease101";
-    const testUser: IsbUser = {
-      ...testUserBase,
-      roles: ["Admin"],
-    };
-    const authorizationToken = jwt.sign({ user: testUser }, jwtSecret);
-    expect(
-      await isAuthorized({ methodArn, authorizationToken }, testContext),
-    ).toEqual(true);
-  });
+  it.each([
+    { role: "Admin", authorized: true },
+    { role: "Manager", authorized: true },
+    { role: "User", authorized: false },
+  ] as const)(
+    "PATCH /leases/{param} authorization for $role -> expected: $authorized",
+    async ({ role, authorized }) => {
+      const methodArn = methodArnPrefix + "/PATCH/leases/Lease101";
+      const testUser: IsbUser = {
+        ...testUserBase,
+        roles: role ? [role] : [],
+      };
+      const authorizationToken = jwt.sign({ user: testUser }, jwtSecret);
+      expect(
+        await isAuthorized({ methodArn, authorizationToken }, testContext),
+      ).toEqual(authorized);
+    },
+  );
 
-  it("should not authorize PUT /leases/{param} for User, Manager, Admin", async () => {
-    const methodArn = methodArnPrefix + "/PUT/leases/Lease101";
-    const testUser: IsbUser = {
-      ...testUserBase,
-      roles: ["User", "Manager", "Admin"],
-    };
-    const authorizationToken = jwt.sign({ user: testUser }, jwtSecret);
-    expect(
-      await isAuthorized({ methodArn, authorizationToken }, testContext),
-    ).toEqual(false);
-  });
+  it.each([
+    { role: "User", authorized: false },
+    { role: "Manager", authorized: false },
+    { role: "Admin", authorized: false },
+  ] as const)(
+    "PUT /leases/{param} authorization for $role -> expected: $authorized",
+    async ({ role, authorized }) => {
+      const methodArn = methodArnPrefix + "/PUT/leases/Lease101";
+      const testUser: IsbUser = {
+        ...testUserBase,
+        roles: [role],
+      };
+      const authorizationToken = jwt.sign({ user: testUser }, jwtSecret);
+      expect(
+        await isAuthorized({ methodArn, authorizationToken }, testContext),
+      ).toEqual(authorized);
+    },
+  );
 
-  it("should authorize GET /leaseTemplates/{param} for Manager", async () => {
-    const methodArn = methodArnPrefix + "/GET/leaseTemplates/Lease101";
-    const testUser: IsbUser = {
-      ...testUserBase,
-      roles: ["Manager"],
-    };
-    const authorizationToken = jwt.sign({ user: testUser }, jwtSecret);
-    expect(
-      await isAuthorized({ methodArn, authorizationToken }, testContext),
-    ).toEqual(true);
-  });
+  it.each([
+    { role: "Manager", authorized: true },
+    { role: "Admin", authorized: true },
+    { role: "User", authorized: true },
+  ] as const)(
+    "GET /leaseTemplates/{param} authorization for $role -> expected: $authorized",
+    async ({ role, authorized }) => {
+      const methodArn = methodArnPrefix + "/GET/leaseTemplates/Lease101";
+      const testUser: IsbUser = {
+        ...testUserBase,
+        roles: [role],
+      };
+      const authorizationToken = jwt.sign({ user: testUser }, jwtSecret);
+      expect(
+        await isAuthorized({ methodArn, authorizationToken }, testContext),
+      ).toEqual(authorized);
+    },
+  );
 
-  it("should not authorize PUT /leaseTemplates/{param} for User, Manager", async () => {
-    const methodArn = methodArnPrefix + "/PUT/leaseTemplates/Lease101";
-    const testUser: IsbUser = {
-      ...testUserBase,
-      roles: ["User", "Manager"],
-    };
-    const authorizationToken = jwt.sign({ user: testUser }, jwtSecret);
-    expect(
-      await isAuthorized({ methodArn, authorizationToken }, testContext),
-    ).toEqual(false);
-  });
+  it.each([
+    { role: "User", authorized: false },
+    { role: "Manager", authorized: true },
+  ] as const)(
+    "PUT /leaseTemplates/{param} authorization for $role -> expected: $authorized",
+    async ({ role, authorized }) => {
+      const methodArn = methodArnPrefix + "/PUT/leaseTemplates/Lease101";
+      const testUser: IsbUser = {
+        ...testUserBase,
+        roles: [role],
+      };
+      const authorizationToken = jwt.sign({ user: testUser }, jwtSecret);
+      expect(
+        await isAuthorized({ methodArn, authorizationToken }, testContext),
+      ).toEqual(authorized);
+    },
+  );
 
-  it("should authorize POST /accounts/{param}/eject for Admin", async () => {
-    const methodArn = methodArnPrefix + "/POST/accounts/123456789012/eject";
-    const testUser: IsbUser = {
-      ...testUserBase,
-      roles: ["Admin"],
-    };
-    const authorizationToken = jwt.sign({ user: testUser }, jwtSecret);
-    expect(
-      await isAuthorized({ methodArn, authorizationToken }, testContext),
-    ).toEqual(true);
-  });
+  it.each([{ role: "Admin", authorized: true }] as const)(
+    "POST /accounts/{param}/eject authorization for $role -> expected: $authorized",
+    async ({ role, authorized }) => {
+      const methodArn = methodArnPrefix + "/POST/accounts/123456789012/eject";
+      const testUser: IsbUser = {
+        ...testUserBase,
+        roles: [role],
+      };
+      const authorizationToken = jwt.sign({ user: testUser }, jwtSecret);
+      expect(
+        await isAuthorized({ methodArn, authorizationToken }, testContext),
+      ).toEqual(authorized);
+    },
+  );
 
-  it("should not authorize PUT /accounts/{param}/eject for Admin", async () => {
-    const methodArn = methodArnPrefix + "/PUT/accounts/123456789012/eject";
-    const testUser: IsbUser = {
-      ...testUserBase,
-      roles: ["Admin"],
-    };
-    const authorizationToken = jwt.sign({ user: testUser }, jwtSecret);
-    expect(
-      await isAuthorized({ methodArn, authorizationToken }, testContext),
-    ).toEqual(false);
-  });
+  it.each([{ role: "Admin", authorized: false }] as const)(
+    "PUT /accounts/{param}/eject authorization for $role -> expected: $authorized",
+    async ({ role, authorized }) => {
+      const methodArn = methodArnPrefix + "/PUT/accounts/123456789012/eject";
+      const testUser: IsbUser = {
+        ...testUserBase,
+        roles: [role],
+      };
+      const authorizationToken = jwt.sign({ user: testUser }, jwtSecret);
+      expect(
+        await isAuthorized({ methodArn, authorizationToken }, testContext),
+      ).toEqual(authorized);
+    },
+  );
 
-  it("should not authorize POST /accounts/{param}/eject for Manager", async () => {
-    const methodArn = methodArnPrefix + "/POST/accounts/123456789012/eject";
-    const testUser: IsbUser = {
-      ...testUserBase,
-      roles: ["Manager"],
-    };
-    const authorizationToken = jwt.sign({ user: testUser }, jwtSecret);
-    expect(
-      await isAuthorized({ methodArn, authorizationToken }, testContext),
-    ).toEqual(false);
-  });
+  it.each([{ role: "Manager", authorized: false }] as const)(
+    "POST /accounts/{param}/eject authorization for $role -> expected: $authorized",
+    async ({ role, authorized }) => {
+      const methodArn = methodArnPrefix + "/POST/accounts/123456789012/eject";
+      const testUser: IsbUser = {
+        ...testUserBase,
+        roles: [role],
+      };
+      const authorizationToken = jwt.sign({ user: testUser }, jwtSecret);
+      expect(
+        await isAuthorized({ methodArn, authorizationToken }, testContext),
+      ).toEqual(authorized);
+    },
+  );
+
+  it.each([
+    { role: "Admin", authorized: true },
+    { role: "Manager", authorized: true },
+    { role: "User", authorized: false },
+  ] as const)(
+    "POST /leases/{param}/unfreeze authorization for $role -> expected: $authorized",
+    async ({ role, authorized }) => {
+      const methodArn = methodArnPrefix + "/POST/leases/Lease101/unfreeze";
+      const testUser: IsbUser = {
+        ...testUserBase,
+        roles: [role],
+      };
+      const authorizationToken = jwt.sign({ user: testUser }, jwtSecret);
+      expect(
+        await isAuthorized({ methodArn, authorizationToken }, testContext),
+      ).toEqual(authorized);
+    },
+  );
+
+  it.each([
+    { role: "Admin", authorized: true },
+    { role: "Manager", authorized: true },
+    { role: "User", authorized: false },
+  ] as const)(
+    "POST /leases/{param}/review authorization for $role -> expected: $authorized",
+    async ({ role, authorized }) => {
+      const methodArn = methodArnPrefix + "/POST/leases/Lease101/review";
+      const testUser: IsbUser = {
+        ...testUserBase,
+        roles: [role],
+      };
+      const authorizationToken = jwt.sign({ user: testUser }, jwtSecret);
+      expect(
+        await isAuthorized({ methodArn, authorizationToken }, testContext),
+      ).toEqual(authorized);
+    },
+  );
+
+  it.each([
+    { role: "Admin", authorized: true },
+    { role: "Manager", authorized: true },
+    { role: "User", authorized: false },
+  ] as const)(
+    "POST /leases/{param}/terminate authorization for $role -> expected: $authorized",
+    async ({ role, authorized }) => {
+      const methodArn = methodArnPrefix + "/POST/leases/Lease101/terminate";
+      const testUser: IsbUser = {
+        ...testUserBase,
+        roles: [role],
+      };
+      const authorizationToken = jwt.sign({ user: testUser }, jwtSecret);
+      expect(
+        await isAuthorized({ methodArn, authorizationToken }, testContext),
+      ).toEqual(authorized);
+    },
+  );
+
+  it.each([
+    { role: "Admin", authorized: true },
+    { role: "Manager", authorized: true },
+    { role: "User", authorized: false },
+  ] as const)(
+    "POST /leases/{param}/freeze authorization for $role -> expected: $authorized",
+    async ({ role, authorized }) => {
+      const methodArn = methodArnPrefix + "/POST/leases/Lease101/freeze";
+      const testUser: IsbUser = {
+        ...testUserBase,
+        roles: [role],
+      };
+      const authorizationToken = jwt.sign({ user: testUser }, jwtSecret);
+      expect(
+        await isAuthorized({ methodArn, authorizationToken }, testContext),
+      ).toEqual(authorized);
+    },
+  );
+
+  it.each([
+    { role: "Manager", authorized: true },
+    { role: "Admin", authorized: true },
+  ] as const)(
+    "DELETE /leaseTemplates/{param} authorization for $role -> expected: $authorized",
+    async ({ role, authorized }) => {
+      const methodArn = methodArnPrefix + "/DELETE/leaseTemplates/Template101";
+      const testUser: IsbUser = {
+        ...testUserBase,
+        roles: [role],
+      };
+      const authorizationToken = jwt.sign({ user: testUser }, jwtSecret);
+      expect(
+        await isAuthorized({ methodArn, authorizationToken }, testContext),
+      ).toEqual(authorized);
+    },
+  );
 
   it("should not authorize if token is invalid", async () => {
     const methodArn = methodArnPrefix + "/GET/leases";

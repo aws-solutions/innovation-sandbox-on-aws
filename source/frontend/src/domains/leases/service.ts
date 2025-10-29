@@ -77,4 +77,8 @@ export class LeaseService {
   async freezeLease(leaseId: string): Promise<void> {
     await this.api.post(`/leases/${leaseId}/freeze`);
   }
+
+  async unfreezeLease(leaseId: string): Promise<void> {
+    await this.api.post(`/leases/${leaseId}/unfreeze`);
+  }
 }

@@ -8,8 +8,8 @@ import {
   Granularity,
   ResultByTime,
 } from "@aws-sdk/client-cost-explorer";
-import { DateTime } from "luxon";
-import { DateTimeUnit } from "luxon/src/datetime.js";
+import { DateTime, DateTimeUnit } from "luxon";
+import pThrottle from "p-throttle";
 
 const logger = new Logger();
 export const COST_EXPLORER_CONFIG = {
@@ -108,6 +108,15 @@ export class CostExplorerService {
               },
             },
             {
+              Not: {
+                Dimensions: {
+                  Key: "RECORD_TYPE",
+                  Values: ["Credit", "Refund"],
+                  MatchOptions: ["EQUALS"],
+                },
+              },
+            },
+            {
               Tags: {
                 Key: tag.tagName,
                 MatchOptions: ["EQUALS"],
@@ -132,10 +141,23 @@ export class CostExplorerService {
         Granularity: granularity,
         Metrics: ["UnblendedCost"],
         Filter: {
-          Dimensions: {
-            Key: "LINKED_ACCOUNT",
-            Values: accounts,
-          },
+          And: [
+            {
+              Dimensions: {
+                Key: "LINKED_ACCOUNT",
+                Values: accounts,
+              },
+            },
+            {
+              Not: {
+                Dimensions: {
+                  Key: "RECORD_TYPE",
+                  Values: ["Credit", "Refund"],
+                  MatchOptions: ["EQUALS"],
+                },
+              },
+            },
+          ],
         },
         GroupBy: [
           {
@@ -398,5 +420,99 @@ export class CostExplorerService {
         }
       }
     }
+  }
+
+  async getDailyCostsByAccount(
+    accountIds: string[],
+    start: DateTime,
+    end: DateTime,
+    maxConcurrency: number = 5,
+  ): Promise<Record<string, Record<string, number>>> {
+    const dailyCostsByAccount: Record<string, Record<string, number>> = {};
+    const batches = Array.from(batch(accountIds));
+
+    const throttle = pThrottle({
+      limit: maxConcurrency,
+      interval: 1000,
+    });
+
+    const throttledApiCall = throttle(async (accountBatch: string[]) => {
+      const params = this.getGetCostAndUsageCommandInput(
+        start,
+        end,
+        accountBatch,
+        Granularity.DAILY,
+      );
+      const command = new GetCostAndUsageCommand(params);
+      const response = await this.costExplorerClient.send(command);
+      if (!response.ResultsByTime || response.ResultsByTime.length === 0) {
+        logger.warn("No cost data available", {
+          start,
+          end,
+          accountBatch,
+        });
+        return {};
+      } else {
+        return this.processCostResponse(response);
+      }
+    });
+
+    const results = await Promise.allSettled(batches.map(throttledApiCall));
+    results.forEach((result) => {
+      if (result.status === "fulfilled") {
+        const batchResult = result.value;
+        Object.keys(batchResult).forEach((accountId) => {
+          if (!dailyCostsByAccount[accountId]) {
+            dailyCostsByAccount[accountId] = {};
+          }
+          Object.assign(dailyCostsByAccount[accountId], batchResult[accountId]);
+        });
+      }
+    });
+
+    return dailyCostsByAccount;
+  }
+
+  private processCostResponse(
+    response: any,
+  ): Record<string, Record<string, number>> {
+    const dailyCostsByAccount: Record<string, Record<string, number>> = {};
+
+    for (const result of response.ResultsByTime) {
+      this.processTimeResult(result, dailyCostsByAccount);
+    }
+    return dailyCostsByAccount;
+  }
+
+  private processTimeResult(
+    result: ResultByTime,
+    dailyCostsByAccount: Record<string, Record<string, number>>,
+  ): void {
+    const dateStr = result.TimePeriod?.Start;
+    if (!dateStr || !result.Groups) {
+      return;
+    }
+
+    for (const group of result.Groups) {
+      this.processGroupData(group, dateStr, dailyCostsByAccount);
+    }
+  }
+
+  private processGroupData(
+    group: any,
+    dateStr: string,
+    dailyCostsByAccount: Record<string, Record<string, number>>,
+  ): void {
+    const accountId = group.Keys?.[0];
+    if (!accountId) {
+      return;
+    }
+
+    const cost = parseFloat(group.Metrics?.UnblendedCost?.Amount ?? "0");
+
+    if (!dailyCostsByAccount[accountId]) {
+      dailyCostsByAccount[accountId] = {};
+    }
+    dailyCostsByAccount[accountId][dateStr] = cost;
   }
 }

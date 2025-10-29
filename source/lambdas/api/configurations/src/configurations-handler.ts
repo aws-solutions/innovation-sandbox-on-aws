@@ -16,8 +16,9 @@ import apiMiddlewareBundle, {
   IsbApiEvent,
 } from "@amzn/innovation-sandbox-commons/lambda/middleware/api-middleware-bundle.js";
 import {
-  ContextWithConfig,
+  ContextWithGlobalAndReportingConfig,
   isbConfigMiddleware,
+  isbReportingConfigMiddleware,
 } from "@amzn/innovation-sandbox-commons/lambda/middleware/isb-config-middleware.js";
 
 const tracer = new Tracer();
@@ -27,7 +28,8 @@ const middyFactory = middy<
   IsbApiEvent,
   any,
   Error,
-  ContextWithConfig & IsbApiContext<ConfigurationLambdaEnvironment>
+  ContextWithGlobalAndReportingConfig &
+    IsbApiContext<ConfigurationLambdaEnvironment>
 >;
 
 const routes: Route<IsbApiEvent, APIGatewayProxyResult>[] = [
@@ -44,20 +46,25 @@ export const handler = apiMiddlewareBundle({
   environmentSchema: ConfigurationLambdaEnvironmentSchema,
 })
   .use(isbConfigMiddleware())
+  .use(isbReportingConfigMiddleware())
   .handler(httpRouterHandler(routes));
 
 async function getAllConfigurationsHandler(
   _event: IsbApiEvent,
-  context: ContextWithConfig & IsbApiContext<ConfigurationLambdaEnvironment>,
+  context: ContextWithGlobalAndReportingConfig &
+    IsbApiContext<ConfigurationLambdaEnvironment>,
 ): Promise<APIGatewayProxyResult> {
   return {
     statusCode: 200,
     body: JSON.stringify({
       status: "success",
-      data: getGlobalConfigForUI(
-        context.globalConfig,
-        context.env.ISB_MANAGED_REGIONS.split(","),
-      ),
+      data: {
+        ...getGlobalConfigForUI(
+          context.globalConfig,
+          context.env.ISB_MANAGED_REGIONS.split(","),
+        ),
+        ...context.reportingConfig,
+      },
     }),
     headers: {
       "Content-Type": "application/json",

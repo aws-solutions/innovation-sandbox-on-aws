@@ -5,7 +5,7 @@ import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { BrowserRouter as Router } from "react-router-dom";
-import { describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import { showErrorToast } from "@amzn/innovation-sandbox-frontend/components/Toast";
 import { AddLeaseTemplate } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/pages/AddLeaseTemplate";
@@ -25,9 +25,14 @@ vi.mock("react-router-dom", async () => {
 
 vi.mock("@amzn/innovation-sandbox-frontend/components/Toast", () => ({
   showErrorToast: vi.fn(),
+  showSuccessToast: vi.fn(),
 }));
 
-describe("NewLeaseTemplate", () => {
+describe("AddLeaseTemplate", () => {
+  beforeEach(() => {
+    mockNavigate.mockClear();
+  });
+
   const renderComponent = () =>
     renderWithQueryClient(
       <Router>
@@ -44,7 +49,18 @@ describe("NewLeaseTemplate", () => {
 
     // Fill out the Basic Details
     await user.type(screen.getByLabelText("Name"), "Test Template");
+
     await user.type(screen.getByLabelText("Description"), "Test Description");
+
+    const visibilitySelect = screen.getByLabelText("Visibility");
+    await user.click(visibilitySelect);
+    await waitFor(() => {
+      const publicOptions = screen.getAllByText(
+        "Public - Visible to all users",
+      );
+      return user.click(publicOptions[0]);
+    });
+
     await user.click(screen.getByLabelText("Approval required"));
 
     // Navigate to Budget step
@@ -61,6 +77,9 @@ describe("NewLeaseTemplate", () => {
       screen.getByLabelText("Maximum Lease Duration (in hours)"),
       "24",
     );
+
+    // Navigate to Cost Report step
+    await user.click(screen.getByRole("button", { name: /next/i }));
   };
 
   test("renders the form with correct initial values", async () => {
@@ -77,6 +96,7 @@ describe("NewLeaseTemplate", () => {
 
     expect(screen.getByLabelText("Name")).toBeInTheDocument();
     expect(screen.getByLabelText("Description")).toBeInTheDocument();
+    expect(screen.getByLabelText("Visibility")).toHaveTextContent(/Private/);
     expect(screen.getByLabelText("Approval required")).toBeChecked();
   });
 
@@ -93,9 +113,12 @@ describe("NewLeaseTemplate", () => {
   });
 
   test("submits form and navigates on successful submission", async () => {
+    const submitSpy = vi.fn();
     server.use(
-      http.post(`${config.ApiUrl}/leaseTemplates`, () => {
-        return HttpResponse.json({ status: "success", data: {} });
+      http.post(`${config.ApiUrl}/leaseTemplates`, async ({ request }) => {
+        const data = await request.json();
+        submitSpy(data);
+        return HttpResponse.json({ status: "success", data });
       }),
     );
 
@@ -104,14 +127,21 @@ describe("NewLeaseTemplate", () => {
 
     await fillFormAndNavigate(user);
 
-    // Submit the form
-    const submitButton = (
-      await screen.findAllByRole("button", { name: /submit/i })
-    )[0];
+    const submitButton = await screen.findByRole("button", { name: /submit/i });
     await user.click(submitButton);
 
     await waitFor(() => {
       expect(mockNavigate).toHaveBeenCalledWith("/lease_templates");
+      expect(submitSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          description: "Test Description",
+          leaseDurationInHours: 24,
+          maxSpend: 1000,
+          name: "Test Template",
+          requiresApproval: false,
+          visibility: "PUBLIC",
+        }),
+      );
     });
   });
 
@@ -130,8 +160,7 @@ describe("NewLeaseTemplate", () => {
 
     await fillFormAndNavigate(user);
 
-    // Submit the form
-    const submitButton = screen.getByRole("button", { name: /submit/i });
+    const submitButton = await screen.findByRole("button", { name: /submit/i });
     await user.click(submitButton);
 
     await waitFor(() => {

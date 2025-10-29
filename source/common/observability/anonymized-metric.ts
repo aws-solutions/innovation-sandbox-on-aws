@@ -5,6 +5,7 @@ import { IsbContext } from "@amzn/innovation-sandbox-commons/innovation-sandbox.
 export type AnonymizedAwsMetric = {
   timestamp: string;
   uuid: string;
+  hub_account_id: string;
   solution: string;
   version: string;
   event_name: string;
@@ -24,6 +25,7 @@ export async function sendAnonymizedMetricToAWS(
     env: {
       METRICS_URL: string;
       METRICS_UUID: string;
+      HUB_ACCOUNT_ID: string;
       SOLUTION_ID: string;
       SOLUTION_VERSION: string;
     };
@@ -34,6 +36,7 @@ export async function sendAnonymizedMetricToAWS(
   const awsMetric: AnonymizedAwsMetric = {
     timestamp: new Date().toISOString(),
     uuid: isbContext.env.METRICS_UUID,
+    hub_account_id: isbContext.env.HUB_ACCOUNT_ID,
     solution: isbContext.env.SOLUTION_ID,
     version: isbContext.env.SOLUTION_VERSION,
     ...metricData,

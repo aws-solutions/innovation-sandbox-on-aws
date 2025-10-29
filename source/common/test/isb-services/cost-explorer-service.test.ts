@@ -120,10 +120,23 @@ describe("CostExplorerService", () => {
         Granularity: Granularity.DAILY,
         Metrics: ["UnblendedCost"],
         Filter: {
-          Dimensions: {
-            Key: "LINKED_ACCOUNT",
-            Values: accounts,
-          },
+          And: [
+            {
+              Dimensions: {
+                Key: "LINKED_ACCOUNT",
+                Values: accounts,
+              },
+            },
+            {
+              Not: {
+                Dimensions: {
+                  Key: "RECORD_TYPE",
+                  Values: ["Credit", "Refund"],
+                  MatchOptions: ["EQUALS"],
+                },
+              },
+            },
+          ],
         },
         GroupBy: [
           {
@@ -416,6 +429,79 @@ describe("CostExplorerService", () => {
         2,
       );
       expect(costCalculated.costMap).toEqual(costExpected.costMap);
+    });
+  });
+
+  describe("getDailyCostsByAccount", () => {
+    it("returns daily costs for multiple accounts", async () => {
+      const mockResponse = {
+        ResultsByTime: [
+          {
+            TimePeriod: { Start: "2024-01-01", End: "2024-01-02" },
+            Groups: [
+              {
+                Keys: [testAccount1],
+                Metrics: { UnblendedCost: { Amount: "10.50", Unit: "USD" } },
+              },
+              {
+                Keys: [testAccount2],
+                Metrics: { UnblendedCost: { Amount: "5.25", Unit: "USD" } },
+              },
+            ],
+          },
+          {
+            TimePeriod: { Start: "2024-01-02", End: "2024-01-03" },
+            Groups: [
+              {
+                Keys: [testAccount1],
+                Metrics: { UnblendedCost: { Amount: "12.75", Unit: "USD" } },
+              },
+            ],
+          },
+        ],
+      };
+
+      costExplorerService.costExplorerClient.send = vi
+        .fn()
+        .mockResolvedValue(mockResponse);
+
+      const start = DateTime.fromISO("2024-01-01");
+      const end = DateTime.fromISO("2024-01-03");
+      const accountIds = [testAccount1, testAccount2];
+
+      const result = await costExplorerService.getDailyCostsByAccount(
+        accountIds,
+        start,
+        end,
+      );
+
+      expect(result).toEqual({
+        [testAccount1]: {
+          "2024-01-01": 10.5,
+          "2024-01-02": 12.75,
+        },
+        [testAccount2]: {
+          "2024-01-01": 5.25,
+        },
+      });
+    });
+
+    it("handles empty response gracefully", async () => {
+      costExplorerService.costExplorerClient.send = vi
+        .fn()
+        .mockResolvedValue({ ResultsByTime: [] });
+
+      const start = DateTime.fromISO("2024-01-01");
+      const end = DateTime.fromISO("2024-01-02");
+      const accountIds = [testAccount1];
+
+      const result = await costExplorerService.getDailyCostsByAccount(
+        accountIds,
+        start,
+        end,
+      );
+
+      expect(result).toEqual({});
     });
   });
 });

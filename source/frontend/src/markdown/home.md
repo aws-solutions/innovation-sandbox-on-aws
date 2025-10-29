@@ -8,7 +8,9 @@ The Innovation Sandbox on AWS solution helps you set up and manage temporary san
 
 **Admins and Managers** can [approve or deny lease requests](https://docs.aws.amazon.com/solutions/latest/innovation-sandbox-on-aws/manager-guide.html#approve-reject-account-lease) for sandbox environments. They are notified via email when a new request is pending review.
 
-Admins can also [manage existing accounts](https://docs.aws.amazon.com/solutions/latest/innovation-sandbox-on-aws/administrator-guide.html#manage-accounts) in the account pool, and view a list of all sandbox accounts.
+Admins and Managers can [assign leases directly to users](https://docs.aws.amazon.com/solutions/latest/innovation-sandbox-on-aws/manager-guide.html#assigning-leases) without requiring approval. This is useful for workshops, training sessions, or controlled distribution scenarios.
+
+Admins can [manage existing accounts](https://docs.aws.amazon.com/solutions/latest/innovation-sandbox-on-aws/administrator-guide.html#manage-accounts) in the account pool, and view a list of all sandbox accounts.
 
 The solution manages the account status throughout the usage lifecycle, when it moves the account across various AWS organizational units. Refer to the [Account states](https://docs.aws.amazon.com/solutions/latest/innovation-sandbox-on-aws/administrator-guide.html#account-states) section.
 

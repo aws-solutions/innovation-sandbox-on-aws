@@ -3,16 +3,17 @@
 
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { http, HttpResponse } from "msw";
 import { BrowserRouter as Router } from "react-router-dom";
 import { describe, expect, test, vi } from "vitest";
 
+import { LeaseTemplate } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template";
 import { showErrorToast } from "@amzn/innovation-sandbox-frontend/components/Toast";
 import { BasicDetailsForm } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/components/BasicDetailsForm";
 import { config } from "@amzn/innovation-sandbox-frontend/helpers/config";
 import { mockBasicLeaseTemplate } from "@amzn/innovation-sandbox-frontend/mocks/handlers/leaseTemplateHandlers";
 import { server } from "@amzn/innovation-sandbox-frontend/mocks/server";
 import { renderWithQueryClient } from "@amzn/innovation-sandbox-frontend/setupTests";
+import { http, HttpResponse } from "msw";
 
 const mockNavigate = vi.fn();
 vi.mock("react-router-dom", async () => {
@@ -28,10 +29,14 @@ vi.mock("@amzn/innovation-sandbox-frontend/components/Toast", () => ({
 }));
 
 describe("BasicDetailsForm", () => {
+  const mockLeaseTemplate: LeaseTemplate = {
+    ...mockBasicLeaseTemplate,
+    visibility: "PUBLIC",
+  };
   const renderComponent = () =>
     renderWithQueryClient(
       <Router>
-        <BasicDetailsForm leaseTemplate={mockBasicLeaseTemplate} />
+        <BasicDetailsForm leaseTemplate={mockLeaseTemplate} />
       </Router>,
     );
 
@@ -39,23 +44,24 @@ describe("BasicDetailsForm", () => {
     renderComponent();
 
     await waitFor(() => {
-      expect(screen.getByLabelText("Name")).toHaveValue(
-        mockBasicLeaseTemplate.name,
-      );
+      expect(screen.getByLabelText("Name")).toHaveValue(mockLeaseTemplate.name);
       expect(screen.getByLabelText("Description")).toHaveValue(
-        mockBasicLeaseTemplate.description,
+        mockLeaseTemplate.description,
       );
       expect(screen.getByLabelText("Approval required")).not.toBeChecked();
+      expect(screen.getByLabelText("Visibility")).toHaveTextContent(/Public/);
     });
   });
 
   test("submits form with updated values", async () => {
+    const submitSpy = vi.fn();
     server.use(
       http.put(
-        `${config.ApiUrl}/leaseTemplates/:${mockBasicLeaseTemplate.uuid}`,
+        `${config.ApiUrl}/leaseTemplates/:${mockLeaseTemplate.uuid}`,
         async ({ request }) => {
-          const body = await request.json();
-          return HttpResponse.json({ status: "success", data: body });
+          const data = await request.json();
+          submitSpy(data);
+          return HttpResponse.json({ status: "success", data });
         },
       ),
     );
@@ -70,14 +76,27 @@ describe("BasicDetailsForm", () => {
       screen.getByLabelText("Description"),
       "Updated description",
     );
+    const visibilitySelect = screen.getByLabelText("Visibility");
+    await user.click(visibilitySelect);
+    await waitFor(() => {
+      const publicOptions = screen.getAllByText(/Public/);
+      return user.click(publicOptions[0]);
+    });
     await user.click(screen.getByLabelText("Approval required"));
-
     await user.click(
       screen.getByRole("button", { name: /update basic details/i }),
     );
 
     await waitFor(() => {
       expect(mockNavigate).toHaveBeenCalledWith("/lease_templates");
+      expect(submitSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          visibility: "PUBLIC",
+          name: "Updated Template",
+          description: "Updated description",
+          requiresApproval: true,
+        }),
+      );
     });
   });
 
@@ -130,7 +149,7 @@ describe("BasicDetailsForm", () => {
   test("handles API error on form submission", async () => {
     server.use(
       http.put(
-        `${config.ApiUrl}/leaseTemplates/:${mockBasicLeaseTemplate.uuid}`,
+        `${config.ApiUrl}/leaseTemplates/:${mockLeaseTemplate.uuid}`,
         () => {
           return HttpResponse.json(
             { status: "error", message: "API Error" },

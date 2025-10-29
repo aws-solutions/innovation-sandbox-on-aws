@@ -38,6 +38,7 @@ export class LogMetricsSubscriber extends Construct {
         SOLUTION_ID: props.solutionId,
         SOLUTION_VERSION: props.solutionVersion,
         METRICS_UUID: props.deploymentUUID,
+        HUB_ACCOUNT_ID: props.hubAccountId,
       },
       envSchema: LogSubscriberLambdaEnvironmentSchema,
       logGroup: IsbComputeResources.globalLogGroup,

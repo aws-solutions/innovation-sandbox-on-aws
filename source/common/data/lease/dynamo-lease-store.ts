@@ -56,7 +56,7 @@ export class DynamoLeaseStore extends LeaseStore {
     this.ddbClient = props.client;
   }
 
-  @validateItem(LeaseSchemaVersion, LeaseSchema)
+  @validateItem(LeaseSchema)
   @withMetadata(LeaseSchemaVersion)
   public override async update<T extends Lease>(
     lease: T,
@@ -110,7 +110,7 @@ export class DynamoLeaseStore extends LeaseStore {
     }
   }
 
-  @validateItem(LeaseSchemaVersion, LeaseSchema)
+  @validateItem(LeaseSchema)
   @withMetadata(LeaseSchemaVersion)
   public override async create<T extends Lease>(lease: T): Promise<T> {
     try {

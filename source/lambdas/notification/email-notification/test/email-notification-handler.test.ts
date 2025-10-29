@@ -7,6 +7,8 @@ import {
 } from "@amzn/innovation-sandbox-commons/data/global-config/global-config.js";
 import { AccountCleanupFailureEventSchema } from "@amzn/innovation-sandbox-commons/events/account-cleanup-failure-event.js";
 import { AccountDriftEventSchema } from "@amzn/innovation-sandbox-commons/events/account-drift-detected-alert.js";
+import { GroupCostReportGeneratedEventSchema } from "@amzn/innovation-sandbox-commons/events/group-cost-report-generated-event.js";
+import { GroupCostReportGenerationFailureEventSchema } from "@amzn/innovation-sandbox-commons/events/group-cost-report-generated-failure-event.js";
 import { EventDetailTypes } from "@amzn/innovation-sandbox-commons/events/index.js";
 import { LeaseApprovedEventSchema } from "@amzn/innovation-sandbox-commons/events/lease-approved-event.js";
 import { LeaseBudgetThresholdTriggeredEventSchema } from "@amzn/innovation-sandbox-commons/events/lease-budget-threshold-breached-alert.js";
@@ -15,6 +17,7 @@ import { LeaseExpirationAlertEventSchema } from "@amzn/innovation-sandbox-common
 import { LeaseFrozenEventSchema } from "@amzn/innovation-sandbox-commons/events/lease-frozen-event.js";
 import { LeaseRequestedEventSchema } from "@amzn/innovation-sandbox-commons/events/lease-requested-event.js";
 import { LeaseTerminatedEventSchema } from "@amzn/innovation-sandbox-commons/events/lease-terminated-event.js";
+import { LeaseUnfrozenEventSchema } from "@amzn/innovation-sandbox-commons/events/lease-unfrozen-event.js";
 import { EmailEventName } from "@amzn/innovation-sandbox-commons/isb-services/notification/email-events.js";
 import { EmailService } from "@amzn/innovation-sandbox-commons/isb-services/notification/email-service.js";
 import {
@@ -57,7 +60,9 @@ const emailServiceSpy = vi
 
 beforeAll(async () => {
   bulkStubEnv(testEnv);
-  mockedGlobalConfig = generateSchemaData(GlobalConfigSchema);
+  mockedGlobalConfig = generateSchemaData(GlobalConfigSchema, {
+    notification: { emailFrom: "test@example.com" },
+  });
   mockedContext = mockContext(testEnv, mockedGlobalConfig);
   handler = (
     await import(
@@ -105,6 +110,10 @@ describe("email-notification-handler", () => {
       eventName: EventDetailTypes.LeaseFrozen,
       schema: LeaseFrozenEventSchema,
     },
+    [EventDetailTypes.LeaseUnfrozen]: {
+      eventName: EventDetailTypes.LeaseUnfrozen,
+      schema: LeaseUnfrozenEventSchema,
+    },
     [EventDetailTypes.AccountCleanupFailure]: {
       eventName: EventDetailTypes.AccountCleanupFailure,
       schema: AccountCleanupFailureEventSchema,
@@ -121,6 +130,14 @@ describe("email-notification-handler", () => {
       eventName: EventDetailTypes.LeaseDurationThresholdBreachedAlert,
       schema: LeaseExpirationAlertEventSchema,
     },
+    [EventDetailTypes.GroupCostReportGenerated]: {
+      eventName: EventDetailTypes.GroupCostReportGenerated,
+      schema: GroupCostReportGeneratedEventSchema,
+    },
+    [EventDetailTypes.GroupCostReportGeneratedFailure]: {
+      eventName: EventDetailTypes.GroupCostReportGeneratedFailure,
+      schema: GroupCostReportGenerationFailureEventSchema,
+    },
   };
 
   const testInputs = Object.values(testCases);
@@ -134,9 +151,78 @@ describe("email-notification-handler", () => {
     },
   );
 
-  it("should not send email for unsubscribed event", async () => {
+  it("should throw error for unsubscribed event when email is configured", async () => {
     const emailEvent = createEventBridgeEvent("InvalidEvent", {});
     await expect(handler(emailEvent, mockedContext)).rejects.toThrow(Error);
     expect(emailServiceSpy).not.toHaveBeenCalled();
+  });
+
+  it("should exit early for unsubscribed event when email is not configured", async () => {
+    const configWithoutEmail = {
+      ...mockedGlobalConfig,
+      notification: { emailFrom: undefined },
+    };
+    const contextWithoutEmail = mockContext(testEnv, configWithoutEmail);
+    mockAppConfigMiddleware(configWithoutEmail);
+
+    const emailEvent = createEventBridgeEvent("InvalidEvent", {});
+
+    // Should not throw, just exit early
+    await handler(emailEvent, contextWithoutEmail);
+
+    expect(emailServiceSpy).not.toHaveBeenCalled();
+  });
+
+  describe("when email notifications are disabled", () => {
+    it("should exit early when emailFrom is undefined", async () => {
+      const configWithoutEmail = {
+        ...mockedGlobalConfig,
+        notification: { emailFrom: undefined },
+      };
+      const contextWithoutEmail = mockContext(testEnv, configWithoutEmail);
+      mockAppConfigMiddleware(configWithoutEmail);
+
+      const isbEvent = generateSchemaData(LeaseApprovedEventSchema);
+      const emailEvent = createEventBridgeEvent(
+        EventDetailTypes.LeaseApproved,
+        isbEvent,
+      );
+
+      await handler(emailEvent, contextWithoutEmail);
+
+      expect(emailServiceSpy).not.toHaveBeenCalled();
+    });
+
+    it("should exit early when emailFrom is empty string", async () => {
+      const configWithEmptyEmail = {
+        ...mockedGlobalConfig,
+        notification: { emailFrom: "" },
+      };
+      const contextWithEmptyEmail = mockContext(testEnv, configWithEmptyEmail);
+      mockAppConfigMiddleware(configWithEmptyEmail);
+
+      const isbEvent = generateSchemaData(LeaseApprovedEventSchema);
+      const emailEvent = createEventBridgeEvent(
+        EventDetailTypes.LeaseApproved,
+        isbEvent,
+      );
+
+      await handler(emailEvent, contextWithEmptyEmail);
+
+      expect(emailServiceSpy).not.toHaveBeenCalled();
+    });
+
+    it("should send email when emailFrom is properly configured", async () => {
+      // This test ensures the normal flow still works
+      const isbEvent = generateSchemaData(LeaseApprovedEventSchema);
+      const emailEvent = createEventBridgeEvent(
+        EventDetailTypes.LeaseApproved,
+        isbEvent,
+      );
+
+      await handler(emailEvent, mockedContext);
+
+      expect(emailServiceSpy).toHaveBeenCalled();
+    });
   });
 });

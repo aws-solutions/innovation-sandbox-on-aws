@@ -6,14 +6,25 @@ import {
   AwsAccountIdSchema,
   FreeTextSchema,
 } from "@amzn/innovation-sandbox-commons/data/common-schemas.js";
+import { LeaseTemplateSchema } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template.js";
 import {
-  DurationConfigSchema,
-  LeaseTemplateSchema,
-} from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template.js";
-import { ItemWithMetadataSchema } from "@amzn/innovation-sandbox-commons/data/metadata.js";
+  createItemWithMetadataSchema,
+  createVersionRangeSchema,
+} from "@amzn/innovation-sandbox-commons/data/metadata.js";
 
 // IMPORTANT -- this value must be updated whenever the schema changes.
-export const LeaseSchemaVersion = 1;
+export const LeaseSchemaVersion = 2; //v1.1.0
+
+// Define supported version range for backwards compatibility
+const LeaseSupportedVersionsSchema = createVersionRangeSchema(
+  1,
+  LeaseSchemaVersion,
+);
+
+// Create ItemWithMetadata schema with version validation
+const LeaseItemWithMetadataSchema = createItemWithMetadataSchema(
+  LeaseSupportedVersionsSchema,
+);
 
 /*
 Leases pass through 3 general stages of their lifecycle: Pending, Active, and Expired. A lease will end either
@@ -54,14 +65,16 @@ export const PendingLeaseSchema = LeaseKeySchema.extend({
   status: PendingLeaseStatusSchema,
   originalLeaseTemplateUuid: LeaseTemplateSchema.shape.uuid,
   originalLeaseTemplateName: LeaseTemplateSchema.shape.name,
-  leaseDurationInHours: DurationConfigSchema.shape.leaseDurationInHours,
   comments: FreeTextSchema.optional(),
+  createdBy: z.string().email().optional(),
 }).merge(
   LeaseTemplateSchema.pick({
     maxSpend: true,
+    leaseDurationInHours: true,
     budgetThresholds: true,
     durationThresholds: true,
-  }).merge(ItemWithMetadataSchema),
+    costReportGroup: true,
+  }).merge(LeaseItemWithMetadataSchema),
 );
 
 // TTL attribute for DynamoDB automatic deletion (Unix timestamp in seconds)
@@ -139,6 +152,10 @@ export function isMonitoredLease(lease: Lease): lease is MonitoredLease {
 
 export function isActiveLease(lease: Lease): lease is MonitoredLease {
   return lease.status === "Active";
+}
+
+export function isFrozenLease(lease: Lease): lease is MonitoredLease {
+  return lease.status === "Frozen";
 }
 
 export function isExpiredLease(lease: Lease): lease is ExpiredLease {

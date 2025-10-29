@@ -15,7 +15,7 @@ import { ErrorPanel } from "@amzn/innovation-sandbox-frontend/components/ErrorPa
 import { InfoPanel } from "@amzn/innovation-sandbox-frontend/components/InfoPanel";
 import { Loader } from "@amzn/innovation-sandbox-frontend/components/Loader";
 import { LeasePanel } from "@amzn/innovation-sandbox-frontend/domains/home/components/LeasePanel";
-import { getLeasesForCurrentUser } from "@amzn/innovation-sandbox-frontend/domains/leases/hooks";
+import { useLeasesForCurrentUser } from "@amzn/innovation-sandbox-frontend/domains/leases/hooks";
 import moment from "moment";
 import { useMemo } from "react";
 
@@ -27,7 +27,7 @@ export const MyLeases = () => {
     isError,
     refetch,
     error,
-  } = getLeasesForCurrentUser();
+  } = useLeasesForCurrentUser();
 
   const filteredLeases = useMemo(() => {
     const DAYS_OF_LEASE_HISTORY = 7;
@@ -91,7 +91,7 @@ export const MyLeases = () => {
         <InfoPanel
           header="You currently don't have any leases."
           description="To get started, click below to request a new lease."
-          actionLabel="Request a new lease"
+          actionLabel="Request lease"
           action={() => navigate("/request")}
         />
       );

@@ -23,6 +23,7 @@ export class LeaseTemplatesApi {
       configApplicationId,
       configEnvironmentId,
       globalConfigConfigurationProfileId,
+      reportingConfigConfigurationProfileId,
       leaseTemplateTable,
     } = IsbComputeStack.sharedSpokeConfig.data;
 
@@ -50,7 +51,8 @@ export class LeaseTemplatesApi {
           APP_CONFIG_APPLICATION_ID: configApplicationId,
           APP_CONFIG_ENVIRONMENT_ID: configEnvironmentId,
           APP_CONFIG_PROFILE_ID: globalConfigConfigurationProfileId,
-          AWS_APPCONFIG_EXTENSION_PREFETCH_LIST: `/applications/${configApplicationId}/environments/${configEnvironmentId}/configurations/${globalConfigConfigurationProfileId}`,
+          REPORTING_CONFIG_PROFILE_ID: reportingConfigConfigurationProfileId,
+          AWS_APPCONFIG_EXTENSION_PREFETCH_LIST: `/applications/${configApplicationId}/environments/${configEnvironmentId}/configurations/${globalConfigConfigurationProfileId},/applications/${configApplicationId}/environments/${configEnvironmentId}/configurations/${reportingConfigConfigurationProfileId}`,
           LEASE_TEMPLATE_TABLE_NAME: leaseTemplateTable,
         },
         bundling: {
@@ -80,6 +82,11 @@ export class LeaseTemplatesApi {
             applicationId: configApplicationId,
             environmentId: configEnvironmentId,
             configurationProfileId: globalConfigConfigurationProfileId,
+          },
+          {
+            applicationId: configApplicationId,
+            environmentId: configEnvironmentId,
+            configurationProfileId: reportingConfigConfigurationProfileId,
           },
         ],
       }),

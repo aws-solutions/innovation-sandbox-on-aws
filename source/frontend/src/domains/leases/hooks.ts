@@ -8,7 +8,7 @@ import {
   LeasePatchRequest,
   NewLeaseRequest,
 } from "@amzn/innovation-sandbox-frontend/domains/leases/types";
-import { AuthService } from "@amzn/innovation-sandbox-frontend/helpers/AuthService";
+import { useUser } from "@amzn/innovation-sandbox-frontend/hooks/useUser";
 
 const fetchLeases = async () => await new LeaseService().getLeases();
 
@@ -44,13 +44,18 @@ export const useGetLeaseById = (uuid: string) => {
   });
 };
 
-export const getLeasesForCurrentUser = () => {
+export const useLeasesForCurrentUser = () => {
+  const { user } = useUser();
+
   return useQuery({
-    queryKey: ["leases", "CURRENT_USER"],
+    queryKey: ["leases", user?.email],
     queryFn: async () => {
-      const user = await AuthService.getCurrentUser();
-      return await new LeaseService().getLeases(user?.email);
+      if (!user?.email) {
+        return [];
+      }
+      return await new LeaseService().getLeases(user.email);
     },
+    enabled: !!user?.email, // Only run query when user email is available
   });
 };
 
@@ -114,6 +119,19 @@ export const useFreezeLease = () => {
   return useMutation({
     mutationFn: async (leaseId: string) => {
       await new LeaseService().freezeLease(leaseId);
+    },
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["leases"], refetchType: "all" });
+      client.invalidateQueries({ queryKey: ["accounts"], refetchType: "all" });
+    },
+  });
+};
+
+export const useUnfreezeLease = () => {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: async (leaseId: string) => {
+      await new LeaseService().unfreezeLease(leaseId);
     },
     onSuccess: () => {
       client.invalidateQueries({ queryKey: ["leases"], refetchType: "all" });

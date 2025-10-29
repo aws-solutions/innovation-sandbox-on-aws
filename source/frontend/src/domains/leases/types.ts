@@ -9,6 +9,7 @@ import {
 export type NewLeaseRequest = {
   leaseTemplateUuid: string;
   comments?: string;
+  userEmail?: string;
 };
 
 export type LeasePatchRequest = {
@@ -17,6 +18,7 @@ export type LeasePatchRequest = {
   budgetThresholds?: MonitoredLease["budgetThresholds"];
   expirationDate?: MonitoredLease["expirationDate"] | null;
   durationThresholds?: MonitoredLease["durationThresholds"];
+  costReportGroup?: MonitoredLease["costReportGroup"] | null;
 };
 
 export type LeaseFormData = LeasePatchRequest & {

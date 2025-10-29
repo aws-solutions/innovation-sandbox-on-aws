@@ -45,7 +45,9 @@ import {
   StorageClass,
 } from "aws-cdk-lib/aws-s3";
 import { BucketDeployment, Source } from "aws-cdk-lib/aws-s3-deployment";
+import { execSync } from "child_process";
 import { Construct } from "constructs";
+import { existsSync, rmSync } from "fs-extra";
 import path from "path";
 
 import { IsbKmsKeys } from "@amzn/innovation-sandbox-infrastructure/components/kms";
@@ -170,11 +172,6 @@ export class CloudfrontUiApi extends Construct {
           strictTransportSecurity: {
             accessControlMaxAge: Duration.days(30 * 18),
             includeSubdomains: true,
-            override: true,
-          },
-          xssProtection: {
-            protection: true,
-            modeBlock: true,
             override: true,
           },
           referrerPolicy: {
@@ -313,6 +310,7 @@ export class CloudfrontUiApi extends Construct {
       priceClass: PriceClass.PRICE_CLASS_ALL,
       httpVersion: HttpVersion.HTTP2,
       minimumProtocolVersion: SecurityPolicyProtocol.TLS_V1_2_2019,
+      enableIpv6: false,
     });
 
     // Conditionally disable logging in unsupported regions by overriding the entire Logging property
@@ -333,7 +331,9 @@ export class CloudfrontUiApi extends Construct {
     new BucketDeployment(this, "DeployIsbFrontEnd", {
       sources: [
         Source.asset(
-          path.join(__dirname, "..", "..", "..", "..", "frontend", "dist"),
+          buildFrontend(
+            path.join(__dirname, "..", "..", "..", "..", "frontend"),
+          ),
         ),
       ],
       destinationBucket: feBucket,
@@ -401,5 +401,33 @@ export class CloudfrontUiApi extends Construct {
         "Can't find the lambda function created by aws_s3_deployment.BucketDeployment, unable to add cfn-guard suppression",
       );
     }
+  }
+}
+
+/**
+ * Builds the frontend application at synth time and returns the dist path
+ */
+function buildFrontend(frontendPath: string): string {
+  const distPath = path.join(frontendPath, "dist");
+
+  if (existsSync(distPath)) {
+    console.log(`Cleaning existing dist directory: ${distPath}`);
+    rmSync(distPath, { recursive: true });
+  }
+
+  console.log(`Building frontend at ${frontendPath}...`);
+
+  try {
+    //prettier-ignore
+    execSync("npm run build", { // NOSONAR typescript:S4036 - only used in cdk synth process
+      cwd: frontendPath,
+      stdio: "inherit",
+    });
+
+    console.log(`Frontend build completed successfully at ${distPath}`);
+    return distPath;
+  } catch (error) {
+    console.error(`Frontend build failed: ${error}`);
+    throw new Error(`Failed to build frontend: ${error}`);
   }
 }

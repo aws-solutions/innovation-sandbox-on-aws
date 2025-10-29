@@ -22,7 +22,11 @@ import {
   mockAppConfigMiddleware,
 } from "@amzn/innovation-sandbox-commons/test/lambdas/utils.js";
 import { InitializeCleanupLambdaEvent } from "@amzn/innovation-sandbox-initialize-cleanup/initialize-cleanup-handler.js";
-import { DescribeExecutionCommand, SFNClient } from "@aws-sdk/client-sfn";
+import {
+  DescribeExecutionCommand,
+  ExecutionDoesNotExist,
+  SFNClient,
+} from "@aws-sdk/client-sfn";
 import { mockClient } from "aws-sdk-client-mock";
 
 const testEnv = generateSchemaData(InitializeCleanupLambdaEnvironmentSchema);
@@ -145,6 +149,56 @@ describe("InitializeCleanup Handler", async () => {
     ).toEqual({ cleanupAlreadyInProgress: true });
 
     expect(getAccountSpy).toHaveBeenCalledOnce();
+  });
+
+  it("should proceed with cleanup when execution no longer exists (ExecutionDoesNotExist error)", async () => {
+    const mockedAccount = generateSchemaData(SandboxAccountSchema, {
+      status: "CleanUp",
+      cleanupExecutionContext: {
+        stateMachineExecutionArn:
+          "arn:aws:states:us-east-1:000000000000:execution:00000000-0000-0000-0000-000000000000:old-execution-id",
+        stateMachineExecutionStartTime: "2024-01-01T00:00:00.000Z",
+      },
+    });
+
+    const event: InitializeCleanupLambdaEvent = {
+      accountId: mockedAccount.awsAccountId,
+      cleanupExecutionContext: mockedAccount.cleanupExecutionContext!,
+    };
+
+    const getAccountSpy = vi
+      .spyOn(DynamoSandboxAccountStore.prototype, "get")
+      .mockResolvedValue({
+        result: mockedAccount,
+      });
+
+    const putAccountSpy = vi
+      .spyOn(DynamoSandboxAccountStore.prototype, "put")
+      .mockResolvedValue({
+        newItem: {
+          ...mockedAccount,
+          cleanupExecutionContext: event.cleanupExecutionContext,
+        },
+        oldItem: mockedAccount,
+      });
+
+    // Simulate ExecutionDoesNotExist error (execution history deleted after 90 days)
+    sfnClient.on(DescribeExecutionCommand).rejects(
+      new ExecutionDoesNotExist({
+        message: "Execution does not exist",
+        $metadata: {},
+      }),
+    );
+
+    expect(
+      await handler(event, mockContext(testEnv, mockedGlobalConfig)),
+    ).toEqual({
+      cleanupAlreadyInProgress: false,
+      globalConfig: mockedGlobalConfig,
+    });
+
+    expect(getAccountSpy).toHaveBeenCalledOnce();
+    expect(putAccountSpy).toHaveBeenCalledOnce();
   });
 
   it.each([

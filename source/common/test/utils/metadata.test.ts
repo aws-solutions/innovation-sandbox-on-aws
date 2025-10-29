@@ -14,7 +14,7 @@ import { generateSchemaData } from "@amzn/innovation-sandbox-commons/test/genera
 import { describe, expect, test } from "vitest";
 
 class TestClass {
-  @validateItem(LeaseSchemaVersion, LeaseSchema)
+  @validateItem(LeaseSchema)
   @withMetadata(LeaseSchemaVersion)
   public static metaEnhancedFunction(lease: Lease): Lease {
     return lease;

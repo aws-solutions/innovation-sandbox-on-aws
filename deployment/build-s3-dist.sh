@@ -11,11 +11,9 @@
 
 set -e && [[ "$DEBUG" == 'true' ]] && set -x
 
-# color codes
-RED="\033[0;31m"
-GREEN="\033[0;32m"
-CYAN="\033[0;36m"
-NC="\033[00m"
+# Source common functions
+script_dir="$(dirname "$(realpath "$0")")"
+source "$script_dir/build-common.sh"
 
 # get command line arguments
 POSITIONAL_ARGS=()
@@ -72,6 +70,10 @@ while [[ $# -gt 0 ]]; do
       shift # past argument
       shift # past value
       ;;
+    --skip-build)
+      SKIP_BUILD="true"
+      shift # past argument
+      ;;
     -*)
       printf "%bUnknown option $1\n%b" "${RED}" "${NC}"
       exit 1
@@ -85,31 +87,44 @@ done
 
 set -- "${POSITIONAL_ARGS[@]}" # restore positional parameters
 
-# Check to see if the required parameters have been provided
-if [ -z "$DIST_OUTPUT_BUCKET" ] || [ -z "$SOLUTION_NAME" ] ||  [ -z "$VERSION" ]; then
-    printf "%bPlease provide trademark approved solution name, the base source bucket name, and version where the distributable will eventually reside.\n%b" "${RED}" "${NC}"
-    printf "%bFor example: ./build-s3-dist.sh --dist-output-bucket solutions-bucket --solution-name trademarked-solution-name --version v0.0.0\n%b" "${RED}" "${NC}"
-    exit 1
-fi
-
 # Get reference for all important folders
-root_dir="$(dirname "$(dirname "$(realpath "$0")")")"
+root_dir="$(get_root_dir)"
 deployment_dir="$root_dir/deployment"
 cdk_out_dir="$root_dir/.build/cdk.out"
 global_assets_dir="$deployment_dir/global-s3-assets"
 regional_assets_dir="$deployment_dir/regional-s3-assets"
 ecr_dir="$deployment_dir/ecr"
 
-printf "[Init] Remove old dist files from previous runs\n"
-rm -rf "$global_assets_dir"
-rm -rf "$regional_assets_dir"
-rm -rf "$cdk_out_dir"
+# Set defaults from solution-manifest.yaml if parameters not provided
+printf "\n%b=== Innovation Sandbox S3 Distribution Builder ===%b\n" "${BOLD}${PURPLE}" "${NC}"
+set_solution_params_from_manifest "$root_dir"
 
-mkdir -p "$global_assets_dir"
-mkdir -p "$regional_assets_dir"
+# Validate that all required parameters are provided
+if [ -z "$DIST_OUTPUT_BUCKET" ] || [ -z "$SOLUTION_NAME" ] || [ -z "$VERSION" ]; then
+    printf "%bError: Missing required parameters\n%b" "${RED}" "${NC}"
+    printf "%bRequired: --dist-output-bucket, --solution-name, and --version\n%b" "${RED}" "${NC}"
+    printf "%bSolution name and version can be provided via CLI or solution-manifest.yaml\n%b" "${YELLOW}" "${NC}"
+    printf "\n%bExample usage:\n%b" "${YELLOW}" "${NC}"
+    printf "  ./build-s3-dist.sh --dist-output-bucket solutions-bucket\n"
+    printf "  ./build-s3-dist.sh --dist-output-bucket solutions-bucket --solution-name my-solution --version v1.0.0\n"
+    exit 1
+fi
 
-printf "[Build] Building distributable assets\n"
-npm run build
+
+print_step "Preparing Build Environment"
+remove_directory "$global_assets_dir"
+remove_directory "$regional_assets_dir"
+remove_directory "$cdk_out_dir"
+
+ensure_directory "$global_assets_dir"
+ensure_directory "$regional_assets_dir"
+
+if [ "$SKIP_BUILD" != "true" ]; then
+    print_step "Building TypeScript Packages"
+    run_with_status "TypeScript compilation" npm run build
+else
+    print_warning "Skipping TypeScript build (--skip-build flag provided)"
+fi
 
 # Initialize empty context array
 CONTEXT_FLAGS=()
@@ -126,10 +141,10 @@ CONTEXT_FLAGS+=("--context" "distOutputBucket=$DIST_OUTPUT_BUCKET")
 [ -n "$LOG_LEVEL" ] && CONTEXT_FLAGS+=("--context" "logLevel=$LOG_LEVEL")
 [ -n "$DEPLOYMENT_MODE" ] && CONTEXT_FLAGS+=("--context" "deploymentMode=$DEPLOYMENT_MODE")
 
-# Execute the command with dynamic context flags
-npm run --workspace @amzn/innovation-sandbox-infrastructure cdk synth -- "${CONTEXT_FLAGS[@]}"
+print_step "Synthesizing CDK Infrastructure"
+run_with_status "CDK synthesis" npm run --workspace @amzn/innovation-sandbox-infrastructure cdk synth -- "${CONTEXT_FLAGS[@]}"
 
-printf "[Packing] Moving and renaming template files\n"
+print_step "Processing CloudFormation Templates"
 for file in "$cdk_out_dir"/*.template.json; do
     filename=$(basename "$file")
     # Check if filename is in REGIONAL_TEMPLATES array
@@ -140,18 +155,25 @@ for file in "$cdk_out_dir"/*.template.json; do
     fi
 done
 
-printf "[Packing] Moving assets to regional assets dir\n"
+print_step "Packaging Lambda Assets"
 rsync "$cdk_out_dir"/asset.* "$regional_assets_dir"
 
-printf "[Copying] Dockerfile and code artifacts to deployment/ecr folder\n"
+print_step "Preparing Container Images"
 find "$root_dir/source" -name Dockerfile | while read file; do
     parent_dir="$(basename "$(dirname "$file")")"
     mkdir -p "$ecr_dir/$SOLUTION_NAME-$parent_dir"
     cp "$file" "$ecr_dir/$SOLUTION_NAME-$parent_dir/Dockerfile"
 done
 
-printf "%b[Done] Build script finished.\n%b" "${GREEN}" "${NC}"
+print_final_success "S3 distribution build completed successfully!"
+printf "\n%bBuild Artifacts:%b\n" "${BOLD}${BLUE}" "${NC}"
+printf "%b  Global assets: %b%s%b\n" "${BLUE}" "${WHITE}" "$global_assets_dir" "${NC}"
+printf "%b  Regional assets: %b%s%b\n" "${BLUE}" "${WHITE}" "$regional_assets_dir" "${NC}"
+printf "%b  Container images: %b%s%b\n" "${BLUE}" "${WHITE}" "$ecr_dir" "${NC}"
 
-printf "%bTo manually upload the files to S3 run the following commands (must replace <region>):\n%b" "${CYAN}" "${NC}"
-printf "%baws s3 cp $global_assets_dir s3://$DIST_OUTPUT_BUCKET/$SOLUTION_NAME/$VERSION --recursive\n%b"  "${CYAN}" "${NC}"
-printf "%baws s3 cp $regional_assets_dir s3://$DIST_OUTPUT_BUCKET-<region>/$SOLUTION_NAME/$VERSION --recursive\n%b"  "${CYAN}" "${NC}"
+printf "\n%bNext Steps - Upload to S3:%b\n" "${BOLD}${BLUE}" "${NC}"
+printf "%b  Global assets:%b\n" "${BLUE}" "${NC}"
+printf "    aws s3 cp %s s3://%s/%s/%s --recursive\n" "$global_assets_dir" "$DIST_OUTPUT_BUCKET" "$SOLUTION_NAME" "$VERSION"
+printf "%b  Regional assets:%b\n" "${BLUE}" "${NC}"
+printf "    aws s3 cp %s s3://%s-<region>/%s/%s --recursive\n" "$regional_assets_dir" "$DIST_OUTPUT_BUCKET" "$SOLUTION_NAME" "$VERSION"
+printf "%b  NOTE: Replace <region> with your target AWS region (e.g., us-east-1)%b\n" "${YELLOW}" "${NC}"

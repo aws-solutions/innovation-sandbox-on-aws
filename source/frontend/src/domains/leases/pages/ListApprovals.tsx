@@ -133,16 +133,12 @@ export const ListApprovals = () => {
   const { data: requests, isFetching, refetch } = useGetPendingApprovals();
   const { mutateAsync: reviewLease } = useReviewLease();
 
-  const init = async () => {
+  useEffect(() => {
     setBreadcrumb([
       { text: "Home", href: "/" },
       { text: "Approvals", href: "/approvals" },
     ]);
     setTools(<Markdown file="approvals" />);
-  };
-
-  useEffect(() => {
-    init();
   }, []);
 
   const showReviewModal = (mode: "approve" | "deny") => {

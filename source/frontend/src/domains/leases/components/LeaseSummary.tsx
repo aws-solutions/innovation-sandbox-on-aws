@@ -23,6 +23,7 @@ import { BudgetProgressBar } from "@amzn/innovation-sandbox-frontend/components/
 import { BudgetStatus } from "@amzn/innovation-sandbox-frontend/components/BudgetStatus";
 import { DurationStatus } from "@amzn/innovation-sandbox-frontend/components/DurationStatus";
 import { LeaseStatusBadge } from "@amzn/innovation-sandbox-frontend/domains/leases/components/LeaseStatusBadge";
+import { getLeaseExpiryInfo } from "@amzn/innovation-sandbox-frontend/helpers/LeaseExpiryInfo";
 import moment from "moment";
 
 export const LeaseSummary = ({ lease }: { lease: Lease }) => {
@@ -75,16 +76,24 @@ export const LeaseSummary = ({ lease }: { lease: Lease }) => {
             <Box>{lease.originalLeaseTemplateName}</Box>
           </Box>
           <Box>
-            <FormField label="Requested by" />
+            <FormField label="Cost Report Group" />
+            <Box>{lease.costReportGroup ?? "Not assigned"}</Box>
+          </Box>
+          <Box>
+            <FormField label="User Email" />
             <Box>{lease.userEmail}</Box>
+          </Box>
+          <Box>
+            <FormField label="Created By" />
+            <Box>{lease.createdBy ?? lease.userEmail}</Box>
           </Box>
           {isMonitoredOrExpired && (
             <Box>
-              <FormField label="Approved by" />
+              <FormField label="Approved By" />
               <Box>
                 {lease.approvedBy === "AUTO_APPROVED" ? (
                   <StatusIndicator type="success">
-                    Auto approved
+                    Auto Approved
                   </StatusIndicator>
                 ) : (
                   lease.approvedBy
@@ -116,28 +125,25 @@ export const LeaseSummary = ({ lease }: { lease: Lease }) => {
 
           {isMonitoredOrExpired && (
             <Box>
-              <FormField label="Lease started" />
+              <FormField label="Lease Started" />
               {renderTimePopover(lease.startDate)}
             </Box>
           )}
 
           <Box>
-            <FormField label="Lease expiry" />
-            <DurationStatus
-              date={isMonitoredOrExpired ? lease.expirationDate : undefined}
-              durationInHours={lease.leaseDurationInHours}
-            />
+            <FormField label="Lease Expiry" />
+            <DurationStatus {...getLeaseExpiryInfo(lease)} />
           </Box>
 
           {isMonitoredOrExpired && (
             <Box>
-              <FormField label="Last monitored" />
+              <FormField label="Last Monitored" />
               {renderTimePopover(lease.lastCheckedDate)}
             </Box>
           )}
 
           <Box>
-            <FormField label="Comments from requester" />
+            <FormField label="Comments from Requester" />
             {lease.comments ? (
               lease.comments
             ) : (

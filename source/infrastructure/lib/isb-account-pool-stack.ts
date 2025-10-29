@@ -7,8 +7,10 @@ import {
   addParameterGroup,
   ParameterWithLabel,
 } from "@amzn/innovation-sandbox-infrastructure/helpers/cfn-utils";
-import { HubAccountIdParam } from "@amzn/innovation-sandbox-infrastructure/helpers/hub-account-id-param";
-import { NamespaceParam } from "@amzn/innovation-sandbox-infrastructure/helpers/namespace-param";
+import {
+  HubAccountIdParam,
+  NamespaceParam,
+} from "@amzn/innovation-sandbox-infrastructure/helpers/shared-cfn-params";
 import { applyIsbTag } from "@amzn/innovation-sandbox-infrastructure/helpers/tagging-helper";
 import { IsbAccountPoolResources } from "@amzn/innovation-sandbox-infrastructure/isb-account-pool-resources";
 
@@ -47,21 +49,21 @@ export class IsbAccountPoolStack extends Stack {
     addParameterGroup(this, {
       label: "AccountPool Stack Configuration",
       parameters: [
-        namespaceParam.namespace,
-        hubAccountIdParam.hubAccountId,
+        namespaceParam,
+        hubAccountIdParam,
         parentOuId,
         isbManagedRegions,
       ],
     });
 
     new IsbAccountPoolResources(this, {
-      namespace: namespaceParam.namespace.valueAsString,
+      namespace: namespaceParam.valueAsString,
       parentOuId: parentOuId.valueAsString,
-      hubAccountId: hubAccountIdParam.hubAccountId.valueAsString,
+      hubAccountId: hubAccountIdParam.valueAsString,
       isbManagedRegions: isbManagedRegions.valueAsList,
       synthesizer: props?.synthesizer,
     });
 
-    applyIsbTag(this, `${namespaceParam.namespace.valueAsString}`);
+    applyIsbTag(this, `${namespaceParam.valueAsString}`);
   }
 }

@@ -7,7 +7,7 @@ import { BrowserRouter as Router } from "react-router-dom";
 import { describe, expect, test } from "vitest";
 
 import { LeaseTemplate } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template.js";
-import { ReviewTemplate } from "@amzn/innovation-sandbox-frontend/domains/leases/components/ReviewTemplate";
+import { ReviewStep } from "@amzn/innovation-sandbox-frontend/domains/leases/components/wizard-steps/ReviewStep";
 import { config } from "@amzn/innovation-sandbox-frontend/helpers/config";
 import { mockBasicLeaseTemplate } from "@amzn/innovation-sandbox-frontend/mocks/handlers/leaseTemplateHandlers";
 import { server } from "@amzn/innovation-sandbox-frontend/mocks/server";
@@ -22,7 +22,7 @@ describe("ReviewTemplate", () => {
   const renderComponent = () =>
     renderWithQueryClient(
       <Router>
-        <ReviewTemplate data={mockNewLeaseRequest} />
+        <ReviewStep data={mockNewLeaseRequest} />
       </Router>,
     );
 

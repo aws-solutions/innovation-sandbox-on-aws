@@ -20,7 +20,9 @@ import {
   validateLeaseCompliesWithGlobalConfig,
   ValidationException,
 } from "@amzn/innovation-sandbox-commons/data/global-config/global-config-utils.js";
+import { LeaseTemplateStore } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template-store.js";
 import {
+  isFrozenLease,
   isMonitoredLease,
   isPendingLease,
   Lease,
@@ -29,14 +31,18 @@ import {
   MonitoredLeaseStatusSchema,
   PendingLeaseSchema,
 } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
+import { validateCostReportGroup } from "@amzn/innovation-sandbox-commons/data/reporting-config/reporting-config-utils.js";
 import {
   AccountNotInActiveError,
+  AccountNotInFrozenError,
   CouldNotFindAccountError,
   CouldNotRetrieveUserError,
   InnovationSandbox,
+  IsbContext,
   MaxNumberOfLeasesExceededError,
   NoAccountsAvailableError,
 } from "@amzn/innovation-sandbox-commons/innovation-sandbox.js";
+import { IdcService } from "@amzn/innovation-sandbox-commons/isb-services/idc-service.js";
 import { IsbServices } from "@amzn/innovation-sandbox-commons/isb-services/index.js";
 import {
   LeaseLambdaEnvironment,
@@ -52,15 +58,19 @@ import {
 } from "@amzn/innovation-sandbox-commons/lambda/middleware/http-error-handler.js";
 import { httpJsonBodyParser } from "@amzn/innovation-sandbox-commons/lambda/middleware/http-json-body-parser.js";
 import {
-  ContextWithConfig,
+  ContextWithGlobalAndReportingConfig,
   isbConfigMiddleware,
+  isbReportingConfigMiddleware,
 } from "@amzn/innovation-sandbox-commons/lambda/middleware/isb-config-middleware.js";
 import { createPaginationQueryStringParametersSchema } from "@amzn/innovation-sandbox-commons/lambda/schemas.js";
 import {
   AppInsightsLogPatterns,
   summarizeUpdate,
 } from "@amzn/innovation-sandbox-commons/observability/logging.js";
-import { IsbUser } from "@amzn/innovation-sandbox-commons/types/isb-types.js";
+import {
+  IsbRole,
+  IsbUser,
+} from "@amzn/innovation-sandbox-commons/types/isb-types.js";
 import {
   fromTemporaryIsbIdcCredentials,
   fromTemporaryIsbOrgManagementCredentials,
@@ -73,7 +83,7 @@ const middyFactory = middy<
   IsbApiEvent,
   any,
   Error,
-  ContextWithConfig & IsbApiContext<LeaseLambdaEnvironment>
+  ContextWithGlobalAndReportingConfig & IsbApiContext<LeaseLambdaEnvironment>
 >;
 
 const routes: Route<IsbApiEvent, APIGatewayProxyResult>[] = [
@@ -116,6 +126,11 @@ const routes: Route<IsbApiEvent, APIGatewayProxyResult>[] = [
     method: "POST",
     handler: middyFactory().handler(terminateLeaseHandler),
   },
+  {
+    path: "/leases/{leaseId}/unfreeze",
+    method: "POST",
+    handler: middyFactory().handler(unfreezeLeaseHandler),
+  },
 ];
 
 export const handler = apiMiddlewareBundle({
@@ -124,11 +139,13 @@ export const handler = apiMiddlewareBundle({
   environmentSchema: LeaseLambdaEnvironmentSchema,
 })
   .use(isbConfigMiddleware())
+  .use(isbReportingConfigMiddleware())
   .handler(httpRouterHandler(routes));
 
 async function getLeasesHandler(
   event: IsbApiEvent,
-  context: ContextWithConfig & IsbApiContext<LeaseLambdaEnvironment>,
+  context: ContextWithGlobalAndReportingConfig &
+    IsbApiContext<LeaseLambdaEnvironment>,
 ): Promise<APIGatewayProxyResult> {
   const leaseStore = IsbServices.leaseStore(context.env);
 
@@ -239,7 +256,8 @@ function isUserNotAllowedByAll(user: IsbUser) {
 
 async function postLeaseHandler(
   event: IsbApiEvent,
-  context: ContextWithConfig & IsbApiContext<LeaseLambdaEnvironment>,
+  context: ContextWithGlobalAndReportingConfig &
+    IsbApiContext<LeaseLambdaEnvironment>,
 ): Promise<APIGatewayProxyResult> {
   const isbContext = {
     logger,
@@ -258,11 +276,13 @@ async function postLeaseHandler(
     isbEventBridgeClient: IsbServices.isbEventBridge(context.env),
     globalConfig: context.globalConfig,
   };
-
   const InputLeaseSchema = PendingLeaseSchema.pick({
     comments: true,
   })
-    .extend({ leaseTemplateUuid: z.string().uuid() })
+    .extend({
+      leaseTemplateUuid: PendingLeaseSchema.shape.originalLeaseTemplateUuid,
+      userEmail: PendingLeaseSchema.shape.userEmail.optional(),
+    })
     .strict();
 
   const leaseParseResponse = InputLeaseSchema.safeParse(event.body);
@@ -270,34 +290,22 @@ async function postLeaseHandler(
     throw createHttpJSendValidationError(leaseParseResponse.error);
   }
 
-  const { leaseTemplateUuid, comments } = leaseParseResponse.data;
+  const { leaseTemplateUuid, userEmail, comments } = leaseParseResponse.data;
 
-  const leaseTemplateResponse =
-    await isbContext.leaseTemplateStore.get(leaseTemplateUuid);
-  const leaseTemplate = leaseTemplateResponse.result;
-  if (leaseParseResponse.error) {
-    logger.warn(
-      `Error retrieving lease template ${leaseTemplateUuid}: ${leaseTemplateResponse.error}`,
-    );
-  }
-  if (leaseTemplate === undefined) {
-    throw createHttpJSendError({
-      statusCode: 404,
-      data: {
-        errors: [
-          {
-            message: `Unknown lease template.`,
-          },
-        ],
-      },
-    });
-  }
+  const [leaseTemplate, targetUser] = await Promise.all([
+    validateAndGetLeaseTemplate(leaseTemplateUuid, context.user, isbContext),
+    resolveTargetUser(userEmail, context.user, isbContext),
+  ]);
+
+  // userEmail being provided mean the request is an assignment and the createdBy field should be populated with the requester's email
+  const createdBy = userEmail ? context.user.email : undefined;
 
   try {
     const newLease: Lease = await InnovationSandbox.requestLease(
       {
         leaseTemplate,
-        forUser: context.user,
+        targetUser: targetUser,
+        createdBy,
         comments,
       },
       isbContext,
@@ -342,9 +350,82 @@ async function postLeaseHandler(
   }
 }
 
+async function validateAndGetLeaseTemplate(
+  leaseTemplateUuid: string,
+  requestingUser: IsbUser,
+  isbContext: { leaseTemplateStore: LeaseTemplateStore },
+) {
+  const leaseTemplateResponse =
+    await isbContext.leaseTemplateStore.get(leaseTemplateUuid);
+  const leaseTemplate = leaseTemplateResponse.result;
+
+  if (
+    !leaseTemplate ||
+    (leaseTemplate.visibility === "PRIVATE" &&
+      !authorizedToLeaseFromPrivateLeaseTemplates(requestingUser))
+  ) {
+    throw createHttpJSendError({
+      statusCode: 404,
+      data: {
+        errors: [
+          {
+            message: "Lease template not found.",
+          },
+        ],
+      },
+    });
+  }
+
+  return leaseTemplate;
+}
+
+async function resolveTargetUser(
+  userEmail: string | undefined,
+  requestingUser: IsbUser,
+  isbContext: IsbContext<{ idcService: IdcService }>,
+): Promise<IsbUser> {
+  // If no userEmail provided, use the requesting user
+  if (!userEmail || userEmail === requestingUser.email) {
+    return requestingUser;
+  }
+
+  // Cross-user lease creation - validate permissions
+  if (!authorizedToLeaseFromPrivateLeaseTemplates(requestingUser)) {
+    throw createHttpJSendError({
+      statusCode: 403,
+      data: {
+        errors: [
+          {
+            message:
+              "Access denied. You do not have permission to create leases for other users.",
+          },
+        ],
+      },
+    });
+  }
+
+  // Validate that the target user exists in IDC
+  const userResponse = await isbContext.idcService.getUserFromEmail(userEmail);
+  if (!userResponse) {
+    throw createHttpJSendError({
+      statusCode: 404,
+      data: {
+        errors: [
+          {
+            message: `User not found in Identity Center: ${userEmail}`,
+          },
+        ],
+      },
+    });
+  }
+
+  return userResponse;
+}
+
 async function getLeaseByIdHandler(
   event: IsbApiEvent,
-  context: ContextWithConfig & IsbApiContext<LeaseLambdaEnvironment>,
+  context: ContextWithGlobalAndReportingConfig &
+    IsbApiContext<LeaseLambdaEnvironment>,
 ): Promise<APIGatewayProxyResult> {
   const leaseStore = IsbServices.leaseStore(context.env);
 
@@ -405,7 +486,8 @@ async function getLeaseByIdHandler(
 
 async function patchLeaseByIdHandler(
   event: IsbApiEvent,
-  context: ContextWithConfig & IsbApiContext<LeaseLambdaEnvironment>,
+  context: ContextWithGlobalAndReportingConfig &
+    IsbApiContext<LeaseLambdaEnvironment>,
 ): Promise<APIGatewayProxyResult> {
   const leaseStore = IsbServices.leaseStore(context.env);
 
@@ -414,10 +496,12 @@ async function patchLeaseByIdHandler(
     budgetThresholds: true,
     expirationDate: true,
     durationThresholds: true,
+    costReportGroup: true,
   })
     .extend({
       maxSpend: MonitoredLeaseSchema.shape.maxSpend.nullable(),
       expirationDate: MonitoredLeaseSchema.shape.expirationDate.nullable(),
+      costReportGroup: MonitoredLeaseSchema.shape.costReportGroup.nullable(),
     })
     .partial()
     .strict();
@@ -478,6 +562,10 @@ async function patchLeaseByIdHandler(
 
   try {
     validateLeaseCompliesWithGlobalConfig(updatedLease, context.globalConfig);
+    validateCostReportGroup(
+      updatedLease.costReportGroup,
+      context.reportingConfig,
+    );
   } catch (error) {
     if (error instanceof ValidationException) {
       throw createHttpJSendError({
@@ -533,7 +621,8 @@ async function patchLeaseByIdHandler(
 
 async function reviewLeaseHandler(
   event: IsbApiEvent,
-  context: ContextWithConfig & IsbApiContext<LeaseLambdaEnvironment>,
+  context: ContextWithGlobalAndReportingConfig &
+    IsbApiContext<LeaseLambdaEnvironment>,
 ) {
   const isbContext = {
     logger,
@@ -602,7 +691,7 @@ async function reviewLeaseHandler(
   if (parsedReviewLeaseBody.data.action == "Approve") {
     try {
       await InnovationSandbox.approveLease(
-        { lease, approver: context.user },
+        { lease, approver: context.user.email },
         isbContext,
       );
     } catch (error) {
@@ -642,7 +731,8 @@ async function reviewLeaseHandler(
 
 async function freezeLeaseHandler(
   event: IsbApiEvent,
-  context: ContextWithConfig & IsbApiContext<LeaseLambdaEnvironment>,
+  context: ContextWithGlobalAndReportingConfig &
+    IsbApiContext<LeaseLambdaEnvironment>,
 ) {
   const isbContext = {
     logger,
@@ -740,7 +830,8 @@ async function freezeLeaseHandler(
 }
 async function terminateLeaseHandler(
   event: IsbApiEvent,
-  context: ContextWithConfig & IsbApiContext<LeaseLambdaEnvironment>,
+  context: ContextWithGlobalAndReportingConfig &
+    IsbApiContext<LeaseLambdaEnvironment>,
 ): Promise<APIGatewayProxyResult> {
   const isbContext = {
     logger,
@@ -826,6 +917,100 @@ async function terminateLeaseHandler(
   };
 }
 
+async function unfreezeLeaseHandler(
+  event: IsbApiEvent,
+  context: ContextWithGlobalAndReportingConfig &
+    IsbApiContext<LeaseLambdaEnvironment>,
+): Promise<APIGatewayProxyResult> {
+  const isbContext = {
+    logger,
+    tracer,
+    leaseStore: IsbServices.leaseStore(context.env),
+    sandboxAccountStore: IsbServices.sandboxAccountStore(context.env),
+    idcService: IsbServices.idcService(
+      context.env,
+      fromTemporaryIsbIdcCredentials(context.env),
+    ),
+    orgsService: IsbServices.orgsService(
+      context.env,
+      fromTemporaryIsbOrgManagementCredentials(context.env),
+    ),
+    eventBridgeClient: IsbServices.isbEventBridge(context.env),
+  };
+
+  const leaseCompositeKey = parseLeaseCompositeKeyFromPathParameters(
+    event.pathParameters,
+  );
+  const leaseResponse = await isbContext.leaseStore.get(leaseCompositeKey);
+  const lease = leaseResponse.result;
+
+  if (!lease || leaseResponse.error) {
+    logger.warn(
+      `Error retrieving lease ${leaseCompositeKey}: ${leaseResponse.error}`,
+    );
+    throw createHttpJSendError({
+      statusCode: 404,
+      data: {
+        errors: [
+          {
+            message: `Lease not found.`,
+          },
+        ],
+      },
+    });
+  }
+
+  if (!isFrozenLease(lease)) {
+    throw createHttpJSendError({
+      statusCode: 409,
+      data: {
+        errors: [
+          {
+            message: `Only frozen leases can be unfrozen.`,
+          },
+        ],
+      },
+    });
+  }
+
+  try {
+    const result = await InnovationSandbox.unfreezeLease({ lease }, isbContext);
+    return {
+      statusCode: 200,
+      body: JSON.stringify({
+        status: "success",
+        data: {
+          ...result.newItem,
+          leaseId: base64EncodeCompositeKey({
+            userEmail: result.newItem.userEmail,
+            uuid: result.newItem.uuid,
+          }),
+        },
+      }),
+      headers: {
+        "Content-Type": "application/json",
+      },
+    };
+  } catch (error) {
+    if (error instanceof AccountNotInFrozenError) {
+      throw createHttpJSendError({
+        statusCode: 409,
+        data: { errors: [{ message: error.message }] },
+      });
+    } else if (
+      error instanceof CouldNotFindAccountError ||
+      error instanceof CouldNotRetrieveUserError
+    ) {
+      throw createHttpJSendError({
+        statusCode: 404,
+        data: { errors: [{ message: error.message }] },
+      });
+    } else {
+      throw error;
+    }
+  }
+}
+
 function parseLeaseCompositeKeyFromPathParameters(
   pathParameters: APIGatewayProxyEventPathParameters,
 ) {
@@ -855,4 +1040,12 @@ function parseLeaseCompositeKeyFromPathParameters(
     throw createHttpJSendValidationError(leaseKeySchemaParseResponse.error);
 
   return leaseKeySchemaParseResponse.data;
+}
+
+function authorizedToLeaseFromPrivateLeaseTemplates(user: IsbUser) {
+  return (
+    user.roles?.some(
+      (role: IsbRole) => role === "Admin" || role === "Manager",
+    ) ?? false
+  );
 }

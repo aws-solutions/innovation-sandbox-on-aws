@@ -10,6 +10,7 @@ bom.json
 .env
 git-info
 build
+*.tsbuildinfo
 
 # CDK asset staging directory
 .cdk.staging

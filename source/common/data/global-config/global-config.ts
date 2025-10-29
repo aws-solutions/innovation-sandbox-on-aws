@@ -120,12 +120,11 @@ export const GlobalConfigSchema = z.object({
   auth: AuthSchema,
   notification: z.object({
     emailFrom: z
-      .string()
-      .nonempty(
-        "Please refer back to InnovationSandbox's post-deployment configuration instructions",
-      )
-      .email()
-      .describe("The email address to send notifications from"),
+      .union([z.string().email(), z.literal("")])
+      .optional()
+      .describe(
+        "The email address to send notifications from. Leave empty or remove to disable email notifications",
+      ),
   }),
 });
 

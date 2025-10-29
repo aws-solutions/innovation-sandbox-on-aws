@@ -3,6 +3,8 @@
 
 import { AccountCleanupFailureEvent } from "@amzn/innovation-sandbox-commons/events/account-cleanup-failure-event.js";
 import { AccountDriftDetectedAlert } from "@amzn/innovation-sandbox-commons/events/account-drift-detected-alert.js";
+import { GroupCostReportGeneratedEvent } from "@amzn/innovation-sandbox-commons/events/group-cost-report-generated-event.js";
+import { GroupCostReportGeneratedFailureEvent } from "@amzn/innovation-sandbox-commons/events/group-cost-report-generated-failure-event.js";
 import { LeaseApprovedEvent } from "@amzn/innovation-sandbox-commons/events/lease-approved-event.js";
 import { LeaseBudgetThresholdBreachedAlert } from "@amzn/innovation-sandbox-commons/events/lease-budget-threshold-breached-alert.js";
 import { LeaseDeniedEvent } from "@amzn/innovation-sandbox-commons/events/lease-denied-event.js";
@@ -10,6 +12,7 @@ import { LeaseDurationThresholdBreachedAlert } from "@amzn/innovation-sandbox-co
 import { LeaseFrozenEvent } from "@amzn/innovation-sandbox-commons/events/lease-frozen-event.js";
 import { LeaseRequestedEvent } from "@amzn/innovation-sandbox-commons/events/lease-requested-event.js";
 import { LeaseTerminatedEvent } from "@amzn/innovation-sandbox-commons/events/lease-terminated-event.js";
+import { LeaseUnfrozenEvent } from "@amzn/innovation-sandbox-commons/events/lease-unfrozen-event.js";
 import { IdcService } from "@amzn/innovation-sandbox-commons/isb-services/idc-service.js";
 import {
   IsbServices,
@@ -171,6 +174,53 @@ export class EmailService {
         };
         await this.sendEmail(
           EmailTemplates.AccountDrift(driftEvent, driftContext),
+        );
+        break;
+      case "LeaseUnfrozen":
+        const leaseUnfrozenEvent = LeaseUnfrozenEvent.parse(isbAlert);
+        const leaseUnfrozenContext = {
+          webAppUrl: this.webAppUrl,
+          destination: {
+            to: [leaseUnfrozenEvent.Detail.leaseId.userEmail],
+          },
+        };
+        await this.sendEmail(
+          EmailTemplates.LeaseUnfrozen(
+            leaseUnfrozenEvent,
+            leaseUnfrozenContext,
+          ),
+        );
+        break;
+      case "GroupCostReportGenerated":
+        const groupCostReportGeneratedEvent =
+          GroupCostReportGeneratedEvent.parse(isbAlert);
+        const groupCostReportGeneratedContext = {
+          webAppUrl: this.webAppUrl,
+          destination: {
+            bcc: await allAdmins(this.idcService),
+          },
+        };
+        await this.sendEmail(
+          EmailTemplates.GroupCostReportGenerated(
+            groupCostReportGeneratedEvent,
+            groupCostReportGeneratedContext,
+          ),
+        );
+        break;
+      case "GroupCostReportGeneratedFailure":
+        const groupCostReportGeneratedFailureEvent =
+          GroupCostReportGeneratedFailureEvent.parse(isbAlert);
+        const groupCostReportGeneratedFailureContext = {
+          webAppUrl: this.webAppUrl,
+          destination: {
+            bcc: await allAdmins(this.idcService),
+          },
+        };
+        await this.sendEmail(
+          EmailTemplates.GroupCostReportGenerationFailure(
+            groupCostReportGeneratedFailureEvent,
+            groupCostReportGeneratedFailureContext,
+          ),
         );
         break;
       case "LeaseTerminated":
