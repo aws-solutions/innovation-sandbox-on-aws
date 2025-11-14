@@ -15,7 +15,7 @@
     "module": "esnext",
     "moduleResolution": "bundler",
     "lib": ["es2022"],
-    "outDir": "../../.build/cdk.ts.dist",
+    "outDir": "cdk.ts.dist",
     "baseUrl": ".",
     "paths": {
       "@amzn/innovation-sandbox-infrastructure/*": ["lib/*"],

@@ -53,12 +53,6 @@ export const costReportFields = (props?: CostReportFieldsProps) => ({
           type: validatorTypes.REQUIRED,
           message: "Please select an option",
         },
-        (value: boolean) => {
-          if (props?.requireCostReportGroup && !value) {
-            return "Cost report group is required.";
-          }
-          return undefined;
-        },
       ],
     },
     {

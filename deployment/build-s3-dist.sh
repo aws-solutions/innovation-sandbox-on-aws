@@ -90,7 +90,7 @@ set -- "${POSITIONAL_ARGS[@]}" # restore positional parameters
 # Get reference for all important folders
 root_dir="$(get_root_dir)"
 deployment_dir="$root_dir/deployment"
-cdk_out_dir="$root_dir/.build/cdk.out"
+cdk_out_dir="$root_dir/source/infrastructure/cdk.out"
 global_assets_dir="$deployment_dir/global-s3-assets"
 regional_assets_dir="$deployment_dir/regional-s3-assets"
 ecr_dir="$deployment_dir/ecr"

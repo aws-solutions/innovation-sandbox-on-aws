@@ -195,6 +195,7 @@ export class InnovationSandbox {
       originalLeaseTemplateUuid: leaseTemplate.uuid,
       originalLeaseTemplateName: leaseTemplate.name,
       maxSpend: leaseTemplate.maxSpend,
+      costReportGroup: leaseTemplate.costReportGroup,
       budgetThresholds: leaseTemplate.budgetThresholds,
       durationThresholds: leaseTemplate.durationThresholds,
       leaseDurationInHours: leaseTemplate.leaseDurationInHours,
