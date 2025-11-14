@@ -29,7 +29,7 @@ describe("LeaseStatusBadge", () => {
     const frozenLease = createActiveLease({ status: "Frozen" });
     renderComponent(frozenLease);
 
-    const badge = screen.getByText("Frozen - Threshold Reached");
+    const badge = screen.getByText("Frozen");
     expect(badge).toBeInTheDocument();
     expect(badge.className).toContain("badge-color-blue");
   });

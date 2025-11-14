@@ -1,6 +1,6 @@
 {
   "app": "npx --no-install tsx bin/app.ts",
-  "output": "../../.build/cdk.out",
+  "output": "cdk.out",
   "watch": {
     "include": ["**"],
     "exclude": [

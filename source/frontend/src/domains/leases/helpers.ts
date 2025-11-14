@@ -20,7 +20,7 @@ export const getLeaseStatusDisplayName = (status: LeaseStatus): string => {
     case "Active":
       return "Active";
     case "Frozen":
-      return "Frozen - Threshold Reached";
+      return "Frozen";
     case "PendingApproval":
       return "Pending Approval";
     case "ApprovalDenied":

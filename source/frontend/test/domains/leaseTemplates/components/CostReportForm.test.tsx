@@ -41,6 +41,9 @@ describe("CostReportForm", () => {
     const user = userEvent.setup();
     renderComponent({ requireCostReportGroup: true });
 
+    const enableRadio = screen.getByLabelText("Do not set a cost report group");
+    await user.click(enableRadio);
+
     const submitButton = screen.getByRole("button", {
       name: /Update Cost Report Group/i,
     });

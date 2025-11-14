@@ -44,7 +44,7 @@ export const CostReportForm = ({
       costReportGroup && costReportGroups?.includes(costReportGroup);
 
     return {
-      costReportGroupEnabled: !!costReportGroup,
+      costReportGroupEnabled: requireCostReportGroup || !!costReportGroup,
       selectedCostReportGroup: hasExistingGroup
         ? { label: costReportGroup, value: costReportGroup }
         : undefined,
