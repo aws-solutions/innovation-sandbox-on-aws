@@ -3,6 +3,7 @@
 import { Stack } from "aws-cdk-lib";
 import {
   AccountPrincipal,
+  CfnServiceLinkedRole,
   Effect,
   PolicyDocument,
   PolicyStatement,
@@ -59,5 +60,18 @@ export class IsbSandboxAccountResources {
       "IAM_NO_INLINE_POLICY_CHECK",
       "IAM_POLICYDOCUMENT_NO_WILDCARD_RESOURCE",
     ]);
+
+    // ECS Service Linked Role
+    // This ensures ECS clusters can be created without permission issues
+    const ecsServiceLinkedRole = new CfnServiceLinkedRole(scope, "ECSServiceLinkedRole", {
+      awsServiceName: "ecs.amazonaws.com",
+      description: "Role to enable Amazon ECS to manage your cluster.",
+    });
+
+    // Add cfn-guard suppressions using direct metadata approach
+    // (CfnServiceLinkedRole doesn't support cfnOptions, so we use addMetadata directly)
+    ecsServiceLinkedRole.addMetadata("guard", {
+      SuppressedRules: ["CFN_NO_EXPLICIT_RESOURCE_NAMES"],
+    });
   }
 }
