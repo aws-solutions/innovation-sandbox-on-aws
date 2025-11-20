@@ -25,6 +25,7 @@ import {
   LeaseTerminatedManualSchema,
   LeaseTerminatedQuarantinedSchema,
 } from "@amzn/innovation-sandbox-commons/events/lease-terminated-event.js";
+import { LeaseUnfrozenEventSchema } from "@amzn/innovation-sandbox-commons/events/lease-unfrozen-event.js";
 import { IsbServices } from "@amzn/innovation-sandbox-commons/isb-services/index.js";
 import { SynthesizedEmail } from "@amzn/innovation-sandbox-commons/isb-services/notification/email-service.js";
 import { EmailNotificationEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/email-notification-lambda-environment.js";
@@ -36,7 +37,6 @@ import {
   SESServiceException,
 } from "@aws-sdk/client-ses";
 import { mockClient } from "aws-sdk-client-mock";
-import { LeaseUnfrozenEventSchema } from "events/lease-unfrozen-event.js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const managerEmails = ["manager@example.com", "manager2@example.com"];

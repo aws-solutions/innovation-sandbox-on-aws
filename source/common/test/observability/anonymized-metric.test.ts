@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { sendAnonymizedMetricToAWS } from "@amzn/innovation-sandbox-commons/observability/anonymized-metric.js";
+import { createMockOf } from "@amzn/innovation-sandbox-commons/test/mocking/mock-utils.js";
 import { Logger } from "@aws-lambda-powertools/logger";
 import { Tracer } from "@aws-lambda-powertools/tracer";
-import { createMockOf } from "test/mocking/mock-utils.js";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 // Mock fetch globally
@@ -30,7 +30,7 @@ describe("sendAnonymizedMetricToAWS", () => {
   };
 
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2024-01-01T00:00:00.000Z"));
   });

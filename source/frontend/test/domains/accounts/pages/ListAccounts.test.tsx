@@ -268,10 +268,10 @@ describe("ListAccounts", () => {
     await user.click(actionsButton);
 
     const cleanupOption = await screen.findByText("Retry cleanup");
-    await user.click(cleanupOption);
 
-    // option should be disabled
-    expect(cleanupOption).toHaveAttribute("aria-disabled", "true");
+    // The option should be disabled
+    const menuItem = cleanupOption.closest('[role="menuitem"]');
+    expect(menuItem).toHaveAttribute("aria-disabled", "true");
   });
 
   test("opens cleanup modal when 'Retry cleanup' is selected", async () => {

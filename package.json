@@ -1,6 +1,6 @@
 {
   "name": "@amzn/innovation-sandbox-on-aws",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "Innovation Sandbox on AWS (SO0284)",
   "scripts": {
     "preinstall": "npm run generate-local-package-lock --workspaces --if-present",
@@ -55,7 +55,7 @@
     "@types/luxon": "^3.4.2",
     "@types/object-hash": "^3.0.6",
     "@types/supertest": "^6.0.2",
-    "@vitest/coverage-v8": "^3.1.1",
+    "@vitest/coverage-v8": "^4.0.10",
     "aws-sdk-client-mock": "^4.0.2",
     "fs-extra": "^11.2.0",
     "js-yaml": "^4.1.0",
@@ -66,7 +66,7 @@
     "ts-retry": "^5.0.1",
     "tsconfig-paths": "^4.2.0",
     "tsx": "^4.19.4",
-    "vitest": "^3.1.1",
+    "vitest": "^4.0.10",
     "vitest-mock-extended": "^2.0.2"
   },
   "prettier": {

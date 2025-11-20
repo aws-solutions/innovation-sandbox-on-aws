@@ -68,7 +68,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   vi.unstubAllEnvs();
-  vi.restoreAllMocks();
+  vi.resetAllMocks();
 });
 
 describe("Accounts Handler", () => {
