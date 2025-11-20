@@ -13,8 +13,7 @@ export default defineConfig({
       exclude: [
         "source/**/*.test.{ts,tsx}",
         "**/vitest.config.ts",
-        "source/lambdas/lambda-test-utils",
-        "source/frontend/src/components",
+        "source/frontend/src/components/**",
       ],
     },
     env: {

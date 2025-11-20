@@ -29,11 +29,13 @@ import { renderWithQueryClient } from "@amzn/innovation-sandbox-frontend/setupTe
 import moment from "moment";
 
 // Mock ResizeObserver
-global.ResizeObserver = vi.fn().mockImplementation(() => ({
-  observe: vi.fn(),
-  unobserve: vi.fn(),
-  disconnect: vi.fn(),
-}));
+class ResizeObserver {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+
+window.ResizeObserver = ResizeObserver;
 
 // Mock the useBreadcrumb hook
 vi.mock("@amzn/innovation-sandbox-frontend/hooks/useBreadcrumb", () => ({

@@ -78,14 +78,16 @@ beforeAll(async () => {
 
   vi.doMock("@amzn/innovation-sandbox-commons/isb-services/index.js", () => ({
     IsbServices: {
-      leaseStore: vi.fn(() => mockLeaseStore),
-      costExplorer: vi.fn(() => mockCostExplorerService),
-      isbEventBridge: vi.fn(() => mockEventBridgeClient),
+      leaseStore: vi.fn().mockReturnValue(mockLeaseStore),
+      costExplorer: vi.fn().mockReturnValue(mockCostExplorerService),
+      isbEventBridge: vi.fn().mockReturnValue(mockEventBridgeClient),
     },
   }));
 
   vi.doMock("@aws-sdk/client-s3", () => ({
-    S3Client: vi.fn(() => ({ send: mockS3Send })),
+    S3Client: vi.fn().mockImplementation(function () {
+      return { send: mockS3Send };
+    }),
     PutObjectCommand: vi.fn(),
   }));
 
@@ -94,19 +96,19 @@ beforeAll(async () => {
   }));
 
   vi.doMock("@amzn/innovation-sandbox-commons/utils/time-utils.js", () => ({
-    now: vi.fn(() => DateTime.fromISO("2024-02-15T12:00:00.000Z")),
+    now: vi.fn().mockReturnValue(DateTime.fromISO("2024-02-15T12:00:00.000Z")),
   }));
 
   vi.doMock(
     "@amzn/innovation-sandbox-commons/utils/cross-account-roles.js",
     () => ({
-      fromTemporaryIsbOrgManagementCredentials: vi.fn(() => ({})),
+      fromTemporaryIsbOrgManagementCredentials: vi.fn().mockReturnValue({}),
     }),
   );
 
   vi.doMock("@amzn/innovation-sandbox-commons/data/utils.js", () => ({
     collect: mockCollect,
-    stream: vi.fn(() => []),
+    stream: vi.fn().mockReturnValue([]),
   }));
 
   // Import the handler after mocking dependencies

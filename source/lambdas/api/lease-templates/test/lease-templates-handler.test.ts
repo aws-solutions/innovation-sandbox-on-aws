@@ -36,7 +36,7 @@ import { randomUUID } from "crypto";
 
 const mockUuid = "00000000-0000-0000-0000-000000000000";
 vi.mock("uuid", () => ({
-  v4: vi.fn(() => mockUuid),
+  v4: vi.fn().mockReturnValue(mockUuid),
 }));
 
 const testEnv = generateSchemaData(LeaseTemplateLambdaEnvironmentSchema);

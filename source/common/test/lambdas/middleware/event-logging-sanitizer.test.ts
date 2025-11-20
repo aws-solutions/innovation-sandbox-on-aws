@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { injectSanitizedLambdaContext } from "@amzn/innovation-sandbox-commons/lambda/middleware/inject-sanitized-lambda-context.js";
+import { createAPIGatewayProxyEvent } from "@amzn/innovation-sandbox-commons/test/lambdas/fixtures.js";
 import { Logger } from "@aws-lambda-powertools/logger";
 import { APIGatewayProxyEvent } from "aws-lambda";
-import { createAPIGatewayProxyEvent } from "test/lambdas/fixtures.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 describe("injectSanitizedLambdaContext", () => {
@@ -33,7 +33,7 @@ describe("injectSanitizedLambdaContext", () => {
   });
 
   afterEach(() => {
-    vi.restoreAllMocks();
+    vi.resetAllMocks();
   });
 
   it("should sanitize authorization headers before logging", async () => {
