@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.3] - 2025-12-10
+
+### Security
+
+- Upgraded `jws` to mitigate [CVE-2025-65945](https://nvd.nist.gov/vuln/detail/CVE-2025-65945)
+- Upgraded `mdast-util-to-hast` to mitigate [CVE-2025-66400](https://nvd.nist.gov/vuln/detail/CVE-2025-66400)
+- Upgraded `curl-minimal` to mitigate [CVE-2025-11563](https://explore.alas.aws.amazon.com/CVE-2025-11563.html)
+- Upgraded `libcurl-minimal` to mitigate [CVE-2025-11563](https://explore.alas.aws.amazon.com/CVE-2025-11563.html)
+- Upgraded `glib2` to mitigate [CVE-2025-13601](https://nvd.nist.gov/vuln/detail/CVE-2025-13601)
+- Upgraded `python-unversioned-command` to mitigate [CVE-2025-6075](https://nvd.nist.gov/vuln/detail/CVE-2025-6075)
+- Upgraded `python3-libs` to mitigate [CVE-2025-6075](https://nvd.nist.gov/vuln/detail/CVE-2025-6075)
+- Upgraded `python3` to mitigate [CVE-2025-6075](https://nvd.nist.gov/vuln/detail/CVE-2025-6075)
+
 ## [1.1.2] - 2025-11-20
 
 ### Security

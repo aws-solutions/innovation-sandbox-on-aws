@@ -1,6 +1,6 @@
 id: SO0284
 name: innovation-sandbox-on-aws
-version: v1.1.2
+version: v1.1.3
 cloudformation_templates:
   - template: InnovationSandbox-AccountPool.template
     main_template: true
