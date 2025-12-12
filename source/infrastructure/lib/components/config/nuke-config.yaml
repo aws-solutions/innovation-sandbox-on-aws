@@ -44,6 +44,7 @@ resource-types:
     - S3Object # Let the S3Bucket delete all Objects instead of individual objects (optimization)
     - ConfigServiceConfigurationRecorder
     - ConfigServiceDeliveryChannel
+    - BedrockAgentCoreWorkloadIdentity # Cannot be deleted directly - deleted when parent AgentRuntime is deleted
 blocklist:
   - "%HUB_ACCOUNT_ID%" # placeholder HUB_ACCOUNT_ID will be dynamically replaced during CodeBuild execution
 accounts:
