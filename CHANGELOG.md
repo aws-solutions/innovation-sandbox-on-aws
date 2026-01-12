@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.6] - 2026-01-12
+
+### Security
+
+- Upgraded `@remix-run/router` to mitigate [CVE-2026-22029](https://nvd.nist.gov/vuln/detail/CVE-2026-22029)
+- Upgraded `glib2` to mitigate [CVE-2025-14087](https://nvd.nist.gov/vuln/detail/CVE-2025-14087)
+- Upgraded `libcap` to mitigate:
+  - [CVE-2025-61727](https://nvd.nist.gov/vuln/detail/CVE-2025-61727)
+  - [CVE-2025-61729](https://nvd.nist.gov/vuln/detail/CVE-2025-61729)
+- Upgraded `python3` to mitigate:
+  - [CVE-2025-12084](https://nvd.nist.gov/vuln/detail/CVE-2025-12084)
+  - [CVE-2025-13837](https://nvd.nist.gov/vuln/detail/CVE-2025-13837)
+- Upgraded `python3-libs` to mitigate:
+  - [CVE-2025-12084](https://nvd.nist.gov/vuln/detail/CVE-2025-12084)
+  - [CVE-2025-13837](https://nvd.nist.gov/vuln/detail/CVE-2025-13837)
+- Upgraded `python-unversioned-command` to mitigate:
+  - [CVE-2025-12084](https://nvd.nist.gov/vuln/detail/CVE-2025-12084)
+  - [CVE-2025-13837](https://nvd.nist.gov/vuln/detail/CVE-2025-13837)
+
 ## [1.1.5] - 2026-01-05
 
 ### Security

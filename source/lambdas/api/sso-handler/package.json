@@ -1,7 +1,7 @@
 {
   "name": "@amzn/innovation-sandbox-sso-handler",
   "description": "SSO Handler - Lambda - Innovation Sandbox on AWS (SO0284)",
-  "version": "1.1.5",
+  "version": "1.1.6",
   "type": "module",
   "scripts": {
     "build": "tsc --incremental --noEmit",
