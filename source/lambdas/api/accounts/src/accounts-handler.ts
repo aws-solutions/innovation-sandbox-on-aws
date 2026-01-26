@@ -74,6 +74,11 @@ const routes: Route<IsbApiEvent, APIGatewayProxyResult>[] = [
     handler: middyFactory().handler(ejectAccountHandler),
   },
   {
+    path: "/accounts/{awsAccountId}/quarantine",
+    method: "POST",
+    handler: middyFactory().handler(quarantineAccountHandler),
+  },
+  {
     path: "/accounts/unregistered",
     method: "GET",
     handler: middyFactory().handler(findUnregisteredAccountsHandler),
@@ -294,6 +299,97 @@ async function ejectAccountHandler(
       throw error;
     }
   }
+
+  return {
+    statusCode: 200,
+    body: JSON.stringify({
+      status: "success",
+    }),
+    headers: {
+      "Content-Type": "application/json",
+    },
+  };
+}
+
+async function quarantineAccountHandler(
+  event: IsbApiEvent,
+  context: AccountsApiContext,
+) {
+  const awsAccountId = parseAwsAccountIdFromPathParameters(
+    event.pathParameters,
+  );
+
+  const accountStore = IsbServices.sandboxAccountStore(context.env);
+  const accountResponse = await accountStore.get(awsAccountId);
+  const account = accountResponse.result;
+  if (accountResponse.error) {
+    logger.warn(
+      `${AppInsightsLogPatterns.DataValidationWarning.pattern}: Error in retrieving account ${awsAccountId}: ${accountResponse.error}`,
+    );
+  }
+
+  if (!account) {
+    throw createHttpJSendError({
+      statusCode: 404,
+      data: {
+        errors: [
+          {
+            message: `Account not found.`,
+          },
+        ],
+      },
+    });
+  }
+
+  if (account.status === "Quarantine") {
+    throw createHttpJSendError({
+      statusCode: 409,
+      data: {
+        errors: [
+          {
+            message: `Account is already in Quarantine status.`,
+          },
+        ],
+      },
+    });
+  }
+
+  if (account.status === "CleanUp") {
+    throw createHttpJSendError({
+      statusCode: 409,
+      data: {
+        errors: [
+          {
+            message: `Account is currently in CleanUp state. Cannot quarantine until cleanup completes.`,
+          },
+        ],
+      },
+    });
+  }
+
+  await InnovationSandbox.quarantineAccount(
+    {
+      accountId: awsAccountId,
+      currentOu: account.status,
+      reason: "Manual quarantine requested by administrator",
+    },
+    {
+      logger,
+      tracer,
+      sandboxAccountStore: IsbServices.sandboxAccountStore(context.env),
+      leaseStore: IsbServices.leaseStore(context.env),
+      orgsService: IsbServices.orgsService(
+        context.env,
+        fromTemporaryIsbOrgManagementCredentials(context.env),
+      ),
+      idcService: IsbServices.idcService(
+        context.env,
+        fromTemporaryIsbIdcCredentials(context.env),
+      ),
+      eventBridgeClient: IsbServices.isbEventBridge(context.env),
+      globalConfig: context.globalConfig,
+    },
+  );
 
   return {
     statusCode: 200,

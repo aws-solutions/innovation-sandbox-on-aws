@@ -55,3 +55,15 @@ export const useCleanupAccount = () => {
       client.invalidateQueries({ queryKey: ["accounts"], refetchType: "all" }),
   });
 };
+
+export const useQuarantineAccount = () => {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: async (awsAccountId: string) =>
+      await new AccountService().quarantineAccount(awsAccountId),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["accounts"], refetchType: "all" });
+      client.invalidateQueries({ queryKey: ["leases"], refetchType: "all" });
+    },
+  });
+};

@@ -33,6 +33,7 @@ import {
   useCleanupAccount,
   useEjectAccount,
   useGetAccounts,
+  useQuarantineAccount,
 } from "@amzn/innovation-sandbox-frontend/domains/accounts/hooks";
 import { useBreadcrumb } from "@amzn/innovation-sandbox-frontend/hooks/useBreadcrumb";
 import { useModal } from "@amzn/innovation-sandbox-frontend/hooks/useModal";
@@ -180,6 +181,40 @@ const CleanupModalContent = ({
   />
 );
 
+type QuarantineModalProps = {
+  selectedAccounts: SandboxAccount[];
+  quarantineAccount: (accountId: string) => Promise<any>;
+  navigate: (path: string) => void;
+};
+
+const QuarantineModalContent = ({
+  selectedAccounts,
+  quarantineAccount,
+  navigate,
+}: QuarantineModalProps) => (
+  <BatchActionReview
+    items={selectedAccounts}
+    description={`${selectedAccounts.length} account(s) to quarantine`}
+    columnDefinitions={createColumnDefinitions(false)}
+    identifierKey="awsAccountId"
+    onSubmit={async (account: SandboxAccount) => {
+      await quarantineAccount(account.awsAccountId);
+    }}
+    onSuccess={() => {
+      navigate("/accounts");
+      showSuccessToast(
+        "Account(s) were successfully quarantined.",
+      );
+    }}
+    onError={() =>
+      showErrorToast(
+        "One or more accounts failed to quarantine, try resubmitting.",
+        "Failed to quarantine account(s)",
+      )
+    }
+  />
+);
+
 export const ListAccounts = () => {
   // base ui hooks
   const navigate = useNavigate();
@@ -193,6 +228,7 @@ export const ListAccounts = () => {
   const { data: accounts, isFetching, refetch } = useGetAccounts();
   const { mutateAsync: ejectAccount } = useEjectAccount();
   const { mutateAsync: cleanupAccount } = useCleanupAccount();
+  const { mutateAsync: quarantineAccount } = useQuarantineAccount();
 
   // state
   const [filter, setFilter] = useState<SandboxAccountStatus>();
@@ -244,6 +280,20 @@ export const ListAccounts = () => {
         <CleanupModalContent
           selectedAccounts={selectedAccounts}
           cleanupAccount={cleanupAccount}
+          navigate={navigate}
+        />
+      ),
+      size: "max",
+    });
+  };
+
+  const showQuarantineModal = () => {
+    showModal({
+      header: "Quarantine Account(s)",
+      content: (
+        <QuarantineModalContent
+          selectedAccounts={selectedAccounts}
+          quarantineAccount={quarantineAccount}
           navigate={navigate}
         />
       ),
@@ -313,6 +363,16 @@ export const ListAccounts = () => {
                             x.status === "Quarantine" || x.status === "CleanUp",
                         ),
                     },
+                    {
+                      text: "Quarantine",
+                      id: "quarantine",
+                      disabled:
+                        // disable quarantine option if any selected account is already quarantined or in cleanup
+                        selectedAccounts.some(
+                          (x) =>
+                            x.status === "Quarantine" || x.status === "CleanUp",
+                        ),
+                    },
                   ]}
                   onItemClick={({ detail }) => {
                     switch (detail.id) {
@@ -321,6 +381,9 @@ export const ListAccounts = () => {
                         break;
                       case "retryCleanup":
                         showCleanupModal();
+                        break;
+                      case "quarantine":
+                        showQuarantineModal();
                         break;
                     }
                   }}

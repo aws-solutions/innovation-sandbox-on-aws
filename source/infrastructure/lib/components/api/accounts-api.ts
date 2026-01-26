@@ -130,6 +130,10 @@ export class AccountsApi {
     const accountEjectResource = accountIdResource.addResource("eject");
     accountEjectResource.addMethod("POST");
 
+    const accountQuarantineResource =
+      accountIdResource.addResource("quarantine");
+    accountQuarantineResource.addMethod("POST");
+
     const accountsUnregisteredResource =
       accountsResource.addResource("unregistered");
     accountsUnregisteredResource.addMethod("GET");
