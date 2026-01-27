@@ -134,7 +134,7 @@ export class IsbAccountPoolResources {
     });
 
     new CfnPolicy(scope, "InnovationSandboxRestrictionsScp", {
-      name: "InnovationSandboxRestrictionsScp",
+      name: `${props.namespace}_InnovationSandboxRestrictionsScp`,
       description:
         "Service Control Policy (SCP) to add restrictions for security, isolation, cost and operations related resources.",
       type: "SERVICE_CONTROL_POLICY",
@@ -147,7 +147,7 @@ export class IsbAccountPoolResources {
     });
 
     new CfnPolicy(scope, "InnovationSandboxProtectISBScp", {
-      name: "InnovationSandboxProtectISBResourcesScp",
+      name: `${props.namespace}_InnovationSandboxProtectISBResourcesScp`,
       description:
         "Service Control Policy (SCP) for Innovation Sandbox to protect ISB control plane resources.",
       type: "SERVICE_CONTROL_POLICY",
@@ -161,7 +161,7 @@ export class IsbAccountPoolResources {
     });
 
     new CfnPolicy(scope, "InnovationSandboxLimitRegionsScp", {
-      name: "InnovationSandboxLimitRegionsScp",
+      name: `${props.namespace}_InnovationSandboxLimitRegionsScp`,
       description:
         "Service Control Policy (SCP) for Innovation Sandbox to limit use of AWS Regions.",
       type: "SERVICE_CONTROL_POLICY",
@@ -174,7 +174,7 @@ export class IsbAccountPoolResources {
     });
 
     new CfnPolicy(scope, "InnovationSandboxWriteProtectionScp", {
-      name: "InnovationSandboxWriteProtectionScp",
+      name: `${props.namespace}_InnovationSandboxWriteProtectionScp`,
       description:
         "Service Control Policy (SCP) for Innovation Sandbox to restrict all resource to create or modify actions.",
       type: "SERVICE_CONTROL_POLICY",
