@@ -121,7 +121,7 @@ export class IsbAccountPoolResources {
     });
 
     new CfnPolicy(scope, "InnovationSandboxAwsNukeSupportedServicesScp", {
-      name: "InnovationSandboxAwsNukeSupportedServicesScp",
+      name: `InnovationSandboxAwsNukeSupportedServicesScp_${props.namespace}`,
       description:
         "Service Control Policy (SCP) to allow only services supported by AWS Nuke clean workflow. ",
       type: "SERVICE_CONTROL_POLICY",
