@@ -2,7 +2,7 @@
   "name": "@amzn/innovation-sandbox-frontend",
   "description": "Frontend - Innovation Sandbox on AWS (SO0284)",
   "private": true,
-  "version": "1.1.7",
+  "version": "1.1.8",
   "type": "module",
   "scripts": {
     "dev": "vite",
