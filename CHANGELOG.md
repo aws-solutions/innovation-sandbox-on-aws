@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.8] - 2026-02-04
+
+### Security
+
+- Upgraded `aws-nuke` to mitigate:
+  - [CVE-2025-61726](https://nvd.nist.gov/vuln/detail/CVE-2025-61726)
+  - [CVE-2025-8732](https://nvd.nist.gov/vuln/detail/CVE-2025-8732)
+  - [CVE-2025-61728](https://nvd.nist.gov/vuln/detail/CVE-2025-61728)
+  - [CVE-2025-61730](https://nvd.nist.gov/vuln/detail/CVE-2025-61730)
+- Upgraded `fast-xml-parser` to mitigate [CVE-2026-25128](https://nvd.nist.gov/vuln/detail/CVE-2026-25128)
+- Upgraded `lodash` to mitigate [CVE-2025-13465](https://nvd.nist.gov/vuln/detail/CVE-2025-13465)
+
 ## [1.1.7] - 2026-01-20
 
 ### Fixed
