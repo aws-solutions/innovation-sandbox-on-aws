@@ -20799,6 +20799,9 @@ accounts:
         - property: RoleName
           type: glob
           value: aws-controltower-*
+      IAMServiceLinkedRole:
+        - type: exact
+          value: AWSServiceRoleForECS # ECS Service Linked Role
       IAMSAMLProvider:
         - type: contains
           value: AWSSSO
@@ -21459,6 +21462,13 @@ exports[`SandboxAccountStack Snapshot > matches the snapshot 1`] = `
     },
   },
   "Resources": {
+    "ECSServiceLinkedRole": {
+      "Properties": {
+        "AWSServiceName": "ecs.amazonaws.com",
+        "Description": "Role to enable Amazon ECS to manage your cluster.",
+      },
+      "Type": "AWS::IAM::ServiceLinkedRole",
+    },
     "SandboxAccountRole39551795": {
       "Metadata": {
         "guard": {

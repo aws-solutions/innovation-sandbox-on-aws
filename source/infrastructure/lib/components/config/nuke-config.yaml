@@ -113,6 +113,9 @@ accounts:
         - property: RoleName
           type: glob
           value: aws-controltower-*
+      IAMServiceLinkedRole:
+        - type: exact
+          value: AWSServiceRoleForECS # ECS Service Linked Role
       IAMSAMLProvider:
         - type: contains
           value: AWSSSO
