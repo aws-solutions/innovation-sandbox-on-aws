@@ -2333,6 +2333,7 @@ exports[`IsbAccountPoolStack Snapshot > matches the snapshot 1`] = `
                 "amplify:*",
                 "aoss:*",
                 "apigateway:*",
+                "execute-api:*",
                 "appconfig:*",
                 "application-autoscaling:*",
                 "applicationinsights:*",
