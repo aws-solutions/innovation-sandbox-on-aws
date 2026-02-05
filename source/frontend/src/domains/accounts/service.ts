@@ -72,4 +72,8 @@ export class AccountService {
   async cleanupAccount(awsAccountId: string): Promise<void> {
     await this.api.post(`/accounts/${awsAccountId}/retryCleanup`);
   }
+
+  async quarantineAccount(awsAccountId: string): Promise<void> {
+    await this.api.post(`/accounts/${awsAccountId}/quarantine`);
+  }
 }
