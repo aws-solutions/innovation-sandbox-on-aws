@@ -38,6 +38,7 @@ import {
 import {
   parseResults,
   parseSingleItemResult,
+  removeNullFieldsForDynamoDB,
   validateItem,
   withMetadata,
 } from "@amzn/innovation-sandbox-commons/data/utils.js";
@@ -67,7 +68,7 @@ export class DynamoLeaseStore extends LeaseStore {
         const result = await this.ddbClient.send(
           new PutCommand({
             TableName: this.tableName,
-            Item: lease,
+            Item: removeNullFieldsForDynamoDB(lease),
             ReturnValues: "ALL_OLD",
             ConditionExpression: `attribute_exists(userEmail) and meta.lastEditTime = :expectedTime`,
             ExpressionAttributeValues: {
@@ -92,7 +93,7 @@ export class DynamoLeaseStore extends LeaseStore {
         const result = await this.ddbClient.send(
           new PutCommand({
             TableName: this.tableName,
-            Item: lease,
+            Item: removeNullFieldsForDynamoDB(lease),
             ReturnValues: "ALL_OLD",
             ConditionExpression: "attribute_exists(userEmail)", //PK -- ensures item exists
           }),
@@ -117,7 +118,7 @@ export class DynamoLeaseStore extends LeaseStore {
       await this.ddbClient.send(
         new PutCommand({
           TableName: this.tableName,
-          Item: lease,
+          Item: removeNullFieldsForDynamoDB(lease),
           ConditionExpression: "attribute_not_exists(userEmail)", //PK -- ensures item does not exist
         }),
       );

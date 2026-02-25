@@ -1,14 +1,11 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import {
-  Button,
-  ContentLayout,
-  Header,
-  SpaceBetween,
-} from "@cloudscape-design/components";
+import { Button, Header, SpaceBetween } from "@cloudscape-design/components";
 import { useNavigate } from "react-router-dom";
 
+import { useAppLayoutContext } from "@amzn/innovation-sandbox-frontend/components/AppLayout/AppLayoutContext";
+import { ContentLayout } from "@amzn/innovation-sandbox-frontend/components/ContentLayout";
 import { Divider } from "@amzn/innovation-sandbox-frontend/components/Divider";
 import { InfoLink } from "@amzn/innovation-sandbox-frontend/components/InfoLink";
 import { Markdown } from "@amzn/innovation-sandbox-frontend/components/Markdown";
@@ -17,7 +14,6 @@ import { ApprovalsPanel } from "@amzn/innovation-sandbox-frontend/domains/home/c
 import { MyLeases } from "@amzn/innovation-sandbox-frontend/domains/home/components/MyLeases";
 import { useBreadcrumb } from "@amzn/innovation-sandbox-frontend/hooks/useBreadcrumb";
 import { useUser } from "@amzn/innovation-sandbox-frontend/hooks/useUser";
-import { useAppLayoutContext } from "@aws-northstar/ui/components/AppLayout";
 import { useEffect } from "react";
 
 export const Home = () => {

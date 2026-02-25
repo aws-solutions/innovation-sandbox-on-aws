@@ -157,6 +157,7 @@ async function postLeaseTemplatesHandler(
   const parsedBodyResult = LeaseTemplateSchema.omit({
     uuid: true,
     createdBy: true,
+    blueprintName: true,
   }).safeParse(event.body);
 
   if (!parsedBodyResult.success) {
@@ -189,10 +190,16 @@ async function postLeaseTemplatesHandler(
     }
   }
 
+  const blueprintName = await resolveBlueprintName(
+    parsedBodyResult.data.blueprintId,
+    context.env,
+  );
+
   const newLeaseTemplate = await leaseTemplateStore.create({
     uuid: randomUUID(),
     createdBy: context.user.email,
     ...parsedBodyResult.data,
+    blueprintName,
   });
 
   addCorrelationContext(
@@ -291,9 +298,10 @@ async function putLeaseTemplateByIdHandler(
     });
   }
 
-  const parsedBodyResult = LeaseTemplateSchema.omit({ uuid: true }).safeParse(
-    event.body,
-  );
+  const parsedBodyResult = LeaseTemplateSchema.omit({
+    uuid: true,
+    blueprintName: true,
+  }).safeParse(event.body);
 
   if (!parsedBodyResult.success) {
     throw createHttpJSendValidationError(parsedBodyResult.error);
@@ -325,9 +333,15 @@ async function putLeaseTemplateByIdHandler(
     }
   }
 
+  const resolvedBlueprintName = await resolveBlueprintName(
+    parsedBodyResult.data.blueprintId,
+    context.env,
+  );
+
   const leaseTemplate = {
     uuid: event.pathParameters.leaseTemplateId,
     ...parsedBodyResult.data,
+    blueprintName: resolvedBlueprintName,
   };
 
   try {
@@ -413,4 +427,26 @@ function authorizedToGetPrivateLeaseTemplates(user: IsbUser) {
       (role: IsbRole) => role === "Admin" || role === "Manager",
     ) ?? false
   );
+}
+
+async function resolveBlueprintName(
+  blueprintId: string | null | undefined,
+  env: LeaseTemplateLambdaEnvironment,
+): Promise<string | null> {
+  if (!blueprintId) return null;
+  const blueprintStore = IsbServices.blueprintStore(env);
+  const blueprintResult = await blueprintStore.get(blueprintId);
+  if (!blueprintResult.result) {
+    throw createHttpJSendError({
+      statusCode: 400,
+      data: {
+        errors: [
+          {
+            message: "Referenced blueprint not found.",
+          },
+        ],
+      },
+    });
+  }
+  return blueprintResult.result.blueprint.name;
 }

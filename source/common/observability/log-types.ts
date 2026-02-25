@@ -1,8 +1,12 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { AwsAccountIdSchema } from "@amzn/innovation-sandbox-commons/data/common-schemas.js";
+import { CleanupReasonSchema } from "@amzn/innovation-sandbox-commons/events/clean-account-request.js";
 import { LeaseTerminatedReasonTypeSchema } from "@amzn/innovation-sandbox-commons/events/lease-terminated-event.js";
+import {
+  AwsAccountIdSchema,
+  enumErrorMap,
+} from "@amzn/innovation-sandbox-commons/utils/zod.js";
 import z from "zod";
 
 export const AccountDriftLogSchema = z.object({
@@ -12,15 +16,18 @@ export const AccountDriftLogSchema = z.object({
   actualOu: z.string().optional(),
 });
 
-export const LeaseApprovedLogSchema = z.object({
-  logDetailType: z.literal("LeaseApproved"),
+export const LeasePublishedLogSchema = z.object({
+  logDetailType: z.literal("LeasePublished"),
   leaseId: z.string(),
   leaseTemplateId: z.string(),
   accountId: AwsAccountIdSchema,
   maxBudget: z.number().optional(),
   maxDurationHours: z.number().optional(),
   autoApproved: z.boolean(),
-  creationMethod: z.enum(["REQUESTED", "ASSIGNED"]),
+  creationMethod: z.enum(["REQUESTED", "ASSIGNED"], {
+    errorMap: enumErrorMap,
+  }),
+  hasBlueprint: z.boolean(),
 });
 
 export const LeaseTerminatedLogSchema = z.object({
@@ -44,9 +51,26 @@ export const LeaseUnfrozenLogSchema = z.object({
   accountId: AwsAccountIdSchema,
 });
 
+export const LeaseResetLogSchema = z.object({
+  logDetailType: z.literal("LeaseReset"),
+  leaseId: z.string(),
+  leaseTemplateId: z.string(),
+  accountId: AwsAccountIdSchema,
+  blueprintId: z.string().nullish(),
+  blueprintName: z.string().optional(),
+  reasonForReset: z.enum(["ProvisioningFailed"], {
+    errorMap: enumErrorMap,
+  }),
+});
+
 export const DeploymentSummaryLogSchema = z.object({
   logDetailType: z.literal("DeploymentSummary"),
   numLeaseTemplates: z.number().nonnegative(),
+  numLeaseTemplatesWithBlueprint: z.number().nonnegative(),
+  numBlueprints: z.number().nonnegative(),
+  blueprintServiceCounts: z
+    .record(z.string(), z.number().nonnegative())
+    .optional(),
   config: z.object({
     numCostReportGroups: z.number().nonnegative(),
     requireMaxBudget: z.boolean(),
@@ -86,6 +110,7 @@ export const AccountCleanupFailure = z.object({
   durationMinutes: z.number(),
   stateMachineExecutionArn: z.string(),
   stateMachineExecutionURL: z.string(),
+  reason: CleanupReasonSchema,
 });
 
 export const AccountCleanupSuccess = z.object({
@@ -94,13 +119,15 @@ export const AccountCleanupSuccess = z.object({
   durationMinutes: z.number(),
   stateMachineExecutionArn: z.string(),
   stateMachineExecutionURL: z.string(),
+  reason: CleanupReasonSchema,
 });
 
 export const SubscribableLogSchema = z.discriminatedUnion("logDetailType", [
   AccountDriftLogSchema,
   LeaseTerminatedLogSchema,
-  LeaseApprovedLogSchema,
+  LeasePublishedLogSchema,
   LeaseUnfrozenLogSchema,
+  LeaseResetLogSchema,
   DeploymentSummaryLogSchema,
   CostReportingSchema,
   AccountCleanupFailure,

@@ -15,8 +15,11 @@ import {
   ContextWithConfig,
   isbConfigMiddleware,
 } from "@amzn/innovation-sandbox-commons/lambda/middleware/isb-config-middleware.js";
+import { searchableAccountProperties } from "@amzn/innovation-sandbox-commons/observability/logging.js";
 import { IsbClients } from "@amzn/innovation-sandbox-commons/sdk-clients/index.js";
+import { fromTemporaryIsbSandboxAccountCredentials } from "@amzn/innovation-sandbox-commons/utils/cross-account-roles.js";
 import { DescribeExecutionCommand } from "@aws-sdk/client-sfn";
+import { GetCallerIdentityCommand, STSClient } from "@aws-sdk/client-sts";
 
 const serviceName = "InitializeCleanup";
 const tracer = new Tracer();
@@ -59,21 +62,16 @@ async function initializeCleanupHandler(
 
   const accountStore = IsbServices.sandboxAccountStore(context.env);
   const accountResponse = await accountStore.get(event.accountId);
-  const account = accountResponse.result;
-  if (accountResponse.error) {
-    logger.warn(
-      `Error in retrieving account ${event.accountId}: ${accountResponse.error}`,
-    );
-  }
+  const sandboxAccount = accountResponse.result;
 
-  if (!account) {
+  if (!sandboxAccount) {
     throw Error("Unable to find account.");
   }
 
   if (
-    account.cleanupExecutionContext?.stateMachineExecutionArn &&
+    sandboxAccount.cleanupExecutionContext?.stateMachineExecutionArn &&
     (await stepFunctionIsStillRunning(
-      account.cleanupExecutionContext.stateMachineExecutionArn,
+      sandboxAccount.cleanupExecutionContext.stateMachineExecutionArn,
       context.env,
     ))
   ) {
@@ -83,8 +81,25 @@ async function initializeCleanupHandler(
     return { cleanupAlreadyInProgress: true };
   }
 
+  const sandboxAccountRoleArn = `arn:aws:iam::${sandboxAccount.awsAccountId}:role/${context.env.CLEANUP_SPOKE_ROLE_NAME}`;
+
+  // Validate cleanup spoke role exists before starting cleanup
+  const spokeRoleIsAssumable = await validateCleanupSpokeRole(
+    sandboxAccountRoleArn,
+    context.env,
+  );
+
+  if (!spokeRoleIsAssumable) {
+    const errorMessage = `Cleanup spoke role ${sandboxAccountRoleArn} not found in account ${event.accountId}`;
+    logger.error(errorMessage, {
+      ...searchableAccountProperties(sandboxAccount),
+      roleArn: sandboxAccountRoleArn,
+    });
+    throw new Error(errorMessage);
+  }
+
   await accountStore.put({
-    ...account,
+    ...sandboxAccount,
     cleanupExecutionContext: {
       stateMachineExecutionArn:
         event.cleanupExecutionContext.stateMachineExecutionArn,
@@ -128,5 +143,27 @@ async function stepFunctionIsStillRunning(
 
     // Re-throw other errors as they indicate actual problems
     throw error;
+  }
+}
+
+async function validateCleanupSpokeRole(
+  roleArn: string,
+  env: {
+    CLEANUP_SPOKE_ROLE_NAME: string;
+    INTERMEDIATE_ROLE_ARN: string;
+    USER_AGENT_EXTRA: string;
+  },
+): Promise<boolean> {
+  try {
+    const stsClient = new STSClient({
+      credentials: fromTemporaryIsbSandboxAccountCredentials(roleArn, env),
+      customUserAgent: env.USER_AGENT_EXTRA,
+    });
+
+    await stsClient.send(new GetCallerIdentityCommand());
+
+    return true;
+  } catch (error) {
+    return false;
   }
 }

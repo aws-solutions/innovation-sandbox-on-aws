@@ -16,8 +16,10 @@ import { InfoPanel } from "@amzn/innovation-sandbox-frontend/components/InfoPane
 import { Loader } from "@amzn/innovation-sandbox-frontend/components/Loader";
 import { LeasePanel } from "@amzn/innovation-sandbox-frontend/domains/home/components/LeasePanel";
 import { useLeasesForCurrentUser } from "@amzn/innovation-sandbox-frontend/domains/leases/hooks";
-import moment from "moment";
+import { DateTime } from "luxon";
 import { useMemo } from "react";
+
+const DAYS_OF_LEASE_HISTORY = 7;
 
 export const MyLeases = () => {
   const navigate = useNavigate();
@@ -29,88 +31,77 @@ export const MyLeases = () => {
     error,
   } = useLeasesForCurrentUser();
 
+  const shouldIncludeLease = (lease: LeaseWithLeaseId): boolean => {
+    if (isApprovalDeniedLease(lease)) {
+      if (!lease.meta?.lastEditTime) {
+        return false;
+      }
+      return (
+        DateTime.now().diff(DateTime.fromISO(lease.meta?.lastEditTime), "days")
+          .days <= DAYS_OF_LEASE_HISTORY
+      );
+    } else if (isExpiredLease(lease)) {
+      return (
+        DateTime.now().diff(DateTime.fromISO(lease.endDate), "days").days <=
+        DAYS_OF_LEASE_HISTORY
+      );
+    } else {
+      return true;
+    }
+  };
+
+  const getStatusPriority = (lease: LeaseWithLeaseId): number => {
+    if (isMonitoredLease(lease)) return 1;
+    if (isPendingLease(lease)) return 2;
+    return 3;
+  };
+
+  const compareLeaseDates = (dateA?: string, dateB?: string): number => {
+    if (!dateA || !dateB) return 0;
+    return (
+      DateTime.fromISO(dateB).toMillis() - DateTime.fromISO(dateA).toMillis()
+    );
+  };
+
   const filteredLeases = useMemo(() => {
-    const DAYS_OF_LEASE_HISTORY = 7;
-    return leases
-      ?.filter((lease) => {
-        if (isApprovalDeniedLease(lease)) {
-          return (
-            moment().diff(lease.meta?.lastEditTime, "days") <=
-            DAYS_OF_LEASE_HISTORY
-          );
-        } else if (isExpiredLease(lease)) {
-          return moment().diff(lease.endDate, "days") <= DAYS_OF_LEASE_HISTORY;
-        } else {
-          return true;
-        }
-      })
-      .sort((a, b) => {
-        // Helper function to get sort priority
-        const getStatusPriority = (lease: LeaseWithLeaseId) => {
-          if (isMonitoredLease(lease)) {
-            return 1;
-          } else if (isPendingLease(lease)) {
-            return 2;
-          } else {
-            return 3;
-          }
-        };
-
-        const priorityA = getStatusPriority(a);
-        const priorityB = getStatusPriority(b);
-
-        if (priorityA !== priorityB) {
-          return priorityA - priorityB;
-        }
-
-        // If same priority, sort by date (newest first)
-        const dateA = a.meta?.lastEditTime;
-        const dateB = b.meta?.lastEditTime;
-
-        return moment(dateB).valueOf() - moment(dateA).valueOf();
-      });
+    return leases?.filter(shouldIncludeLease).sort((a, b) => {
+      const priorityDiff = getStatusPriority(a) - getStatusPriority(b);
+      return priorityDiff !== 0
+        ? priorityDiff
+        : compareLeaseDates(a.meta?.lastEditTime, b.meta?.lastEditTime);
+    });
   }, [leases]);
 
-  const body = () => {
-    if (isFetching) {
-      return <Loader label="Loading your leases..." />;
-    }
-
-    if (isError) {
-      return (
-        <ErrorPanel
-          description="Your leases can't be retrieved at the moment."
-          retry={refetch}
-          error={error as Error}
-        />
-      );
-    }
-
-    if ((filteredLeases || []).length === 0) {
-      return (
-        <InfoPanel
-          header="You currently don't have any leases."
-          description="To get started, click below to request a new lease."
-          actionLabel="Request lease"
-          action={() => navigate("/request")}
-        />
-      );
-    }
-
-    return (
+  // Render body content based on loading/error/data state
+  let bodyContent: React.JSX.Element;
+  if (isFetching) {
+    bodyContent = <Loader label="Loading your leases..." />;
+  } else if (isError) {
+    bodyContent = (
+      <ErrorPanel
+        description="Your leases can't be retrieved at the moment."
+        retry={refetch}
+        error={error as Error}
+      />
+    );
+  } else if ((filteredLeases || []).length === 0) {
+    bodyContent = (
+      <InfoPanel
+        header="You currently don't have any leases."
+        description="To get started, click below to request a new lease."
+        actionLabel="Request lease"
+        action={() => navigate("/request")}
+      />
+    );
+  } else {
+    bodyContent = (
       <SpaceBetween size="xl">
         {filteredLeases?.map((lease) => (
           <LeasePanel key={lease.uuid} lease={lease} />
         ))}
       </SpaceBetween>
     );
-  };
-
-  const count = () => {
-    if (!isFetching && !isError) {
-      return <span data-counter>({(filteredLeases || []).length})</span>;
-    }
-  };
+  }
 
   return (
     <SpaceBetween size="m">
@@ -126,9 +117,12 @@ export const MyLeases = () => {
           />
         }
       >
-        My Leases {count()}
+        My Leases{" "}
+        {!isFetching && !isError && (
+          <span data-counter>({(filteredLeases || []).length})</span>
+        )}
       </Header>
-      {body()}
+      {bodyContent}
     </SpaceBetween>
   );
 };

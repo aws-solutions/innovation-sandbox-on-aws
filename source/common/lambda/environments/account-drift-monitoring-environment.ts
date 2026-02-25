@@ -9,9 +9,9 @@ export const AccountDriftMonitoringEnvironmentSchema =
     ISB_EVENT_BUS: z.string(),
     ACCOUNT_TABLE_NAME: z.string(),
     ISB_NAMESPACE: z.string(),
-    SANDBOX_OU_ID: z.string(),
     INTERMEDIATE_ROLE_ARN: z.string(),
     ORG_MGT_ROLE_ARN: z.string(),
+    ACCOUNT_POOL_CONFIG_PARAM_ARN: z.string(),
   });
 
 export type AccountDriftMonitoringEnvironment = z.infer<

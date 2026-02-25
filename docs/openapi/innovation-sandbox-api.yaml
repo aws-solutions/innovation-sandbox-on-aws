@@ -2,7 +2,7 @@ openapi: 3.0.0
 info:
   title: Innovation Sandbox on AWS
   description: API documentation for the Innovation Sandbox on AWS solution.
-  version: 1.1.8
+  version: 1.2.0
   license:
     name: Apache 2.0
     url: "http://www.apache.org/licenses/LICENSE-2.0.html"
@@ -18,6 +18,8 @@ tags:
     description: Contract that provides a user with temporary access to a sandbox account
   - name: leaseTemplates
     description: Configurations that can be used to request a sandbox lease
+  - name: blueprints
+    description: Pre-configured infrastructure templates that deploy CloudFormation StackSets to sandbox accounts
   - name: accounts
     description: AWS accounts registered as sandbox accounts within the solution
   - name: configurations
@@ -98,9 +100,9 @@ components:
     PaginatedResults:
       type: object
       required:
-        - items
+        - result
       properties:
-        items:
+        result:
           type: array
         nextPageIdentifier:
           type: string
@@ -111,7 +113,7 @@ components:
       example: "123456789012"
     AccountStatus:
       type: string
-      enum: [Available, Active, AwaitingRecycle, Quarantined]
+      enum: [Available, Active, CleanUp, Quarantine, Frozen]
       description: Current status of the account
       example: "Available"
     DriftAtLastScan:
@@ -170,7 +172,18 @@ components:
       example: "user@example.com"
     LeaseStatus:
       type: string
-      enum: [PendingApproval, Active, Frozen, Terminated, Expired]
+      enum:
+        - PendingApproval
+        - ApprovalDenied
+        - Active
+        - Frozen
+        - Provisioning
+        - Expired
+        - BudgetExceeded
+        - ManuallyTerminated
+        - AccountQuarantined
+        - Ejected
+        - ProvisioningFailed
       description: Current status of the lease
       example: "Active"
     LeaseUuid:
@@ -242,6 +255,42 @@ components:
       example: "Engineering"
       maxLength: 50
       nullable: true
+    BlueprintUuid:
+      type: string
+      format: uuid
+      description: Unique identifier for the blueprint
+      example: "12345678-90ab-cdef-1234-567890abcdef"
+    BlueprintName:
+      type: string
+      description: Name of the blueprint. Must start with a letter and contain only letters, numbers, and hyphens.
+      example: "Web-Application-Blueprint"
+      minLength: 1
+      maxLength: 50
+      pattern: "^[a-zA-Z][a-zA-Z0-9-]{0,49}$"
+    StackSetName:
+      type: string
+      description: CloudFormation StackSet name
+      example: "my-stackset"
+      minLength: 1
+    StackSetId:
+      type: string
+      description: Unique CloudFormation StackSet ID
+      example: "12345678-1234-1234-1234-123456789012"
+    AdministrationRoleArn:
+      type: string
+      description: ARN of the IAM role for StackSet administration
+      example: "arn:aws:iam::123456789012:role/StackSetAdministrationRole"
+    ExecutionRoleName:
+      type: string
+      description: Name of the IAM role for StackSet execution in target accounts
+      example: "StackSetExecutionRole"
+    DeploymentTimeoutMinutes:
+      type: integer
+      description: Timeout for blueprint deployment in minutes
+      example: 60
+      minimum: 5
+      maximum: 480
+      default: 30
     MetaData:
       type: object
       properties:
@@ -256,7 +305,7 @@ components:
           description: Time when the resource was last edited
           example: "2023-05-01T12:00:00Z"
         schemaVersion:
-          type: string
+          type: integer
           description: Version of the schema used to create the resource
           example: 1
     Account:
@@ -267,10 +316,29 @@ components:
       properties:
         awsAccountId:
           $ref: "#/components/schemas/AwsAccountId"
+        email:
+          type: string
+          format: email
+          description: Email address associated with the AWS account
+        name:
+          type: string
+          description: Friendly name of the account
+          maxLength: 50
         status:
           $ref: "#/components/schemas/AccountStatus"
         driftAtLastScan:
           $ref: "#/components/schemas/DriftAtLastScan"
+        cleanupExecutionContext:
+          type: object
+          description: Context for an in-progress cleanup execution
+          properties:
+            stateMachineExecutionArn:
+              type: string
+              description: ARN of the Step Functions execution performing cleanup
+            stateMachineExecutionStartTime:
+              type: string
+              format: date-time
+              description: When the cleanup execution started
         meta:
           $ref: "#/components/schemas/MetaData"
     UnregisteredAccount:
@@ -279,9 +347,6 @@ components:
         Id:
           type: string
           description: The unique identifier (ID) of the account
-        Arn:
-          type: string
-          description: The Amazon Resource Name (ARN) of the account
         Email:
           type: string
           format: email
@@ -289,23 +354,6 @@ components:
         Name:
           type: string
           description: The friendly name of the account
-        Status:
-          type: string
-          enum:
-            - ACTIVE
-            - SUSPENDED
-            - PENDING
-          description: The status of the account in Organizations
-        JoinedMethod:
-          type: string
-          enum:
-            - INVITED
-            - CREATED
-          description: The method by which the account joined the organization
-        JoinedTimestamp:
-          type: string
-          format: date-time
-          description: The date the account became a part of the organization
     Lease:
       type: object
       required:
@@ -337,6 +385,27 @@ components:
           $ref: "#/components/schemas/Comments"
         costReportGroup:
           $ref: "#/components/schemas/CostReportGroup"
+        blueprintId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Blueprint attached to the lease template used for this lease
+        blueprintName:
+          type: string
+          nullable: true
+          description: Name of the attached blueprint
+        createdBy:
+          type: string
+          format: email
+          description: Email of the admin/manager who assigned the lease (only present for assigned leases)
+        approvedBy:
+          type: string
+          description: Email of the approver or "AUTO_APPROVED" for auto-approved leases
+          example: "admin@example.com"
+        lastCheckedDate:
+          type: string
+          format: date-time
+          description: When the lease was last checked by the monitoring system
         awsAccountId:
           $ref: "#/components/schemas/AwsAccountId"
         leaseId:
@@ -381,8 +450,192 @@ components:
           $ref: "#/components/schemas/DurationThresholds"
         costReportGroup:
           $ref: "#/components/schemas/CostReportGroup"
+        blueprintId:
+          allOf:
+            - $ref: "#/components/schemas/BlueprintUuid"
+            - nullable: true
+              description: Optional blueprint attached to this lease template
+        blueprintName:
+          type: string
+          nullable: true
+          description: Resolved name of the attached blueprint
         meta:
           $ref: "#/components/schemas/MetaData"
+    StackSet:
+      type: object
+      required:
+        - stackSetId
+        - administrationRoleArn
+        - executionRoleName
+        - regions
+      properties:
+        blueprintId:
+          $ref: "#/components/schemas/BlueprintUuid"
+        stackSetId:
+          $ref: "#/components/schemas/StackSetId"
+        administrationRoleArn:
+          $ref: "#/components/schemas/AdministrationRoleArn"
+        executionRoleName:
+          $ref: "#/components/schemas/ExecutionRoleName"
+        regions:
+          type: array
+          items:
+            type: string
+          minItems: 1
+          description: AWS regions where the StackSet will be deployed
+          example: ["us-east-1", "us-west-2"]
+        deploymentOrder:
+          type: integer
+          description: Deployment order for multi-StackSet blueprints
+          example: 1
+          default: 1
+        maxConcurrentPercentage:
+          type: integer
+          description: Maximum percentage of accounts in which to perform StackSet operations simultaneously
+          minimum: 1
+          maximum: 100
+          default: 100
+        failureTolerancePercentage:
+          type: integer
+          description: Percentage of accounts for which StackSet operations can fail before the operation stops
+          minimum: 0
+          maximum: 100
+          default: 0
+        concurrencyMode:
+          type: string
+          enum: [STRICT_FAILURE_TOLERANCE, SOFT_FAILURE_TOLERANCE]
+          description: Concurrency mode for StackSet operations
+          default: STRICT_FAILURE_TOLERANCE
+        healthMetrics:
+          type: object
+          properties:
+            deploymentCount:
+              type: integer
+              description: Total number of deployments for this StackSet
+            successfulDeploymentCount:
+              type: integer
+              description: Number of successful deployments
+            lastFailureAt:
+              type: string
+              format: date-time
+              description: Timestamp of last failed deployment
+            lastSuccessAt:
+              type: string
+              format: date-time
+              description: Timestamp of last successful deployment
+            consecutiveFailures:
+              type: integer
+              description: Count of consecutive deployment failures
+        meta:
+          $ref: "#/components/schemas/MetaData"
+    AvailableStackSet:
+      type: object
+      required:
+        - stackSetName
+        - stackSetId
+      properties:
+        stackSetName:
+          $ref: "#/components/schemas/StackSetName"
+        stackSetId:
+          $ref: "#/components/schemas/StackSetId"
+        description:
+          type: string
+          description: StackSet description
+        status:
+          type: string
+          enum: [ACTIVE, DELETED]
+          description: StackSet status
+        permissionModel:
+          type: string
+          enum: [SELF_MANAGED, SERVICE_MANAGED]
+          description: StackSet permission model
+    Blueprint:
+      type: object
+      required:
+        - blueprintId
+        - name
+        - createdBy
+      properties:
+        blueprintId:
+          $ref: "#/components/schemas/BlueprintUuid"
+        name:
+          $ref: "#/components/schemas/BlueprintName"
+        tags:
+          type: object
+          additionalProperties:
+            type: string
+          description: Key-value tags for the blueprint
+          example:
+            environment: "production"
+            team: "platform"
+        createdBy:
+          $ref: "#/components/schemas/UserEmail"
+        deploymentTimeoutMinutes:
+          $ref: "#/components/schemas/DeploymentTimeoutMinutes"
+        regionConcurrencyType:
+          type: string
+          enum: [SEQUENTIAL, PARALLEL]
+          description: Whether StackSet operations run sequentially or in parallel across regions
+          default: SEQUENTIAL
+        totalHealthMetrics:
+          type: object
+          properties:
+            totalDeploymentCount:
+              type: integer
+              description: Total deployments across all StackSets
+            totalSuccessfulCount:
+              type: integer
+              description: Total successful deployments across all StackSets
+            lastDeploymentAt:
+              type: string
+              format: date-time
+              description: Timestamp of most recent deployment
+        meta:
+          $ref: "#/components/schemas/MetaData"
+    BlueprintWithStackSets:
+      type: object
+      required:
+        - blueprint
+        - stackSets
+      properties:
+        blueprint:
+          $ref: "#/components/schemas/Blueprint"
+        stackSets:
+          type: array
+          items:
+            $ref: "#/components/schemas/StackSet"
+          description: StackSets associated with this blueprint
+        recentDeployments:
+          type: array
+          items:
+            type: object
+            properties:
+              stackSetId:
+                type: string
+              leaseId:
+                type: string
+                format: uuid
+              accountId:
+                type: string
+              status:
+                type: string
+                enum: [RUNNING, SUCCEEDED, FAILED, QUEUED]
+              operationId:
+                type: string
+              deploymentStartedAt:
+                type: string
+                format: date-time
+              deploymentCompletedAt:
+                type: string
+                format: date-time
+              duration:
+                type: number
+                description: Duration in minutes
+              errorType:
+                type: string
+              errorMessage:
+                type: string
+          description: Recent deployment history entries (optional, with 90-day TTL)
     GlobalConfiguration:
       type: object
       required:
@@ -391,7 +644,7 @@ components:
         - leases
         - cleanup
         - auth
-        - notification
+        - isbManagedRegions
       properties:
         termsOfService:
           type: string
@@ -399,45 +652,45 @@ components:
         maintenanceMode:
           type: boolean
           description: If enabled, the system will prevent the creation of new leases
+        isbManagedRegions:
+          type: array
+          items:
+            type: string
+          minItems: 1
+          description: AWS regions managed by Innovation Sandbox
+          example: ["us-east-1", "us-west-2"]
         leases:
           type: object
           required:
+            - requireMaxBudget
             - maxBudget
-            - defaultBudgetThresholds
-            - defaultDurationThresholds
-            - maxBudgetReclamationThreshold
+            - requireMaxDuration
             - maxDurationHours
             - maxLeasesPerUser
+            - ttl
           properties:
+            requireMaxBudget:
+              type: boolean
+              description: Whether or not to require a max budget on lease templates
             maxBudget:
-              type: number
-              description: Maximum budget value (in dollars) that can be created on lease templates
-            defaultBudgetThresholds:
-              type: array
-              minItems: 1
-              items:
-                type: integer
-                minimum: 0
-              description: List of default budget thresholds in whole-number percentages of the selected budget
-            defaultDurationThresholds:
-              type: array
-              minItems: 1
-              items:
-                type: integer
-                minimum: 0
-              description: List of default duration thresholds in whole-number percentages of the selected duration
-            maxBudgetReclamationThreshold:
               type: integer
               minimum: 0
-              description: the maximum percentage of the desired budget that can be set for the final reclamation threshold
+              description: Maximum budget value (in dollars) that can be created on lease templates
+            requireMaxDuration:
+              type: boolean
+              description: Whether or not to require a max duration on lease templates
             maxDurationHours:
-              type: number
+              type: integer
               minimum: 0
               description: Maximum duration (in hours) that can be specified on a lease template
             maxLeasesPerUser:
               type: integer
               minimum: 0
               description: The maximum number of active leases a user can have at any one time
+            ttl:
+              type: integer
+              minimum: 0
+              description: Number of days the solution stores expired lease records before purging them
         cleanup:
           type: object
           required:
@@ -462,15 +715,20 @@ components:
               type: integer
               minimum: 0
               description: The number of seconds to wait before rerunning a successful attempt
-        notification:
+        auth:
           type: object
           required:
-            - emailFrom
+            - awsAccessPortalUrl
+            - webAppUrl
           properties:
-            emailFrom:
+            awsAccessPortalUrl:
               type: string
-              format: email
-              description: The email address to send notifications from
+              format: uri
+              description: The AWS Access Portal URL for IAM Identity Center SSO
+            webAppUrl:
+              type: string
+              format: uri
+              description: The URL of the Innovation Sandbox web application
         costReportGroups:
           type: array
           items:
@@ -520,6 +778,13 @@ components:
       required: true
       schema:
         $ref: "#/components/schemas/LeaseTemplateUuid"
+    BlueprintId:
+      name: blueprintId
+      description: UUID for blueprint
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/BlueprintUuid"
     AwsAccountId:
       name: awsAccountId
       description: AWS account ID
@@ -743,7 +1008,10 @@ paths:
                 - action
               properties:
                 action:
-                  $ref: "#/components/schemas/ThresholdAction"
+                  type: string
+                  enum: [Approve, Deny]
+                  description: Action to take on the pending lease
+                  example: Approve
       responses:
         "200":
           description: Success
@@ -890,9 +1158,6 @@ paths:
               type: object
               required:
                 - name
-                - description
-                - budgetConfig
-                - durationConfig
                 - requiresApproval
               properties:
                 name:
@@ -915,6 +1180,11 @@ paths:
                   description: Whether leases created from this template require approval
                 costReportGroup:
                   $ref: "#/components/schemas/CostReportGroup"
+                blueprintId:
+                  allOf:
+                    - $ref: "#/components/schemas/BlueprintUuid"
+                    - nullable: true
+                      description: Optional blueprint to attach to this lease template
       responses:
         "201":
           description: Success
@@ -976,12 +1246,7 @@ paths:
               type: object
               required:
                 - name
-                - description
                 - requiresApproval
-                - maxSpend
-                - leaseDurationInHours
-                - budgetThresholds
-                - durationThresholds
                 - createdBy
               properties:
                 name:
@@ -1004,6 +1269,11 @@ paths:
                   $ref: "#/components/schemas/CreatedBy"
                 costReportGroup:
                   $ref: "#/components/schemas/CostReportGroup"
+                blueprintId:
+                  allOf:
+                    - $ref: "#/components/schemas/BlueprintUuid"
+                    - nullable: true
+                      description: Optional blueprint to attach to this lease template
       responses:
         "200":
           description: Success
@@ -1042,8 +1312,6 @@ paths:
           $ref: "#/components/responses/BadRequestResponse"
         "403":
           $ref: "#/components/responses/UnauthorizedResponse"
-        "404":
-          $ref: "#/components/responses/ResourceNotFoundResponse"
         "500":
           $ref: "#/components/responses/ErrorResponse"
 
@@ -1249,6 +1517,296 @@ paths:
           $ref: "#/components/responses/BadRequestResponse"
         "403":
           $ref: "#/components/responses/UnauthorizedResponse"
+        "500":
+          $ref: "#/components/responses/ErrorResponse"
+
+  # Blueprint endpoints
+  /blueprints/stacksets:
+    get:
+      tags:
+        - blueprints
+      summary: Discover available CloudFormation StackSets
+      description: Lists SELF_MANAGED StackSets available in the ISB hub account that can be registered as blueprints
+      parameters:
+        - $ref: "#/components/parameters/PageIdentifier"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponseBody"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          result:
+                            type: array
+                            items:
+                              $ref: "#/components/schemas/AvailableStackSet"
+                          nextPageIdentifier:
+                            type: string
+        "400":
+          $ref: "#/components/responses/BadRequestResponse"
+        "403":
+          $ref: "#/components/responses/UnauthorizedResponse"
+        "500":
+          $ref: "#/components/responses/ErrorResponse"
+  /blueprints:
+    get:
+      tags:
+        - blueprints
+      summary: Get list of all blueprints
+      description: Returns all registered blueprints with their metadata and health metrics. Supports pagination for large result sets.
+      parameters:
+        - $ref: "#/components/parameters/PageIdentifier"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponseBody"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          blueprints:
+                            type: array
+                            items:
+                              $ref: "#/components/schemas/Blueprint"
+                          nextPageIdentifier:
+                            type: string
+        "400":
+          $ref: "#/components/responses/BadRequestResponse"
+        "403":
+          $ref: "#/components/responses/UnauthorizedResponse"
+        "500":
+          $ref: "#/components/responses/ErrorResponse"
+    post:
+      tags:
+        - blueprints
+      summary: Register a new blueprint
+      description: Registers a CloudFormation StackSet as a blueprint by StackSet ID. The system automatically retrieves StackSet details from CloudFormation.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - stackSetId
+                - regions
+              properties:
+                name:
+                  $ref: "#/components/schemas/BlueprintName"
+                stackSetId:
+                  $ref: "#/components/schemas/StackSetId"
+                regions:
+                  type: array
+                  items:
+                    type: string
+                  minItems: 1
+                  description: AWS regions where the StackSet will be deployed
+                  example: ["us-east-1", "us-west-2"]
+                tags:
+                  type: object
+                  additionalProperties:
+                    type: string
+                  description: "Optional key-value tags for the blueprint. Max 10 tags. Keys: 1-128 chars, alphanumeric and special chars, must not start with 'aws:'. Values: max 256 chars."
+                  default: {}
+                deploymentTimeoutMinutes:
+                  $ref: "#/components/schemas/DeploymentTimeoutMinutes"
+                regionConcurrencyType:
+                  type: string
+                  enum: [SEQUENTIAL, PARALLEL]
+                  description: Whether StackSet operations run sequentially or in parallel across regions
+                  default: SEQUENTIAL
+                maxConcurrentPercentage:
+                  type: integer
+                  description: Maximum percentage of accounts in which to perform operations simultaneously
+                  minimum: 1
+                  maximum: 100
+                failureTolerancePercentage:
+                  type: integer
+                  description: Percentage of accounts for which operations can fail before stopping
+                  minimum: 0
+                  maximum: 100
+                concurrencyMode:
+                  type: string
+                  enum: [STRICT_FAILURE_TOLERANCE, SOFT_FAILURE_TOLERANCE]
+                  description: Concurrency mode for StackSet operations
+      responses:
+        "201":
+          description: Blueprint created successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponseBody"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/Blueprint"
+        "400":
+          $ref: "#/components/responses/BadRequestResponse"
+        "403":
+          $ref: "#/components/responses/UnauthorizedResponse"
+        "404":
+          description: StackSet not found (may have been deleted or recreated with a different ID)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailResponseBody"
+              example:
+                status: fail
+                data:
+                  errors:
+                    [
+                      {
+                        "message": "StackSet ID 'stackset-id' not found. If the StackSet was deleted and recreated, the blueprint must be deregistered and re-registered with the new StackSet ID.",
+                      },
+                    ]
+        "500":
+          $ref: "#/components/responses/ErrorResponse"
+  /blueprints/{blueprintId}:
+    parameters:
+      - $ref: "#/components/parameters/BlueprintId"
+    get:
+      tags:
+        - blueprints
+      summary: Get blueprint details
+      description: Returns complete blueprint information including associated StackSets and metadata
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponseBody"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/BlueprintWithStackSets"
+        "400":
+          $ref: "#/components/responses/BadRequestResponse"
+        "403":
+          $ref: "#/components/responses/UnauthorizedResponse"
+        "404":
+          $ref: "#/components/responses/ResourceNotFoundResponse"
+        "500":
+          $ref: "#/components/responses/ErrorResponse"
+    put:
+      tags:
+        - blueprints
+      summary: Update blueprint metadata
+      description: Updates mutable blueprint fields (name, tags, deploymentTimeoutMinutes, regionConcurrencyType) and StackSet deployment configuration (maxConcurrentPercentage, failureTolerancePercentage, concurrencyMode).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  $ref: "#/components/schemas/BlueprintName"
+                tags:
+                  type: object
+                  additionalProperties:
+                    type: string
+                  description: Key-value tags for the blueprint
+                deploymentTimeoutMinutes:
+                  $ref: "#/components/schemas/DeploymentTimeoutMinutes"
+                regionConcurrencyType:
+                  type: string
+                  enum: [SEQUENTIAL, PARALLEL]
+                  description: Whether StackSet operations run sequentially or in parallel across regions
+                maxConcurrentPercentage:
+                  type: integer
+                  description: Maximum percentage of accounts in which to perform operations simultaneously
+                  minimum: 1
+                  maximum: 100
+                failureTolerancePercentage:
+                  type: integer
+                  description: Percentage of accounts for which operations can fail before stopping
+                  minimum: 0
+                  maximum: 100
+                concurrencyMode:
+                  type: string
+                  enum: [STRICT_FAILURE_TOLERANCE, SOFT_FAILURE_TOLERANCE]
+                  description: Concurrency mode for StackSet operations
+      responses:
+        "200":
+          description: Blueprint updated successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponseBody"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/BlueprintWithStackSets"
+        "400":
+          $ref: "#/components/responses/BadRequestResponse"
+        "403":
+          $ref: "#/components/responses/UnauthorizedResponse"
+        "404":
+          $ref: "#/components/responses/ResourceNotFoundResponse"
+        "500":
+          $ref: "#/components/responses/ErrorResponse"
+    delete:
+      tags:
+        - blueprints
+      summary: Unregister a blueprint
+      description: Deletes a blueprint if it is not currently attached to any lease templates
+      responses:
+        "200":
+          description: Blueprint deleted successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponseBody"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          message:
+                            type: string
+                            example: "Blueprint unregistered successfully"
+                          blueprintId:
+                            $ref: "#/components/schemas/BlueprintUuid"
+        "400":
+          $ref: "#/components/responses/BadRequestResponse"
+        "403":
+          $ref: "#/components/responses/UnauthorizedResponse"
+        "404":
+          $ref: "#/components/responses/ResourceNotFoundResponse"
+        "409":
+          description: Blueprint is in use
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailResponseBody"
+              example:
+                status: fail
+                data:
+                  errors:
+                    [
+                      {
+                        "message": "Cannot delete blueprint - currently attached to lease templates",
+                      },
+                    ]
         "500":
           $ref: "#/components/responses/ErrorResponse"
 

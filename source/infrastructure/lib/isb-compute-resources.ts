@@ -7,6 +7,7 @@ import { Construct } from "constructs";
 
 import { AccountCleaner } from "@amzn/innovation-sandbox-infrastructure/components/account-cleaner/account-cleaner";
 import { RestApi } from "@amzn/innovation-sandbox-infrastructure/components/api/rest-api-all";
+import { BlueprintDeployment } from "@amzn/innovation-sandbox-infrastructure/components/blueprint-deployment/blueprint-deployment";
 import { CloudfrontUiApi } from "@amzn/innovation-sandbox-infrastructure/components/cloudfront/cloudfront-ui-api";
 import { DeploymentUUID } from "@amzn/innovation-sandbox-infrastructure/components/custom-resources/deployment-uuid";
 import { IsbInternalCore } from "@amzn/innovation-sandbox-infrastructure/components/events/isb-internal-core";
@@ -84,6 +85,13 @@ export class IsbComputeResources {
       useStableTaggingCondition: props.useStableTaggingParameter.getCondition(),
     });
 
+    new BlueprintDeployment(scope, "BlueprintDeployment", {
+      eventBus: isbInternalCore.eventBus,
+      namespace: props.namespace,
+      orgManagementAccountId: props.orgMgtAccountId,
+      hubAccountId: Aws.ACCOUNT_ID,
+    });
+
     const restApi = new RestApi(scope, "IsbRestApi", {
       intermediateRole: intermediateRole,
       namespace: props.namespace,
@@ -108,7 +116,7 @@ export class IsbComputeResources {
       solutionVersion: getContextFromMapping(scope, "version"),
       deploymentUUID: deploymentUUID.deploymentUUID,
       namespace: props.namespace,
-      hubAccountId: props.orgMgtAccountId,
+      hubAccountId: Aws.ACCOUNT_ID,
       orgManagementAccountId: props.orgMgtAccountId,
       isStableTaggingEnabled: props.useStableTaggingParameter.valueAsString,
     });

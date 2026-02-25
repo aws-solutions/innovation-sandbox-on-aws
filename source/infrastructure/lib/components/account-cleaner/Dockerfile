@@ -1,4 +1,4 @@
-FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:e6cef2afd50755825f344a6d217c4e20372ec4800b0874b802ca151d5c686776
+FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:60692496162ecb890502965b961cd0c22bfb16e6e5d52fce2f377efaf287a540
 
 RUN dnf install -y tar gzip awscli jq sed
 

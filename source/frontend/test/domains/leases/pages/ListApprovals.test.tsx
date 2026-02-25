@@ -188,4 +188,179 @@ describe("ListApprovals", () => {
       ).toBeInTheDocument(),
     );
   });
+
+  test("displays comments in table", async () => {
+    const leaseWithComments = createPendingLease({
+      comments: "Need this for testing project",
+    });
+    mockLeaseApi.returns([leaseWithComments]);
+    server.use(mockLeaseApi.getHandler());
+
+    renderComponent();
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("Need this for testing project"),
+      ).toBeInTheDocument();
+    });
+  });
+
+  test("successfully approves lease requests", async () => {
+    const { http, HttpResponse } = await import("msw");
+    const { config } = await import(
+      "@amzn/innovation-sandbox-frontend/helpers/config"
+    );
+
+    server.use(
+      http.post(`${config.ApiUrl}/leases/:leaseId/review`, () => {
+        return HttpResponse.json({
+          status: "success",
+          data: {},
+        });
+      }),
+    );
+
+    mockLeaseApi.returns([mockPendingLease]);
+    server.use(mockLeaseApi.getHandler());
+
+    renderComponent();
+
+    await waitFor(() => {
+      expect(screen.getByText(mockPendingLease.userEmail)).toBeInTheDocument();
+    });
+
+    const wrapper = createWrapper();
+    const table = wrapper.findTable();
+    const rows = table?.findRows();
+    await userEvent.click(
+      rows![0].getElement().querySelector('input[type="checkbox"]')!,
+    );
+
+    const actionButton = wrapper.findButtonDropdown();
+    await userEvent.click(actionButton!.findNativeButton().getElement());
+
+    const approveButton = screen.getByText("Approve request(s)");
+    await userEvent.click(approveButton);
+
+    const modal = screen.getByRole("dialog");
+    await waitFor(() => {
+      expect(modal).toBeInTheDocument();
+    });
+
+    const submitButton = within(modal).getByRole("button", {
+      name: /Submit/i,
+    });
+    await userEvent.click(submitButton);
+
+    await waitFor(() => {
+      expect(screen.getByText("Success")).toBeInTheDocument();
+    });
+  });
+
+  test("successfully denies lease requests", async () => {
+    const { http, HttpResponse } = await import("msw");
+    const { config } = await import(
+      "@amzn/innovation-sandbox-frontend/helpers/config"
+    );
+
+    server.use(
+      http.post(`${config.ApiUrl}/leases/:leaseId/review`, () => {
+        return HttpResponse.json({
+          status: "success",
+          data: {},
+        });
+      }),
+    );
+
+    mockLeaseApi.returns([mockPendingLease]);
+    server.use(mockLeaseApi.getHandler());
+
+    renderComponent();
+
+    await waitFor(() => {
+      expect(screen.getByText(mockPendingLease.userEmail)).toBeInTheDocument();
+    });
+
+    const wrapper = createWrapper();
+    const table = wrapper.findTable();
+    const rows = table?.findRows();
+    await userEvent.click(
+      rows![0].getElement().querySelector('input[type="checkbox"]')!,
+    );
+
+    const actionButton = wrapper.findButtonDropdown();
+    await userEvent.click(actionButton!.findNativeButton().getElement());
+
+    const denyButton = screen.getByText("Deny request(s)");
+    await userEvent.click(denyButton);
+
+    const modal = screen.getByRole("dialog");
+    await waitFor(() => {
+      expect(modal).toBeInTheDocument();
+    });
+
+    const submitButton = within(modal).getByRole("button", {
+      name: /Submit/i,
+    });
+    await userEvent.click(submitButton);
+
+    await waitFor(() => {
+      expect(screen.getByText("Success")).toBeInTheDocument();
+    });
+  });
+
+  test("handles approval failure and shows error", async () => {
+    const { http, HttpResponse } = await import("msw");
+    const { config } = await import(
+      "@amzn/innovation-sandbox-frontend/helpers/config"
+    );
+
+    server.use(
+      http.post(`${config.ApiUrl}/leases/:leaseId/review`, () => {
+        return HttpResponse.json(
+          {
+            status: "error",
+            message: "Failed to approve lease",
+          },
+          { status: 500 },
+        );
+      }),
+    );
+
+    mockLeaseApi.returns([mockPendingLease]);
+    server.use(mockLeaseApi.getHandler());
+
+    renderComponent();
+
+    await waitFor(() => {
+      expect(screen.getByText(mockPendingLease.userEmail)).toBeInTheDocument();
+    });
+
+    const wrapper = createWrapper();
+    const table = wrapper.findTable();
+    const rows = table?.findRows();
+    await userEvent.click(
+      rows![0].getElement().querySelector('input[type="checkbox"]')!,
+    );
+
+    const actionButton = wrapper.findButtonDropdown();
+    await userEvent.click(actionButton!.findNativeButton().getElement());
+
+    const approveButton = screen.getByText("Approve request(s)");
+    await userEvent.click(approveButton);
+
+    const modal = screen.getByRole("dialog");
+    await waitFor(() => {
+      expect(modal).toBeInTheDocument();
+    });
+
+    const submitButton = within(modal).getByRole("button", {
+      name: /Submit/i,
+    });
+    await userEvent.click(submitButton);
+
+    await waitFor(() => {
+      expect(screen.getByText("Failed")).toBeInTheDocument();
+    });
+  });
 });

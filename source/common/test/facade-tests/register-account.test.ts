@@ -75,7 +75,7 @@ describe("InnovationSandbox.registerAccount()", () => {
       mockContext.tracer,
       new CleanAccountRequest({
         accountId: account.accountId,
-        reason: "account onboarding",
+        reason: "ACCOUNT_REGISTRATION",
       }),
     );
   });

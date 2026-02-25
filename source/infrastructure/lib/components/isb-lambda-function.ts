@@ -31,8 +31,9 @@ import { addCfnGuardSuppression } from "@amzn/innovation-sandbox-infrastructure/
 import { isDevMode } from "@amzn/innovation-sandbox-infrastructure/helpers/deployment-mode";
 import { getCustomUserAgent } from "@amzn/innovation-sandbox-infrastructure/helpers/manifest-reader";
 
-export interface IsbLambdaFunctionProps<T extends z.ZodSchema<any>>
-  extends Omit<NodejsFunctionProps, "role" | "runtime"> {
+export interface IsbLambdaFunctionProps<
+  T extends z.ZodSchema<any>,
+> extends Omit<NodejsFunctionProps, "role" | "runtime"> {
   kmsKey?: Key;
   layers?: ILayerVersion[];
   logGroup?: LogGroup;

@@ -38,8 +38,8 @@ export const AccountsSummary = ({
     <Animate>
       <Grid
         gridDefinition={[
-          { colspan: { xs: 5, xxs: 12 } },
-          { colspan: { xs: 7, xxs: 12 } },
+          { colspan: { xs: 6, xxs: 12 } },
+          { colspan: { xs: 6, xxs: 12 } },
         ]}
       >
         <Container

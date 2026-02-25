@@ -1,5 +1,6 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
+import { BlueprintWithStackSets } from "@amzn/innovation-sandbox-commons/data/blueprint/blueprint.js";
 import { LeaseTemplate } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template.js";
 import {
   isMonitoredLease,
@@ -68,6 +69,38 @@ export function searchableLeaseTemplateProperties(
   return {
     leaseTemplateId: leaseTemplate.uuid,
     leaseTemplateName: leaseTemplate.name,
+  };
+}
+
+export function searchableBlueprintProperties(
+  blueprintWithStackSets: BlueprintWithStackSets,
+) {
+  const baseProperties = {
+    blueprintId: blueprintWithStackSets.blueprint.blueprintId,
+    blueprintName: blueprintWithStackSets.blueprint.name,
+    stackSetCount: blueprintWithStackSets.stackSets.length,
+  };
+
+  // Single StackSet: Include detailed properties for the one StackSet
+  if (blueprintWithStackSets.stackSets.length === 1) {
+    const stackSet = blueprintWithStackSets.stackSets[0];
+    return {
+      ...baseProperties,
+      stackSetId:
+        stackSet?.stackSetId ??
+        `missing-stackset-id-${blueprintWithStackSets.blueprint.blueprintId}`,
+      regions: stackSet?.regions.join(",") ?? "no-regions",
+    };
+  }
+
+  // Multiple StackSets: Include summary information
+  return {
+    ...baseProperties,
+    stackSetIds: blueprintWithStackSets.stackSets
+      .map((stackSet) => stackSet.stackSetId)
+      .join(","),
+    // Note: For multiple StackSets, regions vary per StackSet, so we don't include a single regions field
+    // Use individual StackSet logs for per-StackSet region information
   };
 }
 

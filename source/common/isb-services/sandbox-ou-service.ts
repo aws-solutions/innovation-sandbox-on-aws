@@ -6,13 +6,12 @@ import {
   DescribeAccountCommand,
   ListAccountsForParentCommand,
   MoveAccountCommand,
-  OrganizationalUnit,
   OrganizationsClient,
   paginateListAccountsForParent,
-  paginateListOrganizationalUnitsForParent,
   TooManyRequestsException,
 } from "@aws-sdk/client-organizations";
 
+import { AccountPoolStackConfigStore } from "@amzn/innovation-sandbox-commons/data/account-pool-stack-config/ssm-account-pool-stack-config-store.js";
 import { SandboxAccountStore } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account-store.js";
 import {
   IsbOu,
@@ -24,50 +23,42 @@ import { backOff } from "exponential-backoff";
 
 export class SandboxOuService {
   readonly orgsClient: OrganizationsClient;
-  readonly namespace: string;
   readonly sandboxAccountStore: SandboxAccountStore;
-  readonly sandboxOuId: string;
+  readonly accountPoolStackConfigStore: AccountPoolStackConfigStore;
 
   constructor(props: {
-    namespace: string;
     sandboxAccountStore: SandboxAccountStore;
-    sandboxOuId: string;
     orgsClient: OrganizationsClient;
+    accountPoolStackConfigStore: AccountPoolStackConfigStore;
   }) {
     this.orgsClient = props.orgsClient;
     this.sandboxAccountStore = props.sandboxAccountStore;
-    this.namespace = props.namespace;
-    this.sandboxOuId = props.sandboxOuId;
+    this.accountPoolStackConfigStore = props.accountPoolStackConfigStore;
   }
 
-  private async listChildrenOus(
-    parentId: string,
-  ): Promise<OrganizationalUnit[]> {
-    const listChildrenPaginator = paginateListOrganizationalUnitsForParent(
-      {
-        client: this.orgsClient,
-      },
-      {
-        ParentId: parentId,
-      },
-    );
-    const children: OrganizationalUnit[] = [];
-    for await (const page of listChildrenPaginator) {
-      if (page.OrganizationalUnits) {
-        children.push(...page.OrganizationalUnits);
-      }
-    }
-    return children;
-  }
+  private async getIsbOuId(ouName: IsbOu): Promise<string> {
+    // SSMProvider in the store already caches for 5 minutes
+    const config = await this.accountPoolStackConfigStore.get();
 
-  async getIsbOu(ouName: IsbOu): Promise<OrganizationalUnit> {
-    const sandboxOus = await this.listChildrenOus(this.sandboxOuId);
-    for (const ou of sandboxOus) {
-      if (ou.Name === ouName) {
-        return ou;
-      }
+    // Map OU names to IDs from AccountPoolConfig SSM Parameter
+    const ouIdMap: Record<IsbOu, string> = {
+      Available: config.availableOuId,
+      Active: config.activeOuId,
+      Frozen: config.frozenOuId,
+      CleanUp: config.cleanupOuId,
+      Quarantine: config.quarantineOuId,
+      Entry: config.entryOuId,
+      Exit: config.exitOuId,
+    };
+
+    const ouId = ouIdMap[ouName];
+    if (!ouId) {
+      throw new Error(
+        `Requested OU not found in Innovation Sandbox: ${ouName}`,
+      );
     }
-    throw new Error(`Requested OU not found in Innovation Sandbox.`);
+
+    return ouId;
   }
 
   public async performAccountMoveAction(
@@ -75,8 +66,8 @@ export class SandboxOuService {
     sourceOu: IsbOu,
     destinationOu: IsbOu,
   ) {
-    const sourceOuId = (await this.getIsbOu(sourceOu))!.Id;
-    const destinationOuId = (await this.getIsbOu(destinationOu))!.Id;
+    const sourceOuId = await this.getIsbOuId(sourceOu);
+    const destinationOuId = await this.getIsbOuId(destinationOu);
 
     await backOff(
       () =>
@@ -140,7 +131,7 @@ export class SandboxOuService {
         client: this.orgsClient,
       },
       {
-        ParentId: (await this.getIsbOu(ouName)).Id,
+        ParentId: await this.getIsbOuId(ouName),
       },
     );
 
@@ -161,7 +152,7 @@ export class SandboxOuService {
     const { ouName, pageIdentifier, pageSize } = options;
     const { Accounts, NextToken } = await this.orgsClient.send(
       new ListAccountsForParentCommand({
-        ParentId: (await this.getIsbOu(ouName)).Id,
+        ParentId: await this.getIsbOuId(ouName),
         NextToken: pageIdentifier,
         MaxResults: pageSize,
       }),

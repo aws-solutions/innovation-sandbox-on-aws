@@ -60,3 +60,18 @@ export function fromTemporaryIsbIdcCredentials(env: {
     customUserAgent: env.USER_AGENT_EXTRA,
   });
 }
+
+export function fromTemporaryIsbSandboxAccountCredentials(
+  sandboxAccountRoleArn: string,
+  env: {
+    INTERMEDIATE_ROLE_ARN: string;
+    USER_AGENT_EXTRA: string;
+  },
+) {
+  return fromTemporaryIsbSpokeCredentials({
+    intermediateRoleArn: env.INTERMEDIATE_ROLE_ARN,
+    targetRoleArn: sandboxAccountRoleArn,
+    sessionName: "IsbSandboxAccountRoleSession",
+    customUserAgent: env.USER_AGENT_EXTRA,
+  });
+}

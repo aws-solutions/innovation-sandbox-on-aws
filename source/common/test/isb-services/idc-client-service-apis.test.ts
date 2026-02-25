@@ -27,7 +27,8 @@ import {
 } from "@amzn/innovation-sandbox-commons/types/isb-types.js";
 
 const test_env = {
-  ISB_NAMESPACE: "abc",
+  IDC_CONFIG_PARAM_ARN:
+    "arn:aws:ssm:us-east-1:123456789012:parameter/isb_abc_idc_configuration",
   IDENTITY_STORE_ID: "d-111111111111",
   SSO_INSTANCE_ARN: "arn:aws:sso:::instance/ssoins-111111",
   USER_AGENT_EXTRA: "test-user-agent",
@@ -57,6 +58,8 @@ describe("Idc service api", () => {
     userPermissionSetArn: testPermissionSetArn,
     managerPermissionSetArn: testPermissionSetArn,
     adminPermissionSetArn: testPermissionSetArn,
+    solutionVersion: "1.0.0",
+    supportedSchemas: "1",
   };
 
   beforeEach(() => {
@@ -67,7 +70,7 @@ describe("Idc service api", () => {
 
     ssmClientMock.on(GetParameterCommand).resolves({
       Parameter: {
-        Name: `/isb/${test_env.ISB_NAMESPACE}/idc`,
+        Name: test_env.IDC_CONFIG_PARAM_ARN,
         Type: "String",
         Value: JSON.stringify(idcConfig),
       },

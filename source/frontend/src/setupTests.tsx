@@ -48,6 +48,20 @@ vi.mock("../config", () => ({
   },
 }));
 
+// Mock the AppLayoutContext hook
+vi.mock(
+  "@amzn/innovation-sandbox-frontend/components/AppLayout/AppLayoutContext",
+  () => ({
+    useAppLayoutContext: vi.fn(() => ({
+      setTools: vi.fn(),
+      setToolsOpen: vi.fn(),
+      setToolsHide: vi.fn(),
+    })),
+    AppLayoutProvider: ({ children }: { children: React.ReactNode }) =>
+      children,
+  }),
+);
+
 // Mocking matchMedia for future use cases
 Object.defineProperty(window, "matchMedia", {
   writable: true,
@@ -72,6 +86,7 @@ Object.defineProperty(window, "scrollTo", {
 // Adding global mocks
 globalThis.fetch = vi.fn();
 globalThis.URL.createObjectURL = vi.fn();
+vi.stubGlobal("SOLUTION_VERSION", "1.0.0-test");
 
 // Mock sessionStorage to provide access token for tests
 Object.defineProperty(window, "sessionStorage", {

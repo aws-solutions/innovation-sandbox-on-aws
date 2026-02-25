@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 import z from "zod";
 
-import { FreeTextSchema } from "@amzn/innovation-sandbox-commons/data/common-schemas.js";
 import { LeaseKeySchema } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
 import { EventDetailTypes } from "@amzn/innovation-sandbox-commons/events/index.js";
 import { IsbEvent } from "@amzn/innovation-sandbox-commons/sdk-clients/event-bridge-client.js";
+import { FreeTextSchema } from "@amzn/innovation-sandbox-commons/utils/zod.js";
 
 export const LeaseRequestedEventSchema = z.object({
   leaseId: LeaseKeySchema,

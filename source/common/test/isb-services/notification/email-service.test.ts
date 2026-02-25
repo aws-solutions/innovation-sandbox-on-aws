@@ -16,6 +16,7 @@ import {
   LeaseFrozenEventSchema,
   LeaseFrozenManualSchema,
 } from "@amzn/innovation-sandbox-commons/events/lease-frozen-event.js";
+import { LeaseProvisioningFailedEventSchema } from "@amzn/innovation-sandbox-commons/events/lease-provisioning-failed-event.js";
 import { LeaseRequestedEventSchema } from "@amzn/innovation-sandbox-commons/events/lease-requested-event.js";
 import {
   LeaseTerminatedByBudgetSchema,
@@ -23,6 +24,7 @@ import {
   LeaseTerminatedEjectedSchema,
   LeaseTerminatedEventSchema,
   LeaseTerminatedManualSchema,
+  LeaseTerminatedProvisioningFailedSchema,
   LeaseTerminatedQuarantinedSchema,
 } from "@amzn/innovation-sandbox-commons/events/lease-terminated-event.js";
 import { LeaseUnfrozenEventSchema } from "@amzn/innovation-sandbox-commons/events/lease-unfrozen-event.js";
@@ -58,19 +60,18 @@ vi.mock(
   },
 );
 
-const testEnv = generateSchemaData(EmailNotificationEnvironmentSchema);
+const testEnv = {
+  ...generateSchemaData(EmailNotificationEnvironmentSchema),
+  IDC_CONFIG_PARAM_ARN:
+    "arn:aws:ssm:us-east-1:123456789012:parameter/isb_test_idc_configuration",
+};
 
 const fromAddress = "example@example.com";
-const emailService = IsbServices.emailService(
-  {
-    ...testEnv,
-  },
-  {
-    fromAddress: fromAddress,
-    webAppUrl: "https://www.example.com",
-    logger: new Logger(),
-  },
-);
+const emailService = IsbServices.emailService(testEnv, {
+  fromAddress: fromAddress,
+  webAppUrl: "https://www.example.com",
+  logger: new Logger(),
+});
 
 const sesMock = mockClient(SESClient);
 beforeEach(() => {
@@ -294,7 +295,7 @@ describe("SES Service", async () => {
       );
       assertSingleEmailActions({
         subject:
-          /\[Action Needed\] Innovation Sandbox: New Lease Approval Request/,
+          /\[Action Required\] Innovation Sandbox: New Lease Approval Request/,
         numSesMockCalls: 1,
         bccAddresses: [...adminEmails, ...managerEmails],
       });
@@ -377,7 +378,7 @@ describe("SES Service", async () => {
         subject: /\[Action Required\] Innovation Sandbox: Account Drift/,
         numSesMockCalls: 1,
         bccAddresses: [...adminEmails],
-        body: `The account id: ${isbAlert.accountId}`,
+        body: `The account ID: ${isbAlert.accountId}`,
       });
     });
 
@@ -393,7 +394,7 @@ describe("SES Service", async () => {
         subject: /\[Action Required\] Innovation Sandbox: Account Drift/,
         numSesMockCalls: 1,
         bccAddresses: [...adminEmails],
-        body: "Untracked account id:",
+        body: "Untracked account ID:",
       });
     });
 
@@ -485,6 +486,39 @@ describe("SES Service", async () => {
       });
     });
 
+    it(`should send email - ${EventDetailTypes.LeaseTerminated} provisioning failed`, async () => {
+      const ProvisioningFailedEventSchema = LeaseTerminatedEventSchema.extend({
+        reason: LeaseTerminatedProvisioningFailedSchema,
+      });
+      const isbAlert = generateSchemaData(ProvisioningFailedEventSchema);
+      await emailService.sendNotificationEmail(
+        EventDetailTypes.LeaseTerminated,
+        isbAlert,
+      );
+      assertLeaseTerminatedFrozen({
+        toAddresses: [isbAlert.leaseId.userEmail],
+        userSubject:
+          /\[Informational\] Innovation Sandbox: Blueprint Deployment Failed/,
+        adminManagerSubject:
+          /\[Action Required\] Innovation Sandbox: Blueprint Deployment Failed/,
+      });
+    });
+
+    it(`should send email - ${EventDetailTypes.LeaseProvisioningFailed}`, async () => {
+      const isbAlert = generateSchemaData(LeaseProvisioningFailedEventSchema);
+      await emailService.sendNotificationEmail(
+        EventDetailTypes.LeaseProvisioningFailed,
+        isbAlert,
+      );
+      assertSingleEmailActions({
+        subject:
+          /\[Action Required\] Innovation Sandbox: Blueprint Deployment Failed/,
+        numSesMockCalls: 1,
+        bccAddresses: [...adminEmails, ...managerEmails],
+        body: "Blueprint deployment failed",
+      });
+    });
+
     it(`should send email - ${EventDetailTypes.LeaseFrozen} by duration`, async () => {
       const LeaseFrozenByDurationEventSchema = LeaseFrozenEventSchema.extend({
         reason: LeaseFrozenByDurationSchema,
@@ -499,7 +533,7 @@ describe("SES Service", async () => {
         userSubject:
           /\[Informational\] Innovation Sandbox: Account Freeze Action based on Lease Duration/,
         adminManagerSubject:
-          /\[Action Needed\] Innovation Sandbox: Account Freeze Action based on Lease Duration/,
+          /\[Action Required\] Innovation Sandbox: Account Freeze Action based on Lease Duration/,
       });
     });
 
@@ -517,7 +551,7 @@ describe("SES Service", async () => {
         userSubject:
           /\[Informational\] Innovation Sandbox: Account Freeze Action based on Allowed Budget/,
         adminManagerSubject:
-          /\[Action Needed\] Innovation Sandbox: Account Freeze Action based on Allowed Budget/,
+          /\[Action Required\] Innovation Sandbox: Account Freeze Action based on Allowed Budget/,
       });
     });
 

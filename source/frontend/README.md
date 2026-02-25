@@ -34,7 +34,6 @@ This project is a React project bootstrapped with [Vite](https://vite.dev).
 - `src/assets` - static assets such as images and stylesheets
 
 - `src/domains` - each domain is split into its own sub folders with the following structure:
-
   - `pages` - a folder for pages specific to that domain
   - `components` - a folder for components specific to that domain
   - `service.ts` - a class that performs business logic for that domain, e.g. fetching data from an API

@@ -11,10 +11,11 @@ import {
   StatusIndicator,
   TextContent,
 } from "@cloudscape-design/components";
-import moment from "moment";
+import { DateTime, Duration } from "luxon";
 import { useEffect, useState } from "react";
 
 import { LeaseTemplate } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template";
+import { BlueprintName } from "@amzn/innovation-sandbox-frontend/components/BlueprintName";
 import { ErrorPanel } from "@amzn/innovation-sandbox-frontend/components/ErrorPanel";
 import { TextLink } from "@amzn/innovation-sandbox-frontend/components/TextLink";
 import { showSuccessToast } from "@amzn/innovation-sandbox-frontend/components/Toast";
@@ -23,12 +24,13 @@ import {
   useDeleteLeaseTemplates,
   useGetLeaseTemplates,
 } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/hooks";
+import { createDateSortingComparator } from "@amzn/innovation-sandbox-frontend/helpers/date-sorting-comparator";
 import { formatCurrency } from "@amzn/innovation-sandbox-frontend/helpers/util";
 
 const NameCell = ({ item }: { item: LeaseTemplate }) => (
   <>
     <Box>
-      <TextLink to={`/lease_templates/edit/${item.uuid}`}>{item.name}</TextLink>
+      <TextLink to={`/lease_templates/${item.uuid}`}>{item.name}</TextLink>
     </Box>
     <Box>
       <small data-break-spaces>{item.description}</small>
@@ -49,7 +51,7 @@ const MaxSpendCell = ({ item }: { item: LeaseTemplate }) => (
 const ExpiryCell = ({ item }: { item: LeaseTemplate }) => (
   <>
     {item.leaseDurationInHours ? (
-      `after ${moment.duration(item.leaseDurationInHours, "hours").humanize()}`
+      `after ${Duration.fromObject({ hours: item.leaseDurationInHours }).toHuman()}`
     ) : (
       <StatusIndicator type="info">No expiry</StatusIndicator>
     )}
@@ -146,6 +148,13 @@ export const LeaseTemplatesTable = () => {
             cell: (item: LeaseTemplate) => item.createdBy,
           },
           {
+            id: "blueprint",
+            header: "Blueprint",
+            sortingField: "blueprintName",
+            // prettier-ignore
+            cell: (item: LeaseTemplate) => <BlueprintName blueprintName={item.blueprintName} />, // NOSONAR typescript:S6478 - Table API requires cell render functions
+          },
+          {
             id: "costReportGroup",
             header: "Cost Report Group",
             sortingField: "costReportGroup",
@@ -172,9 +181,13 @@ export const LeaseTemplatesTable = () => {
           {
             id: "meta.lastEditTime",
             header: "Last Updated",
-            sortingField: "meta.lastEditTime",
+            sortingComparator: createDateSortingComparator<LeaseTemplate>(
+              (a) => a.meta?.lastEditTime,
+            ),
             cell: (item: LeaseTemplate) =>
-              moment(item.meta?.lastEditTime).fromNow(),
+              item.meta?.lastEditTime
+                ? DateTime.fromISO(item.meta.lastEditTime).toRelative()
+                : "",
           },
         ]}
         actions={

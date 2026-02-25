@@ -2,23 +2,62 @@
 title: Leases
 ---
 
-The **Leases** page displays all the leases currently in your sandbox environment.
-
-**Leases**: A lease is a temporary assignment of an AWS account to a user for a specified budget and duration. Leases can be created through user requests or direct assignment by Admins and Managers.
-
-**Lease Template**: A lease template defines the conditions that govern the use of the account - such as approval for a user to use a given account, budget and threshold actions, lease duration and threshold actions, and visibility controls.
-
-**Status**: State that is maintained by the solution throughout it's sandbox usage lifecycle. Refer to the [Account states](https://docs.aws.amazon.com/solutions/latest/innovation-sandbox-on-aws/use-the-solution.html#understand-states) section.
+View and manage all leases in your sandbox environment. A lease is a temporary assignment of an AWS account to a user with defined budget and duration limits.
 
 ---
 
-**Admins and Managers**
+## Assign Leases
 
-**Lease Assignment**: You can create leases directly for other users by selecting any available lease template (public or private) and specifying the target user's email address. The lease will be created immediately without approval.
+Create leases directly for other users without requiring approval. Choose any template (public or private) and specify the user's email address.
 
-**Note**: The email address must already be registered under the IDC user group before a lease can be assigned.
+Choose **Assign lease** to start the wizard.
 
-Refer to the [Managing leases](https://docs.aws.amazon.com/solutions/latest/innovation-sandbox-on-aws/manager-guide.html#manage-leases) section.
-**Manage Existing Leases**: To update current lease settings, under the Leases section, select the name of the lease. You can modify lease settings such as updating the lease status, extending the budget, extending lease duration, updating thresholds or changing cost reporting assignment. You can only update leases that are currently **Active** or **Frozen**. You can also unfreeze **Frozen** leases - note that if a lease was frozen due to reaching thresholds, you should update the budget or duration limits before unfreezing to prevent automatic refreezing.
+_Note: User email must exist in IAM Identity Center before assignment._
 
-Refer to the [Assigning leases to users](https://docs.aws.amazon.com/solutions/latest/innovation-sandbox-on-aws/manager-guide.html#assigning-leases) and [Managing leases](https://docs.aws.amazon.com/solutions/latest/innovation-sandbox-on-aws/manager-guide.html#manage-leases) sections.
+For more information, see [Assigning leases](https://docs.aws.amazon.com/solutions/latest/innovation-sandbox-on-aws/manager-guide.html#assigning-leases).
+
+---
+
+## Update Leases
+
+Modify settings for **Active** or **Frozen** leases. Select a lease name to edit:
+
+- Budget settings (maximum spend, thresholds)
+- Duration settings (expiration date, thresholds)
+- Cost report group assignment
+
+Changes apply immediately to the selected lease.
+
+For more information, see [Updating leases](https://docs.aws.amazon.com/solutions/latest/innovation-sandbox-on-aws/manager-guide.html#updating-leases).
+
+---
+
+## Freeze Leases
+
+Temporarily suspend user access while preserving account resources. Select a lease and choose **Freeze** from the Actions menu.
+
+_Note: Frozen accounts may still incur costs from running resources._
+
+---
+
+## Terminate Leases
+
+End a lease and initiate account cleanup. Select a lease and choose **Terminate** from the Actions menu.
+
+_Note: Terminated leases cannot be reactivated. Users must request a new lease._
+
+---
+
+## Unfreeze Leases
+
+Restore user access to frozen leases. Select a frozen lease and choose **Unfreeze** from the Actions menu.
+
+_Note: If frozen by thresholds, update budget or duration limits first to prevent automatic refreezing._
+
+---
+
+## Lease States
+
+View current lease status to understand account lifecycle stage.
+
+For status details, see [Lease states](https://docs.aws.amazon.com/solutions/latest/innovation-sandbox-on-aws/manager-guide.html#understand-lease-states).

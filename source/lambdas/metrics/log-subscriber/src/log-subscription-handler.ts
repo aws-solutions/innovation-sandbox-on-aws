@@ -95,15 +95,16 @@ function extractAwsMetric(
   log: SubscribableLog,
 ): AnonymizedAWSMetricData | undefined {
   switch (log.logDetailType) {
-    case "LeaseApproved":
+    case "LeasePublished":
       return {
-        event_name: "LeaseApproved",
-        context_version: 2,
+        event_name: "LeasePublished",
+        context_version: 3,
         context: {
           maxBudget: log.maxBudget,
           maxDurationHours: log.maxDurationHours,
           autoApproved: log.autoApproved,
           creationMethod: log.creationMethod,
+          hasBlueprint: log.hasBlueprint,
         },
       };
     case "LeaseTerminated":
@@ -126,12 +127,23 @@ function extractAwsMetric(
           leaseId: log.leaseId,
         },
       };
+    case "LeaseReset":
+      return {
+        event_name: "LeaseReset",
+        context_version: 1,
+        context: {
+          reasonForReset: log.reasonForReset,
+        },
+      };
     case "DeploymentSummary":
       return {
         event_name: "DeploymentSummary",
-        context_version: 2,
+        context_version: 3,
         context: {
           numLeaseTemplates: log.numLeaseTemplates,
+          numLeaseTemplatesWithBlueprint: log.numLeaseTemplatesWithBlueprint,
+          numBlueprints: log.numBlueprints,
+          blueprintServiceCounts: log.blueprintServiceCounts,
           // Account pool metrics
           activeAccounts: log.accountPool.active,
           availableAccounts: log.accountPool.available,
@@ -173,17 +185,19 @@ function extractAwsMetric(
     case "AccountCleanupSuccess":
       return {
         event_name: "AccountCleanupSuccess",
-        context_version: 2,
+        context_version: 3,
         context: {
           durationMinutes: log.durationMinutes,
+          reason: log.reason,
         },
       };
     case "AccountCleanupFailure":
       return {
         event_name: "AccountCleanupFailure",
-        context_version: 2,
+        context_version: 3,
         context: {
           durationMinutes: log.durationMinutes,
+          reason: log.reason,
         },
       };
     default: {

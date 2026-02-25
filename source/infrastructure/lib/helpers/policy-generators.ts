@@ -82,21 +82,90 @@ export function grantIsbAppConfigRead(
   );
 }
 
-export function grantIsbSsmParameterRead(
-  role: Role,
-  parameterName: string,
-  accountId?: string,
-) {
+export function grantIsbSsmParameterRead(role: Role, parameterArn: string) {
   role.addToPolicy(
     new PolicyStatement({
       effect: Effect.ALLOW,
       actions: ["ssm:GetParameter"],
+      resources: [parameterArn],
+    }),
+  );
+}
+
+/**
+ * Grant minimal CloudFormation StackSet read-only permissions for blueprint validation.
+ * Grants DescribeStackSet and ListStackSets for StackSet discovery and validation.
+ * Use this for Lambda functions that only need to validate StackSet existence.
+ */
+export function grantCfnStackSetReadOnly(role: Role) {
+  role.addToPolicy(
+    new PolicyStatement({
+      effect: Effect.ALLOW,
+      actions: ["cloudformation:DescribeStackSet"],
       resources: [
         Stack.of(role).formatArn({
-          service: "ssm",
-          account: accountId,
-          resource: "parameter",
-          resourceName: parameterName,
+          service: "cloudformation",
+          resource: "stackset",
+          resourceName: "*:*",
+        }),
+      ],
+    }),
+  );
+
+  // ListStackSets does not support resource-level permissions
+  role.addToPolicy(
+    new PolicyStatement({
+      effect: Effect.ALLOW,
+      actions: ["cloudformation:ListStackSets"],
+      resources: ["*"],
+    }),
+  );
+}
+
+/**
+ * Grant CloudFormation StackSet permissions for stack instance cleanup during lease termination.
+ * Grants DeleteStackInstances (with supporting read operations) for removing
+ * StackSet control plane metadata before account cleanup via Nuke.
+ */
+export function grantCfnStackSetCleanupPermissions(role: Role) {
+  // Read operations needed to look up blueprint StackSet configuration
+  role.addToPolicy(
+    new PolicyStatement({
+      effect: Effect.ALLOW,
+      actions: [
+        "cloudformation:DescribeStackSet",
+        "cloudformation:ListStackInstances",
+      ],
+      resources: [
+        Stack.of(role).formatArn({
+          service: "cloudformation",
+          resource: "stackset",
+          resourceName: "*:*",
+        }),
+      ],
+    }),
+  );
+
+  // DeleteStackInstances to remove control plane metadata before Nuke cleanup
+  role.addToPolicy(
+    new PolicyStatement({
+      effect: Effect.ALLOW,
+      actions: ["cloudformation:DeleteStackInstances"],
+      resources: [
+        Stack.of(role).formatArn({
+          service: "cloudformation",
+          resource: "stackset",
+          resourceName: "*:*",
+        }),
+        Stack.of(role).formatArn({
+          service: "cloudformation",
+          resource: "stackset-target",
+          resourceName: "*",
+        }),
+        Stack.of(role).formatArn({
+          service: "cloudformation",
+          resource: "type",
+          resourceName: "resource/*",
         }),
       ],
     }),

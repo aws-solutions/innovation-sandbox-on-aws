@@ -1,42 +1,43 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
+import { Aws } from "aws-cdk-lib";
 import { LambdaIntegration } from "aws-cdk-lib/aws-apigateway";
 import { Role } from "aws-cdk-lib/aws-iam";
 import { Construct } from "constructs";
 import path from "path";
 
 import { AccountLambdaEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/account-lambda-environment.js";
-import { sharedIdcSsmParamName } from "@amzn/innovation-sandbox-commons/types/isb-types";
 import {
   RestApi,
-  RestApiProps,
+  RestApiResourceProps,
 } from "@amzn/innovation-sandbox-infrastructure/components/api/rest-api-all";
 import { addAppConfigExtensionLayer } from "@amzn/innovation-sandbox-infrastructure/components/config/app-config-lambda-extension";
 import { IsbLambdaFunction } from "@amzn/innovation-sandbox-infrastructure/components/isb-lambda-function";
+import { IsbKmsKeys } from "@amzn/innovation-sandbox-infrastructure/components/kms";
 import {
   getIdcRoleArn,
   getOrgMgtRoleArn,
+  getSandboxAccountRoleName,
   IntermediateRole,
 } from "@amzn/innovation-sandbox-infrastructure/helpers/isb-roles";
 import {
+  grantCfnStackSetCleanupPermissions,
   grantIsbAppConfigRead,
   grantIsbDbReadWrite,
   grantIsbSsmParameterRead,
 } from "@amzn/innovation-sandbox-infrastructure/helpers/policy-generators";
 import { IsbComputeStack } from "@amzn/innovation-sandbox-infrastructure/isb-compute-stack";
-import { Aws } from "aws-cdk-lib";
 
 export class AccountsApi {
-  constructor(restApi: RestApi, scope: Construct, props: RestApiProps) {
+  constructor(restApi: RestApi, scope: Construct, props: RestApiResourceProps) {
     const {
       configApplicationId,
       configEnvironmentId,
       globalConfigConfigurationProfileId,
       accountTable,
       leaseTable,
+      blueprintTable,
     } = IsbComputeStack.sharedSpokeConfig.data;
-
-    const { sandboxOuId } = IsbComputeStack.sharedSpokeConfig.accountPool;
 
     const accountsLambdaFunction = new IsbLambdaFunction(
       scope,
@@ -59,12 +60,15 @@ export class AccountsApi {
         handler: "handler",
         namespace: props.namespace,
         environment: {
+          JWT_SECRET_NAME: props.jwtSecret.secretName,
           APP_CONFIG_APPLICATION_ID: configApplicationId,
           APP_CONFIG_PROFILE_ID: globalConfigConfigurationProfileId,
           APP_CONFIG_ENVIRONMENT_ID: configEnvironmentId,
           AWS_APPCONFIG_EXTENSION_PREFETCH_LIST: `/applications/${configApplicationId}/environments/${configEnvironmentId}/configurations/${globalConfigConfigurationProfileId}`,
           ACCOUNT_TABLE_NAME: accountTable,
           LEASE_TABLE_NAME: leaseTable,
+          BLUEPRINT_TABLE_NAME: blueprintTable,
+          SANDBOX_ACCOUNT_ROLE_NAME: getSandboxAccountRoleName(props.namespace),
           ISB_NAMESPACE: props.namespace,
           INTERMEDIATE_ROLE_ARN: IntermediateRole.getRoleArn(),
           ORG_MGT_ROLE_ARN: getOrgMgtRoleArn(
@@ -77,8 +81,12 @@ export class AccountsApi {
             props.namespace,
             props.idcAccountId,
           ),
+          ACCOUNT_POOL_CONFIG_PARAM_ARN:
+            IsbComputeStack.sharedSpokeConfig.parameterArns
+              .accountPoolConfigParamArn,
+          IDC_CONFIG_PARAM_ARN:
+            IsbComputeStack.sharedSpokeConfig.parameterArns.idcConfigParamArn,
           ISB_EVENT_BUS: props.isbEventBus.eventBusName,
-          SANDBOX_OU_ID: sandboxOuId,
           ORG_MGT_ACCOUNT_ID: props.orgMgtAccountId,
           IDC_ACCOUNT_ID: props.idcAccountId,
           HUB_ACCOUNT_ID: Aws.ACCOUNT_ID,
@@ -90,14 +98,18 @@ export class AccountsApi {
 
     grantIsbSsmParameterRead(
       accountsLambdaFunction.lambdaFunction.role! as Role,
-      sharedIdcSsmParamName(props.namespace),
-      props.idcAccountId,
+      IsbComputeStack.sharedSpokeConfig.parameterArns.idcConfigParamArn,
+    );
+    grantIsbSsmParameterRead(
+      accountsLambdaFunction.lambdaFunction.role! as Role,
+      IsbComputeStack.sharedSpokeConfig.parameterArns.accountPoolConfigParamArn,
     );
     grantIsbDbReadWrite(
       scope,
       accountsLambdaFunction,
       IsbComputeStack.sharedSpokeConfig.data.accountTable,
       IsbComputeStack.sharedSpokeConfig.data.leaseTable,
+      IsbComputeStack.sharedSpokeConfig.data.blueprintTable,
     );
     grantIsbAppConfigRead(
       scope,
@@ -106,6 +118,16 @@ export class AccountsApi {
     );
     addAppConfigExtensionLayer(accountsLambdaFunction);
     props.isbEventBus.grantPutEventsTo(accountsLambdaFunction.lambdaFunction);
+
+    props.jwtSecret.grantRead(accountsLambdaFunction.lambdaFunction);
+    IsbKmsKeys.get(scope, props.namespace).grantEncryptDecrypt(
+      accountsLambdaFunction.lambdaFunction,
+    );
+
+    // Grant CloudFormation permissions for stack instance cleanup during account ejection.
+    grantCfnStackSetCleanupPermissions(
+      accountsLambdaFunction.lambdaFunction.role! as Role,
+    );
 
     IntermediateRole.addTrustedRole(
       accountsLambdaFunction.lambdaFunction.role! as Role,

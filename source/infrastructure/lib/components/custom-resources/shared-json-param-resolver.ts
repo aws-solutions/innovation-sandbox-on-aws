@@ -26,9 +26,16 @@ export class SharedJsonParamResolver extends Construct {
   public readonly idcSupportedSchemas: string;
   //AccountPool
   public readonly sandboxOuId: string;
+  public readonly availableOuId: string;
+  public readonly activeOuId: string;
+  public readonly frozenOuId: string;
+  public readonly cleanupOuId: string;
+  public readonly quarantineOuId: string;
+  public readonly entryOuId: string;
+  public readonly exitOuId: string;
   public readonly accountPoolSolutionVersion: string;
   public readonly accountPoolSupportedSchemas: string;
-  public readonly isbManagedRegions: string;
+  public readonly isbManagedRegions: string; // JSON string, parsed at runtime
   //Data
   public readonly configApplicationId: string;
   public readonly configEnvironmentId: string;
@@ -38,6 +45,7 @@ export class SharedJsonParamResolver extends Construct {
   public readonly accountTable: string;
   public readonly leaseTemplateTable: string;
   public readonly leaseTable: string;
+  public readonly blueprintTable: string;
   public readonly tableKmsKeyId: string;
   public readonly dataSolutionVersion: string;
   public readonly dataSupportedSchemas: string;
@@ -120,6 +128,18 @@ export class SharedJsonParamResolver extends Construct {
     //AccountPool
     this.sandboxOuId =
       sharedJsonParamCR.customResource.getAttString("sandboxOuId");
+    this.availableOuId =
+      sharedJsonParamCR.customResource.getAttString("availableOuId");
+    this.activeOuId =
+      sharedJsonParamCR.customResource.getAttString("activeOuId");
+    this.frozenOuId =
+      sharedJsonParamCR.customResource.getAttString("frozenOuId");
+    this.cleanupOuId =
+      sharedJsonParamCR.customResource.getAttString("cleanupOuId");
+    this.quarantineOuId =
+      sharedJsonParamCR.customResource.getAttString("quarantineOuId");
+    this.entryOuId = sharedJsonParamCR.customResource.getAttString("entryOuId");
+    this.exitOuId = sharedJsonParamCR.customResource.getAttString("exitOuId");
     this.accountPoolSolutionVersion =
       sharedJsonParamCR.customResource.getAttString(
         "accountPoolSolutionVersion",
@@ -155,6 +175,8 @@ export class SharedJsonParamResolver extends Construct {
       sharedJsonParamCR.customResource.getAttString("leaseTemplateTable");
     this.leaseTable =
       sharedJsonParamCR.customResource.getAttString("leaseTable");
+    this.blueprintTable =
+      sharedJsonParamCR.customResource.getAttString("blueprintTable");
     this.tableKmsKeyId =
       sharedJsonParamCR.customResource.getAttString("tableKmsKeyId");
     this.dataSolutionVersion = sharedJsonParamCR.customResource.getAttString(

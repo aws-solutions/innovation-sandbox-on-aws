@@ -9,7 +9,6 @@ import {
   ButtonDropdown,
   ColumnLayout,
   Container,
-  ContentLayout,
   FormField,
   Header,
   Multiselect,
@@ -18,8 +17,9 @@ import {
   SpaceBetween,
   StatusIndicator,
 } from "@cloudscape-design/components";
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 
 import {
   ApprovalDeniedLeaseStatusSchema,
@@ -32,7 +32,10 @@ import {
   PendingLeaseStatusSchema,
 } from "@amzn/innovation-sandbox-commons/data/lease/lease";
 import { AccountLoginLink } from "@amzn/innovation-sandbox-frontend/components/AccountLoginLink";
+import { useAppLayoutContext } from "@amzn/innovation-sandbox-frontend/components/AppLayout/AppLayoutContext";
+import { BlueprintName } from "@amzn/innovation-sandbox-frontend/components/BlueprintName";
 import { BudgetProgressBar } from "@amzn/innovation-sandbox-frontend/components/BudgetProgressBar";
+import { ContentLayout } from "@amzn/innovation-sandbox-frontend/components/ContentLayout";
 import { DurationStatus } from "@amzn/innovation-sandbox-frontend/components/DurationStatus";
 import { InfoLink } from "@amzn/innovation-sandbox-frontend/components/InfoLink";
 import { Markdown } from "@amzn/innovation-sandbox-frontend/components/Markdown";
@@ -45,6 +48,7 @@ import {
 import { LeaseStatusBadge } from "@amzn/innovation-sandbox-frontend/domains/leases/components/LeaseStatusBadge";
 import {
   getLeaseStatusDisplayName,
+  leaseExpirySortingComparator,
   leaseStatusSortingComparator,
 } from "@amzn/innovation-sandbox-frontend/domains/leases/helpers";
 import {
@@ -57,7 +61,6 @@ import { getLeaseExpiryInfo } from "@amzn/innovation-sandbox-frontend/helpers/Le
 import { useBreadcrumb } from "@amzn/innovation-sandbox-frontend/hooks/useBreadcrumb";
 import { useModal } from "@amzn/innovation-sandbox-frontend/hooks/useModal";
 import { useUser } from "@amzn/innovation-sandbox-frontend/hooks/useUser";
-import { useAppLayoutContext } from "@aws-northstar/ui/components/AppLayout";
 import { DateTime } from "luxon";
 
 const filterOptions: SelectProps.Options = [
@@ -97,7 +100,7 @@ const UserCell = ({
   includeLinks: boolean;
 }) =>
   includeLinks ? (
-    <TextLink to={`/leases/edit/${lease.leaseId}`}>{lease.userEmail}</TextLink>
+    <TextLink to={`/leases/${lease.leaseId}`}>{lease.userEmail}</TextLink>
   ) : (
     lease.userEmail
   );
@@ -228,6 +231,8 @@ type ActionModalContentProps = {
   selectedLeases: Lease[];
   action: "terminate" | "freeze" | "unfreeze";
   onAction: (leaseId: string) => Promise<any>;
+  queryClient: any;
+  setSelectedLeases: React.Dispatch<React.SetStateAction<Lease[]>>;
 };
 
 const UnfreezeWarningContent = ({
@@ -302,6 +307,13 @@ const createColumnDefinitions = (includeLinks: boolean) =>
       cell: (lease: Lease) => lease.originalLeaseTemplateName,
     },
     {
+      id: "blueprint",
+      header: "Blueprint",
+      sortingField: "blueprintName",
+      // prettier-ignore
+      cell: (lease: Lease) => <BlueprintName blueprintName={lease.blueprintName} />, // NOSONAR typescript:S6478 - the way the table component works requires defining component during render
+    },
+    {
       id: "costReportGroup",
       header: "Cost Report Group",
       sortingField: "costReportGroup",
@@ -316,7 +328,7 @@ const createColumnDefinitions = (includeLinks: boolean) =>
     {
       id: "expirationDate",
       header: "Expiry",
-      sortingField: "expirationDate",
+      sortingComparator: leaseExpirySortingComparator,
       cell: (lease: Lease) => <ExpiryCell lease={lease} />, // NOSONAR typescript:S6478 - the way the table component works requires defining component during render
     },
     {
@@ -348,6 +360,8 @@ const ActionModalContent = ({
   selectedLeases,
   action,
   onAction,
+  queryClient,
+  setSelectedLeases,
 }: ActionModalContentProps) => {
   return (
     <SpaceBetween size="m">
@@ -359,10 +373,18 @@ const ActionModalContent = ({
         description={`${selectedLeases.length} lease(s) to ${action}`}
         columnDefinitions={createColumnDefinitions(false)}
         identifierKey="leaseId"
+        sequential
         onSubmit={async (lease: Lease) => {
           await onAction(lease.leaseId);
+          setSelectedLeases((prev) =>
+            prev.filter((l) => l.leaseId !== lease.leaseId),
+          );
         }}
         onSuccess={() => {
+          queryClient.invalidateQueries({
+            queryKey: ["leases"],
+            refetchType: "all",
+          });
           const actionMap = {
             freeze: "frozen",
             terminate: "terminated",
@@ -386,10 +408,15 @@ export const ListLeases = () => {
   const { setTools } = useAppLayoutContext();
   const setBreadcrumb = useBreadcrumb();
   const { isAdmin, isManager } = useUser();
+  const [searchParams] = useSearchParams();
   const [filteredLeases, setFilteredLeases] = useState<Lease[]>([]);
   const [selectedLeases, setSelectedLeases] = useState<Lease[]>([]);
   const [leaseTemplates, setLeaseTemplates] = useState<SelectProps.Options>([]);
   const { showModal } = useModal();
+  const queryClient = useQueryClient();
+
+  // Get leaseId from URL if present
+  const urlLeaseId = searchParams.get("leaseId");
 
   // default status filter to active leases
   const [statusFilter, setStatusFilter] = useState<SelectProps.Options>(
@@ -400,11 +427,17 @@ export const ListLeases = () => {
 
   const { data: leases, isFetching, refetch } = useGetLeases();
 
-  const { mutateAsync: terminateLease } = useTerminateLease();
+  const { mutateAsync: terminateLease } = useTerminateLease({
+    skipInvalidation: true,
+  });
 
-  const { mutateAsync: freezeLease } = useFreezeLease();
+  const { mutateAsync: freezeLease } = useFreezeLease({
+    skipInvalidation: true,
+  });
 
-  const { mutateAsync: unfreezeLease } = useUnfreezeLease();
+  const { mutateAsync: unfreezeLease } = useUnfreezeLease({
+    skipInvalidation: true,
+  });
 
   useEffect(() => {
     setBreadcrumb([
@@ -415,6 +448,12 @@ export const ListLeases = () => {
   }, []);
 
   const filterLeases = (leases: Lease[]) => {
+    // filter by lease ID from URL if present
+    if (urlLeaseId) {
+      const matchedLease = leases.find((lease) => lease.leaseId === urlLeaseId);
+      return matchedLease ? [matchedLease] : [];
+    }
+
     // filter by status
     const filteredByStatus =
       statusFilter.length > 0
@@ -471,6 +510,8 @@ export const ListLeases = () => {
           selectedLeases={selectedLeases}
           action="terminate"
           onAction={terminateLease}
+          queryClient={queryClient}
+          setSelectedLeases={setSelectedLeases}
         />
       ),
       size: "max",
@@ -485,6 +526,8 @@ export const ListLeases = () => {
           selectedLeases={selectedLeases}
           action="freeze"
           onAction={freezeLease}
+          queryClient={queryClient}
+          setSelectedLeases={setSelectedLeases}
         />
       ),
       size: "max",
@@ -499,6 +542,8 @@ export const ListLeases = () => {
           selectedLeases={selectedLeases}
           action="unfreeze"
           onAction={unfreezeLease}
+          queryClient={queryClient}
+          setSelectedLeases={setSelectedLeases}
         />
       ),
       size: "max",
@@ -507,6 +552,7 @@ export const ListLeases = () => {
 
   return (
     <ContentLayout
+      disablePadding
       header={
         <Header
           variant="h1"
@@ -627,7 +673,7 @@ export const ListLeases = () => {
                       showUnfreezeModal();
                       break;
                     case "update":
-                      navigate(`/leases/edit/${selectedLeases[0].leaseId}`);
+                      navigate(`/leases/${selectedLeases[0].leaseId}`);
                       break;
                   }
                 }}

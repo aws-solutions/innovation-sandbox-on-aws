@@ -86,9 +86,8 @@ describe("handler", async () => {
   });
 
   it("returns authorized response when authorization succeeds", async () => {
-    const authorization = await import(
-      "@amzn/innovation-sandbox-authorizer/authorization.js"
-    );
+    const authorization =
+      await import("@amzn/innovation-sandbox-authorizer/authorization.js");
     authorization.isAuthorized = vi.fn().mockReturnValue(true);
     expect(await handler(event, mockContext(testEnv))).toMatchObject({
       policyDocument: {
@@ -102,9 +101,8 @@ describe("handler", async () => {
     });
   });
   it("returns unauthorized response when authorization fails", async () => {
-    const authorization = await import(
-      "@amzn/innovation-sandbox-authorizer/authorization.js"
-    );
+    const authorization =
+      await import("@amzn/innovation-sandbox-authorizer/authorization.js");
     authorization.isAuthorized = vi.fn().mockReturnValue(false);
     expect(await handler(event, mockContext(testEnv))).toMatchObject({
       policyDocument: {
@@ -144,9 +142,8 @@ describe("handler", async () => {
         NextPollConfigurationToken: "nextPollConfigurationToken",
       }),
     );
-    const authorization = await import(
-      "@amzn/innovation-sandbox-authorizer/authorization.js"
-    );
+    const authorization =
+      await import("@amzn/innovation-sandbox-authorizer/authorization.js");
     authorization.isAuthorized = vi.fn().mockReturnValue(false);
     handler = (
       await import("@amzn/innovation-sandbox-authorizer/authorizer-handler.js")
@@ -176,9 +173,8 @@ describe("handler", async () => {
           ),
       } as unknown as Response);
     });
-    const authorization = await import(
-      "@amzn/innovation-sandbox-authorizer/authorization.js"
-    );
+    const authorization =
+      await import("@amzn/innovation-sandbox-authorizer/authorization.js");
     authorization.isAuthorized = vi.fn().mockReturnValue(true);
     handler = (
       await import("@amzn/innovation-sandbox-authorizer/authorizer-handler.js")
@@ -224,9 +220,8 @@ describe("handler", async () => {
         NextPollConfigurationToken: "nextPollConfigurationToken",
       }),
     );
-    const authorization = await import(
-      "@amzn/innovation-sandbox-authorizer/authorization.js"
-    );
+    const authorization =
+      await import("@amzn/innovation-sandbox-authorizer/authorization.js");
     authorization.isAuthorized = vi.fn().mockReturnValue(true);
     authorization.extractMethodAndPathFromArn = vi.fn().mockReturnValue({
       method: "GET",
@@ -278,9 +273,8 @@ describe("handler", async () => {
         NextPollConfigurationToken: "nextPollConfigurationToken",
       }),
     );
-    const authorization = await import(
-      "@amzn/innovation-sandbox-authorizer/authorization.js"
-    );
+    const authorization =
+      await import("@amzn/innovation-sandbox-authorizer/authorization.js");
     authorization.isAuthorized = vi.fn().mockReturnValue(true);
     handler = (
       await import("@amzn/innovation-sandbox-authorizer/authorizer-handler.js")

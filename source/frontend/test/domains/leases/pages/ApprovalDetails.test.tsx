@@ -58,9 +58,6 @@ describe("ApprovalDetails", () => {
           selector: "p",
         }),
       ).toBeInTheDocument();
-      expect(
-        screen.getAllByText(mockLease.originalLeaseTemplateName),
-      ).toHaveLength(2);
     });
   });
 
@@ -68,7 +65,7 @@ describe("ApprovalDetails", () => {
     renderComponent();
 
     await waitFor(() => {
-      expect(screen.getByText("Lease Summary")).toBeInTheDocument();
+      expect(screen.getByText("Lease Details")).toBeInTheDocument();
     });
   });
 

@@ -48,7 +48,7 @@ export class LeaseTemplateService {
   }
 
   async updateLeaseTemplate(leaseTemplate: LeaseTemplate): Promise<void> {
-    const { uuid, ...rest } = leaseTemplate;
+    const { uuid, blueprintName, ...rest } = leaseTemplate;
     await this.api.put(`/leaseTemplates/${uuid}`, rest);
   }
 

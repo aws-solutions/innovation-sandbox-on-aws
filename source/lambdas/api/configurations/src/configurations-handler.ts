@@ -7,6 +7,7 @@ import httpRouterHandler, { Route } from "@middy/http-router";
 import { APIGatewayProxyResult } from "aws-lambda";
 
 import { getGlobalConfigForUI } from "@amzn/innovation-sandbox-commons/data/global-config/global-config.js";
+import { IsbServices } from "@amzn/innovation-sandbox-commons/isb-services/index.js";
 import {
   ConfigurationLambdaEnvironment,
   ConfigurationLambdaEnvironmentSchema,
@@ -54,15 +55,17 @@ async function getAllConfigurationsHandler(
   context: ContextWithGlobalAndReportingConfig &
     IsbApiContext<ConfigurationLambdaEnvironment>,
 ): Promise<APIGatewayProxyResult> {
+  const accountPoolConfigStore = IsbServices.accountPoolStackConfigStore(
+    context.env,
+  );
+  const { isbManagedRegions } = await accountPoolConfigStore.get();
+
   return {
     statusCode: 200,
     body: JSON.stringify({
       status: "success",
       data: {
-        ...getGlobalConfigForUI(
-          context.globalConfig,
-          context.env.ISB_MANAGED_REGIONS.split(","),
-        ),
+        ...getGlobalConfigForUI(context.globalConfig, isbManagedRegions),
         ...context.reportingConfig,
       },
     }),

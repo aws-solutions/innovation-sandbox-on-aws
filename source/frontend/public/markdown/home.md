@@ -24,7 +24,6 @@ Your request will be reviewed and an outcome provided on the request.
 
 - _Your lease request has been denied_
   Your request could be denied due to various factors:
-
   - Unavailability of additional budget to run sandbox experiments.
   - There are no accounts available in the account pool and the Admin will need to create new accounts or move existing accounts.
   - You may have exceeded the maximum number of leases allowed for a user.

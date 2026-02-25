@@ -11,8 +11,7 @@ import { execSync } from "child_process";
 import fs from "fs";
 import path from "path";
 
-interface SolutionsEngineeringSynthesizerProps
-  extends DefaultStackSynthesizerProps {
+interface SolutionsEngineeringSynthesizerProps extends DefaultStackSynthesizerProps {
   outdir: string;
 }
 

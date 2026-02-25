@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import {
+  Box,
   Container,
   KeyValuePairs,
   StatusIndicator,
@@ -68,7 +69,12 @@ export const GeneralSettings = () => {
             label: "Terms of Service",
             value: (
               <Container>
-                <pre>{config.termsOfService}</pre>
+                <Box
+                  variant="pre"
+                  nativeAttributes={{ style: { textWrap: "auto" } }}
+                >
+                  {config.termsOfService}
+                </Box>
               </Container>
             ),
           },

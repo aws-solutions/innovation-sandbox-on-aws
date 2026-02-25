@@ -1,12 +1,15 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
+import { BaseLambdaEnvironment } from "@amzn/innovation-sandbox-commons/lambda/environments/base-lambda-environment.js";
 import { MiddlewareFn } from "@aws-lambda-powertools/commons/types";
 import { Logger } from "@aws-lambda-powertools/logger";
 import { MiddlewareObj } from "@middy/core";
 import { Context } from "aws-lambda";
-import { Schema, z } from "zod";
+import { z } from "zod";
 
-interface EnvironmentValidatorOptions<T extends Schema> {
+interface EnvironmentValidatorOptions<
+  T extends z.ZodType<BaseLambdaEnvironment>,
+> {
   schema: T;
   logger: Logger;
 }
@@ -22,7 +25,9 @@ export class EnvironmentValidatorError extends Error {
   }
 }
 
-export default function environmentValidatorMiddleware<T extends Schema>(
+export default function environmentValidatorMiddleware<
+  T extends z.ZodType<BaseLambdaEnvironment>,
+>(
   opts: EnvironmentValidatorOptions<T>,
 ): MiddlewareObj<
   unknown,

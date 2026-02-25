@@ -1,7 +1,7 @@
 {
   "name": "@amzn/innovation-sandbox-idc-configurer",
   "description": "IDC Configurer - Lambda - Innovation Sandbox on AWS (SO0284)",
-  "version": "1.1.8",
+  "version": "1.2.0",
   "scripts": {
     "build": "tsc --incremental --noEmit",
     "test": "vitest run"

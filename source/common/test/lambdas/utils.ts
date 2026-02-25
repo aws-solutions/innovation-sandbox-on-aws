@@ -17,7 +17,9 @@ export const mockAppConfigMiddleware = (
   reportingConfig?: ReportingConfig,
 ) => {
   global.fetch = vi.fn().mockImplementation((url: string) => {
-    if (url.includes(process.env.REPORTING_CONFIG_PROFILE_ID || "Reporting")) {
+    // Check if URL contains the reporting config profile ID
+    const reportingProfileId = process.env.REPORTING_CONFIG_PROFILE_ID;
+    if (reportingProfileId && url.includes(reportingProfileId)) {
       return Promise.resolve({
         ok: true,
         status: 200,

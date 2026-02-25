@@ -344,4 +344,252 @@ describe("ListAccounts", () => {
       statusIndicators.some((element) => element.textContent === "Active"),
     ).toBe(true);
   });
+
+  test("displays account name or N/A when name is missing", async () => {
+    const accountsWithMissingName = [
+      { ...mockAccounts[0], name: "Test Account" },
+      { ...mockAccounts[1], name: undefined },
+    ];
+
+    server.use(
+      http.get(`${config.ApiUrl}/accounts`, () => {
+        return HttpResponse.json({
+          status: "success",
+          data: {
+            result: accountsWithMissingName,
+            nextPageIdentifier: null,
+          },
+        } as ApiResponse<ApiPaginatedResult<SandboxAccount>>);
+      }),
+    );
+
+    renderComponent();
+
+    await waitFor(() => {
+      expect(screen.getByText("Test Account")).toBeInTheDocument();
+      // Verify N/A is displayed for missing name - check in the document
+      expect(screen.getAllByText("N/A").length).toBeGreaterThan(0);
+    });
+  });
+
+  test("displays account email or N/A when email is missing", async () => {
+    const accountsWithMissingEmail = [
+      { ...mockAccounts[0], email: "test@example.com" },
+      { ...mockAccounts[1], email: undefined },
+    ];
+
+    server.use(
+      http.get(`${config.ApiUrl}/accounts`, () => {
+        return HttpResponse.json({
+          status: "success",
+          data: {
+            result: accountsWithMissingEmail,
+            nextPageIdentifier: null,
+          },
+        } as ApiResponse<ApiPaginatedResult<SandboxAccount>>);
+      }),
+    );
+
+    renderComponent();
+
+    await waitFor(() => {
+      expect(screen.getByText("test@example.com")).toBeInTheDocument();
+      // Verify N/A is displayed for missing email - check in the document
+      expect(screen.getAllByText("N/A").length).toBeGreaterThan(0);
+    });
+  });
+
+  test("successfully ejects account and shows success toast", async () => {
+    server.use(
+      http.post(`${config.ApiUrl}/accounts/:accountId/eject`, () => {
+        return HttpResponse.json({
+          status: "success",
+          data: {},
+        });
+      }),
+    );
+
+    renderComponent();
+    const user = userEvent.setup();
+
+    const account = mockAccounts.find(
+      (account) => account.status === "Available",
+    );
+
+    await screen.findByText(account!.awsAccountId);
+
+    const row = screen.getByText(account!.awsAccountId).closest("tr");
+    const checkbox = within(row!).getByRole("checkbox");
+    await user.click(checkbox);
+
+    const actionsButton = screen.getByText("Actions");
+    await user.click(actionsButton);
+
+    const ejectOption = await screen.findByText("Eject account");
+    await user.click(ejectOption);
+
+    const modal = screen.getByRole("dialog");
+    await waitFor(() => {
+      expect(modal).toBeInTheDocument();
+    });
+
+    const submitButton = within(modal).getByRole("button", {
+      name: /Submit/i,
+    });
+    await user.click(submitButton);
+
+    await waitFor(() => {
+      expect(screen.getAllByText("Success")).toHaveLength(1);
+    });
+  });
+
+  test("handles eject account failure and shows error", async () => {
+    server.use(
+      http.post(`${config.ApiUrl}/accounts/:accountId/eject`, () => {
+        return HttpResponse.json(
+          {
+            status: "error",
+            message: "Failed to eject account",
+          },
+          { status: 500 },
+        );
+      }),
+    );
+
+    renderComponent();
+    const user = userEvent.setup();
+
+    const account = mockAccounts.find(
+      (account) => account.status === "Available",
+    );
+
+    await screen.findByText(account!.awsAccountId);
+
+    const row = screen.getByText(account!.awsAccountId).closest("tr");
+    const checkbox = within(row!).getByRole("checkbox");
+    await user.click(checkbox);
+
+    const actionsButton = screen.getByText("Actions");
+    await user.click(actionsButton);
+
+    const ejectOption = await screen.findByText("Eject account");
+    await user.click(ejectOption);
+
+    const modal = screen.getByRole("dialog");
+    await waitFor(() => {
+      expect(modal).toBeInTheDocument();
+    });
+
+    const submitButton = within(modal).getByRole("button", {
+      name: /Submit/i,
+    });
+    await user.click(submitButton);
+
+    await waitFor(() => {
+      expect(screen.getByText("Failed")).toBeInTheDocument();
+    });
+  });
+
+  test("successfully retries cleanup and shows success", async () => {
+    server.use(
+      http.post(`${config.ApiUrl}/accounts/:accountId/retryCleanup`, () => {
+        return HttpResponse.json({
+          status: "success",
+          data: {},
+        });
+      }),
+    );
+
+    renderComponent();
+    const user = userEvent.setup();
+
+    await screen.findByRole("table");
+
+    const filteredAccounts = mockAccounts.filter(
+      (account) =>
+        account.status === "Quarantine" || account.status === "CleanUp",
+    );
+
+    for (const account of filteredAccounts) {
+      await screen.findByText(account.awsAccountId);
+      const row = screen.getByText(account.awsAccountId).closest("tr");
+      const checkbox = within(row!).getByRole("checkbox");
+      await user.click(checkbox);
+    }
+
+    const actionsButton = screen.getByText("Actions");
+    await user.click(actionsButton);
+
+    const cleanupOption = await screen.findByText("Retry cleanup");
+    await user.click(cleanupOption);
+
+    const modal = screen.getByRole("dialog");
+    await waitFor(() => {
+      expect(modal).toBeInTheDocument();
+    });
+
+    const submitButton = within(modal).getByRole("button", {
+      name: /Submit/i,
+    });
+    await user.click(submitButton);
+
+    await waitFor(() => {
+      expect(screen.getAllByText("Success")).toHaveLength(
+        filteredAccounts.length,
+      );
+    });
+  });
+
+  test("handles cleanup failure and shows error", async () => {
+    server.use(
+      http.post(`${config.ApiUrl}/accounts/:accountId/retryCleanup`, () => {
+        return HttpResponse.json(
+          {
+            status: "error",
+            message: "Failed to cleanup account",
+          },
+          { status: 500 },
+        );
+      }),
+    );
+
+    renderComponent();
+    const user = userEvent.setup();
+
+    await screen.findByRole("table");
+
+    const filteredAccounts = mockAccounts.filter(
+      (account) =>
+        account.status === "Quarantine" || account.status === "CleanUp",
+    );
+
+    for (const account of filteredAccounts) {
+      await screen.findByText(account.awsAccountId);
+      const row = screen.getByText(account.awsAccountId).closest("tr");
+      const checkbox = within(row!).getByRole("checkbox");
+      await user.click(checkbox);
+    }
+
+    const actionsButton = screen.getByText("Actions");
+    await user.click(actionsButton);
+
+    const cleanupOption = await screen.findByText("Retry cleanup");
+    await user.click(cleanupOption);
+
+    const modal = screen.getByRole("dialog");
+    await waitFor(() => {
+      expect(modal).toBeInTheDocument();
+    });
+
+    const submitButton = within(modal).getByRole("button", {
+      name: /Submit/i,
+    });
+    await user.click(submitButton);
+
+    await waitFor(() => {
+      expect(screen.getAllByText("Failed")).toHaveLength(
+        filteredAccounts.length,
+      );
+    });
+  });
 });

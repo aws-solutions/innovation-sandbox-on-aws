@@ -1,6 +1,6 @@
 {
   "name": "@amzn/innovation-sandbox-layer-dependencies",
-  "version": "1.1.8",
+  "version": "1.2.0",
   "description": "Dependencies - Lambda Layer - Innovation Sandbox on AWS (SO0284)",
   "scripts": {
     "generate-local-package-lock": "npm install --package-lock-only --no-workspaces"
@@ -8,13 +8,14 @@
   "type": "module",
   "dependencies": {
     "@aws-lambda-powertools/logger": "^2.2.0",
+    "@aws-lambda-powertools/parameters": "^2.29.0",
     "@aws-lambda-powertools/parser": "^2.6.0",
     "@aws-lambda-powertools/tracer": "^2.2.0",
     "@aws-sdk/client-appconfig": "^3.670.0",
     "@aws-sdk/client-appconfigdata": "^3.665.0",
     "@aws-sdk/client-cloudwatch-logs": "^3.656.0",
     "@aws-sdk/client-cost-explorer": "^3.656.0",
-    "@aws-sdk/client-dynamodb": "^3.917.0",
+    "@aws-sdk/client-dynamodb": "^3.982.0",
     "@aws-sdk/client-ec2": "^3.665.0",
     "@aws-sdk/client-eventbridge": "^3.656.0",
     "@aws-sdk/client-identitystore": "^3.654.0",

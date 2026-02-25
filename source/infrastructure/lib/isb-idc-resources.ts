@@ -12,6 +12,7 @@ import {
 import { ParameterTier } from "aws-cdk-lib/aws-ssm";
 import { Construct } from "constructs";
 
+import { IdcConfig } from "@amzn/innovation-sandbox-commons/data/idc-stack-config/idc-stack-config.js";
 import { sharedIdcSsmParamName } from "@amzn/innovation-sandbox-commons/types/isb-types.js";
 import { IdcConfigurer } from "@amzn/innovation-sandbox-infrastructure/components/custom-resources/idc-configurer";
 import { addCfnGuardSuppression } from "@amzn/innovation-sandbox-infrastructure/helpers/cfn-guard";
@@ -19,7 +20,6 @@ import {
   getIdcRoleName,
   getIntermediateRoleName,
 } from "@amzn/innovation-sandbox-infrastructure/helpers/isb-roles";
-import { IdcConfig } from "@amzn/innovation-sandbox-shared-json-param-parser/src/shared-json-param-parser-handler.js";
 
 const supportedSchemas = ["1"];
 
@@ -213,8 +213,6 @@ export class IsbIdcResources {
         simpleName: true,
       },
     );
-
-    ssmParamIdcConfiguration.grantRead(idcRole);
 
     new aws_ram.CfnResourceShare(scope, "IdcConfigParameterShare", {
       name: `Isb-${props.namespace}-IdcConfigShare`,

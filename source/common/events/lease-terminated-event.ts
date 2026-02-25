@@ -3,24 +3,31 @@
 import z from "zod";
 
 import {
-  AwsAccountIdSchema,
-  FreeTextSchema,
-} from "@amzn/innovation-sandbox-commons/data/common-schemas.js";
-import {
   ExpiredLeaseStatus,
   LeaseKeySchema,
   MonitoredLease,
 } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
 import { EventDetailTypes } from "@amzn/innovation-sandbox-commons/events/index.js";
 import { IsbEvent } from "@amzn/innovation-sandbox-commons/sdk-clients/event-bridge-client.js";
+import {
+  AwsAccountIdSchema,
+  enumErrorMap,
+  FreeTextSchema,
+} from "@amzn/innovation-sandbox-commons/utils/zod.js";
 
-export const LeaseTerminatedReasonTypeSchema = z.enum([
-  "Expired",
-  "BudgetExceeded",
-  "ManuallyTerminated",
-  "AccountQuarantined",
-  "Ejected",
-]);
+export const LeaseTerminatedReasonTypeSchema = z.enum(
+  [
+    "Expired",
+    "BudgetExceeded",
+    "ManuallyTerminated",
+    "AccountQuarantined",
+    "Ejected",
+    "ProvisioningFailed",
+  ],
+  {
+    errorMap: enumErrorMap,
+  },
+);
 
 export const LeaseTerminatedByDurationSchema = z.object({
   type: z.literal(LeaseTerminatedReasonTypeSchema.enum.Expired),
@@ -48,12 +55,18 @@ export const LeaseTerminatedEjectedSchema = z.object({
   comment: FreeTextSchema,
 });
 
+export const LeaseTerminatedProvisioningFailedSchema = z.object({
+  type: z.literal(LeaseTerminatedReasonTypeSchema.enum.ProvisioningFailed),
+  comment: FreeTextSchema,
+});
+
 export const LeaseTerminatedReasonSchema = z.discriminatedUnion("type", [
   LeaseTerminatedByDurationSchema,
   LeaseTerminatedByBudgetSchema,
   LeaseTerminatedManualSchema,
   LeaseTerminatedQuarantinedSchema,
   LeaseTerminatedEjectedSchema,
+  LeaseTerminatedProvisioningFailedSchema,
 ]);
 
 export type LeaseTerminatedReason = z.infer<typeof LeaseTerminatedReasonSchema>;
@@ -79,8 +92,7 @@ export class LeaseTerminatedEvent<
   T extends z.infer<typeof LeaseTerminatedReasonTypeSchema> = z.infer<
     typeof LeaseTerminatedReasonTypeSchema
   >,
-> implements IsbEvent
-{
+> implements IsbEvent {
   readonly DetailType = EventDetailTypes.LeaseTerminated;
   readonly Detail: z.infer<typeof LeaseTerminatedEventSchema> & {
     reason: { type: T };
@@ -140,6 +152,11 @@ export function getLeaseTerminatedReason(
       return {
         type: "Ejected",
         comment: "Account ejected by admin",
+      };
+    case "ProvisioningFailed":
+      return {
+        type: "ProvisioningFailed",
+        comment: "Blueprint deployment failed",
       };
     default:
       throw new Error(`Unsupported expiration status.`);

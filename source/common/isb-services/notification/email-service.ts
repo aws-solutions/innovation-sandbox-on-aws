@@ -10,6 +10,7 @@ import { LeaseBudgetThresholdBreachedAlert } from "@amzn/innovation-sandbox-comm
 import { LeaseDeniedEvent } from "@amzn/innovation-sandbox-commons/events/lease-denied-event.js";
 import { LeaseDurationThresholdBreachedAlert } from "@amzn/innovation-sandbox-commons/events/lease-duration-threshold-breached-alert.js";
 import { LeaseFrozenEvent } from "@amzn/innovation-sandbox-commons/events/lease-frozen-event.js";
+import { LeaseProvisioningFailedEvent } from "@amzn/innovation-sandbox-commons/events/lease-provisioning-failed-event.js";
 import { LeaseRequestedEvent } from "@amzn/innovation-sandbox-commons/events/lease-requested-event.js";
 import { LeaseTerminatedEvent } from "@amzn/innovation-sandbox-commons/events/lease-terminated-event.js";
 import { LeaseUnfrozenEvent } from "@amzn/innovation-sandbox-commons/events/lease-unfrozen-event.js";
@@ -229,6 +230,25 @@ export class EmailService {
       case "LeaseFrozen":
         await this.sendFrozenEmails(LeaseFrozenEvent.parse(isbAlert));
         break;
+      case "LeaseProvisioningFailed":
+        const leaseProvisioningFailedEvent =
+          LeaseProvisioningFailedEvent.parse(isbAlert);
+        const provisioningFailedContext = {
+          webAppUrl: this.webAppUrl,
+          destination: {
+            bcc: await union(
+              await allAdmins(this.idcService),
+              await allManagers(this.idcService),
+            ),
+          },
+        };
+        await this.sendEmail(
+          EmailTemplates.LeaseProvisioningFailed(
+            leaseProvisioningFailedEvent,
+            provisioningFailedContext,
+          ),
+        );
+        break;
       default:
         assertNever(emailEventName);
     }
@@ -363,6 +383,20 @@ export class EmailService {
           EmailTemplates.LeaseTerminated.byEjectedUser(
             parsedEvent as LeaseTerminatedEvent<"Ejected">,
             userEmailContext,
+          ),
+        );
+        break;
+      case "ProvisioningFailed":
+        await this.sendEmail(
+          EmailTemplates.LeaseTerminated.byProvisioningFailedUser(
+            parsedEvent as LeaseTerminatedEvent<"ProvisioningFailed">,
+            userEmailContext,
+          ),
+        );
+        await this.sendEmail(
+          EmailTemplates.LeaseTerminated.byProvisioningFailedAdminManager(
+            parsedEvent as LeaseTerminatedEvent<"ProvisioningFailed">,
+            adminManagerEmailContext,
           ),
         );
         break;

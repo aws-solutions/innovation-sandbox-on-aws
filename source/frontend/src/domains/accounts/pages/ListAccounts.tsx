@@ -6,12 +6,12 @@ import {
   Button,
   ButtonDropdown,
   Container,
-  ContentLayout,
   Header,
   Popover,
   SpaceBetween,
 } from "@cloudscape-design/components";
-import moment from "moment";
+import { useQueryClient } from "@tanstack/react-query";
+import { DateTime } from "luxon";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -21,6 +21,8 @@ import {
 } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account";
 import { AccountLoginLink } from "@amzn/innovation-sandbox-frontend/components/AccountLoginLink";
 import { AccountsSummary } from "@amzn/innovation-sandbox-frontend/components/AccountsSummary";
+import { useAppLayoutContext } from "@amzn/innovation-sandbox-frontend/components/AppLayout/AppLayoutContext";
+import { ContentLayout } from "@amzn/innovation-sandbox-frontend/components/ContentLayout";
 import { Markdown } from "@amzn/innovation-sandbox-frontend/components/Markdown";
 import { BatchActionReview } from "@amzn/innovation-sandbox-frontend/components/MultiSelectTableActionReview";
 import {
@@ -34,9 +36,9 @@ import {
   useEjectAccount,
   useGetAccounts,
 } from "@amzn/innovation-sandbox-frontend/domains/accounts/hooks";
+import { createDateSortingComparator } from "@amzn/innovation-sandbox-frontend/helpers/date-sorting-comparator";
 import { useBreadcrumb } from "@amzn/innovation-sandbox-frontend/hooks/useBreadcrumb";
 import { useModal } from "@amzn/innovation-sandbox-frontend/hooks/useModal";
-import { useAppLayoutContext } from "@aws-northstar/ui/components/AppLayout";
 
 const StatusCell = ({ account }: { account: SandboxAccount }) => (
   <AccountStatusIndicator
@@ -47,25 +49,31 @@ const StatusCell = ({ account }: { account: SandboxAccount }) => (
   />
 );
 
-const CreatedOnCell = ({ account }: { account: SandboxAccount }) => (
-  <Popover
-    position="top"
-    dismissButton={false}
-    content={moment(account.meta?.createdTime).format("MM/DD/YYYY hh:mm:A")}
-  >
-    {moment(account.meta?.createdTime).fromNow()}
-  </Popover>
-);
+const CreatedOnCell = ({ account }: { account: SandboxAccount }) =>
+  account.meta?.createdTime && (
+    <Popover
+      position="top"
+      dismissButton={false}
+      content={DateTime.fromISO(account.meta?.createdTime).toFormat(
+        "MM/dd/yyyy hh:mm:a",
+      )}
+    >
+      {DateTime.fromISO(account.meta?.createdTime).toRelative()}
+    </Popover>
+  );
 
-const LastModifiedCell = ({ account }: { account: SandboxAccount }) => (
-  <Popover
-    position="top"
-    dismissButton={false}
-    content={moment(account.meta?.lastEditTime).format("MM/DD/YYYY hh:mm:A")}
-  >
-    {moment(account.meta?.lastEditTime).fromNow()}
-  </Popover>
-);
+const LastModifiedCell = ({ account }: { account: SandboxAccount }) =>
+  account.meta?.lastEditTime && (
+    <Popover
+      position="top"
+      dismissButton={false}
+      content={DateTime.fromISO(account.meta?.lastEditTime).toFormat(
+        "MM/dd/yyyy hh:mm:a",
+      )}
+    >
+      {DateTime.fromISO(account.meta?.lastEditTime).toRelative()}
+    </Popover>
+  );
 
 const AccessCell = ({ account }: { account: SandboxAccount }) => (
   <AccountLoginLink accountId={account.awsAccountId} />
@@ -88,13 +96,17 @@ const createColumnDefinitions = (includeLinks: boolean) =>
     {
       id: "createdOn",
       header: "Added",
-      sortingField: "createdOn",
+      sortingComparator: createDateSortingComparator<SandboxAccount>(
+        (a) => a.meta?.createdTime,
+      ),
       cell: (account: SandboxAccount) => <CreatedOnCell account={account} />,
     },
     {
       id: "lastModifiedOn",
       header: "Last Modified",
-      sortingField: "lastModifiedOn",
+      sortingComparator: createDateSortingComparator<SandboxAccount>(
+        (a) => a.meta?.lastEditTime,
+      ),
       cell: (account: SandboxAccount) => <LastModifiedCell account={account} />,
     },
     {
@@ -117,24 +129,33 @@ const createColumnDefinitions = (includeLinks: boolean) =>
 type EjectModalProps = {
   selectedAccounts: SandboxAccount[];
   ejectAccount: (accountId: string) => Promise<any>;
-  navigate: (path: string) => void;
+  queryClient: any;
+  setSelectedAccounts: React.Dispatch<React.SetStateAction<SandboxAccount[]>>;
 };
 
 const EjectModalContent = ({
   selectedAccounts,
   ejectAccount,
-  navigate,
+  queryClient,
+  setSelectedAccounts,
 }: EjectModalProps) => (
   <BatchActionReview
     items={selectedAccounts}
     description={`${selectedAccounts.length} account(s) to eject`}
     columnDefinitions={createColumnDefinitions(false)}
     identifierKey="awsAccountId"
+    sequential
     onSubmit={async (account: SandboxAccount) => {
       await ejectAccount(account.awsAccountId);
+      setSelectedAccounts((prev) =>
+        prev.filter((a) => a.awsAccountId !== account.awsAccountId),
+      );
     }}
     onSuccess={() => {
-      navigate("/accounts");
+      queryClient.invalidateQueries({
+        queryKey: ["accounts"],
+        refetchType: "all",
+      });
       showSuccessToast(
         "Account(s) were successfully ejected from the account pool.",
       );
@@ -151,24 +172,33 @@ const EjectModalContent = ({
 type CleanupModalProps = {
   selectedAccounts: SandboxAccount[];
   cleanupAccount: (accountId: string) => Promise<any>;
-  navigate: (path: string) => void;
+  queryClient: any;
+  setSelectedAccounts: React.Dispatch<React.SetStateAction<SandboxAccount[]>>;
 };
 
 const CleanupModalContent = ({
   selectedAccounts,
   cleanupAccount,
-  navigate,
+  queryClient,
+  setSelectedAccounts,
 }: CleanupModalProps) => (
   <BatchActionReview
     items={selectedAccounts}
     description={`${selectedAccounts.length} account(s) to retry cleanup`}
     columnDefinitions={createColumnDefinitions(false)}
     identifierKey="awsAccountId"
+    sequential
     onSubmit={async (account: SandboxAccount) => {
       await cleanupAccount(account.awsAccountId);
+      setSelectedAccounts((prev) =>
+        prev.filter((a) => a.awsAccountId !== account.awsAccountId),
+      );
     }}
     onSuccess={() => {
-      navigate("/accounts");
+      queryClient.invalidateQueries({
+        queryKey: ["accounts"],
+        refetchType: "all",
+      });
       showSuccessToast("Account(s) were successfully sent to retry cleanup");
     }}
     onError={() =>
@@ -189,10 +219,17 @@ export const ListAccounts = () => {
   // modal hook
   const { showModal } = useModal();
 
+  // query client
+  const queryClient = useQueryClient();
+
   // api hooks
   const { data: accounts, isFetching, refetch } = useGetAccounts();
-  const { mutateAsync: ejectAccount } = useEjectAccount();
-  const { mutateAsync: cleanupAccount } = useCleanupAccount();
+  const { mutateAsync: ejectAccount } = useEjectAccount({
+    skipInvalidation: true,
+  });
+  const { mutateAsync: cleanupAccount } = useCleanupAccount({
+    skipInvalidation: true,
+  });
 
   // state
   const [filter, setFilter] = useState<SandboxAccountStatus>();
@@ -230,7 +267,8 @@ export const ListAccounts = () => {
         <EjectModalContent
           selectedAccounts={selectedAccounts}
           ejectAccount={ejectAccount}
-          navigate={navigate}
+          queryClient={queryClient}
+          setSelectedAccounts={setSelectedAccounts}
         />
       ),
       size: "max",
@@ -244,7 +282,8 @@ export const ListAccounts = () => {
         <CleanupModalContent
           selectedAccounts={selectedAccounts}
           cleanupAccount={cleanupAccount}
-          navigate={navigate}
+          queryClient={queryClient}
+          setSelectedAccounts={setSelectedAccounts}
         />
       ),
       size: "max",
@@ -258,6 +297,7 @@ export const ListAccounts = () => {
 
   return (
     <ContentLayout
+      disablePadding
       header={
         <Header
           variant="h1"

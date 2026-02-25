@@ -2,14 +2,17 @@
 // SPDX-License-Identifier: Apache-2.0
 import { z } from "zod";
 
-import { FreeTextSchema } from "@amzn/innovation-sandbox-commons/data/common-schemas.js";
 import {
   createItemWithMetadataSchema,
   createVersionRangeSchema,
 } from "@amzn/innovation-sandbox-commons/data/metadata.js";
+import {
+  enumErrorMap,
+  FreeTextSchema,
+} from "@amzn/innovation-sandbox-commons/utils/zod.js";
 
 // IMPORTANT -- this value must be updated whenever the schema changes.
-export const LeaseTemplateSchemaVersion = 2; // v1.1.0
+export const LeaseTemplateSchemaVersion = 3; // v1.2.0 - Added blueprintId support
 
 // Define supported version range for backwards compatibility
 const LeaseTemplateSupportedVersionsSchema = createVersionRangeSchema(
@@ -22,9 +25,13 @@ const LeaseTemplateItemWithMetadataSchema = createItemWithMetadataSchema(
   LeaseTemplateSupportedVersionsSchema,
 );
 
-export const ThresholdActionSchema = z.enum(["ALERT", "FREEZE_ACCOUNT"]);
+export const ThresholdActionSchema = z.enum(["ALERT", "FREEZE_ACCOUNT"], {
+  errorMap: enumErrorMap,
+});
 
-export const VisibilitySchema = z.enum(["PUBLIC", "PRIVATE"]);
+export const VisibilitySchema = z.enum(["PUBLIC", "PRIVATE"], {
+  errorMap: enumErrorMap,
+});
 
 export const BudgetThresholdSchema = z
   .object({
@@ -63,6 +70,8 @@ export const LeaseTemplateSchema = z
     createdBy: z.string().email(),
     visibility: VisibilitySchema.default("PUBLIC"),
     costReportGroup: z.string().min(1).max(50).optional(),
+    blueprintId: z.string().uuid().nullable().optional(), // References attached blueprint (null = no blueprint, undefined = field removed by DynamoDB transformation)
+    blueprintName: z.string().nullable().optional(), // Resolved from blueprint store on create/update (not client-provided)
   })
   .merge(BudgetConfigSchema)
   .merge(DurationConfigSchema)

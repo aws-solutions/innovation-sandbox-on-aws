@@ -3,7 +3,6 @@
 
 import { SubscribedEmailEvents } from "@amzn/innovation-sandbox-commons/isb-services/notification/email-events";
 import { EmailNotificationEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/email-notification-lambda-environment.js";
-import { sharedIdcSsmParamName } from "@amzn/innovation-sandbox-commons/types/isb-types";
 import { addAppConfigExtensionLayer } from "@amzn/innovation-sandbox-infrastructure/components/config/app-config-lambda-extension";
 import { EventsToLambda } from "@amzn/innovation-sandbox-infrastructure/components/events-to-lambda";
 import { IsbLambdaFunction } from "@amzn/innovation-sandbox-infrastructure/components/isb-lambda-function";
@@ -69,6 +68,8 @@ export class EmailNotificationLambda extends Construct {
         INTERMEDIATE_ROLE_ARN: IntermediateRole.getRoleArn(),
         IDC_ROLE_ARN: getIdcRoleArn(scope, props.namespace, props.idcAccountId),
         ISB_NAMESPACE: props.namespace,
+        IDC_CONFIG_PARAM_ARN:
+          IsbComputeStack.sharedSpokeConfig.parameterArns.idcConfigParamArn,
       },
       logGroup: IsbComputeResources.globalLogGroup,
       envSchema: EmailNotificationEnvironmentSchema,
@@ -78,8 +79,7 @@ export class EmailNotificationLambda extends Construct {
     IntermediateRole.addTrustedRole(lambda.lambdaFunction.role! as Role);
     grantIsbSsmParameterRead(
       lambda.lambdaFunction.role! as Role,
-      sharedIdcSsmParamName(props.namespace),
-      props.idcAccountId,
+      IsbComputeStack.sharedSpokeConfig.parameterArns.idcConfigParamArn,
     );
     grantIsbAppConfigRead(scope, lambda, globalConfigConfigurationProfileId);
     addAppConfigExtensionLayer(lambda);

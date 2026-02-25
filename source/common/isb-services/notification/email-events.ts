@@ -10,6 +10,7 @@ export const SubscribedEmailEvents = [
   EventDetailTypes.LeaseTerminated,
   EventDetailTypes.LeaseFrozen,
   EventDetailTypes.LeaseUnfrozen,
+  EventDetailTypes.LeaseProvisioningFailed,
   EventDetailTypes.AccountCleanupFailure,
   EventDetailTypes.AccountDriftDetected,
   EventDetailTypes.LeaseBudgetThresholdBreachedAlert,

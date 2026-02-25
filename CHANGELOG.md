@@ -5,6 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-02-25
+
+### Added
+
+- Blueprint management for registering, configuring, and tracking CloudFormation StackSets as reusable infrastructure templates ([#34](https://github.com/aws-solutions/innovation-sandbox-on-aws/issues/34))
+  - Configurable deployment strategies with region targeting, concurrency controls, and failure tolerance
+  - Automated blueprint deployment to sandbox accounts during lease provisioning, orchestrated through AWS Step Functions
+  - `Provisioning` and `ProvisioningFailed` lease statuses to track blueprint deployment progress during lease approval
+  - Deployment history per blueprint with health metrics (successful deployments, deployment history, last deployment time)
+  - Blueprint management UI with registration wizard, detail view, deployment history visualization, and editing for basic details and deployment configuration
+  - Blueprint association on lease templates, allowing administrators to attach or detach blueprints during template creation or update
+- Dedicated detail and edit pages for leases and lease templates covering duration, budget, cost report, and blueprint settings
+- Version update alert in the navigation bar when a newer version of the solution is available ([#45](https://github.com/aws-solutions/innovation-sandbox-on-aws/issues/45))
+- AWS WAF logging to Amazon CloudWatch Logs and alarm on blocked requests
+- Validation that the `InnovationSandbox-<namespace>-SandboxAccountRole` role exists in a sandbox account before starting cleanup, reducing unnecessary cleanup attempts
+
+### Fixed
+
+- Sorting on date and status columns in frontend tables by adding dedicated sorting comparators
+- Cross-stack reference issue where updates to the account pool stack were not reflected in the compute stack due to deploy-time resolution
+
+### Changed
+
+- Lease approval workflow now supports two paths: immediate access (no blueprint) or deferred access after blueprint deployment completes
+- Miscellaneous UX improvements to the frontend application
+
+### Security
+
+- Added JWT signature verification at Lambda middleware layer to prevent authentication bypass when API Gateway is bypassed ([#93](https://github.com/aws-solutions/innovation-sandbox-on-aws/issues/93))
+- Upgraded `fast-xml-parser` to mitigate:
+  - [CVE-2026-25896](https://nvd.nist.gov/vuln/detail/CVE-2026-25896)
+  - [CVE-2026-26278](https://nvd.nist.gov/vuln/detail/CVE-2026-26278)
+- Upgraded `ajv` to mitigate [CVE-2025-69873](https://nvd.nist.gov/vuln/detail/CVE-2025-69873)
+- Upgraded `qs` to mitigate [CVE-2026-2391](https://nvd.nist.gov/vuln/detail/CVE-2026-2391)
+
 ## [1.1.8] - 2026-02-04
 
 ### Security

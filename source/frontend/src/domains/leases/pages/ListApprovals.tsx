@@ -5,18 +5,21 @@ import { Table } from "@aws-northstar/ui";
 import {
   Button,
   ButtonDropdown,
-  ContentLayout,
   Header,
   SpaceBetween,
 } from "@cloudscape-design/components";
-import moment from "moment";
+import { useQueryClient } from "@tanstack/react-query";
+import { DateTime } from "luxon";
 import { useEffect, useState } from "react";
 
+import { TextLink } from "@amzn/innovation-sandbox-frontend/components/TextLink";
+
 import { LeaseWithLeaseId as Lease } from "@amzn/innovation-sandbox-commons/data/lease/lease";
+import { useAppLayoutContext } from "@amzn/innovation-sandbox-frontend/components/AppLayout/AppLayoutContext";
+import { ContentLayout } from "@amzn/innovation-sandbox-frontend/components/ContentLayout";
 import { InfoLink } from "@amzn/innovation-sandbox-frontend/components/InfoLink";
 import { Markdown } from "@amzn/innovation-sandbox-frontend/components/Markdown";
 import { BatchActionReview } from "@amzn/innovation-sandbox-frontend/components/MultiSelectTableActionReview";
-import { TextLink } from "@amzn/innovation-sandbox-frontend/components/TextLink";
 import {
   showErrorToast,
   showSuccessToast,
@@ -25,13 +28,14 @@ import {
   useGetPendingApprovals,
   useReviewLease,
 } from "@amzn/innovation-sandbox-frontend/domains/leases/hooks";
+import { createDateSortingComparator } from "@amzn/innovation-sandbox-frontend/helpers/date-sorting-comparator";
 import { useBreadcrumb } from "@amzn/innovation-sandbox-frontend/hooks/useBreadcrumb";
 import { useModal } from "@amzn/innovation-sandbox-frontend/hooks/useModal";
-import { useAppLayoutContext } from "@aws-northstar/ui/components/AppLayout";
 
-const DateRequestedCell = ({ lease }: { lease: Lease }) => (
-  <>{moment(lease.meta?.createdTime).fromNow()}</>
-);
+const DateRequestedCell = ({ lease }: { lease: Lease }) =>
+  lease.meta?.createdTime
+    ? DateTime.fromISO(lease.meta.createdTime).toRelative()
+    : undefined;
 
 const CommentsCell = ({ lease }: { lease: Lease }) => <>{lease.comments}</>;
 
@@ -53,13 +57,15 @@ type ReviewModalContentProps = {
   selectedRequests: Lease[];
   mode: "approve" | "deny";
   reviewLease: (params: { leaseId: string; approve: boolean }) => Promise<any>;
+  queryClient: any;
+  setSelectedRequests: React.Dispatch<React.SetStateAction<Lease[]>>;
 };
 
 const createColumnDefinitions = (includeLinks: boolean) => [
   {
     id: "requestor",
     header: "Requested by",
-    sortingField: "requestor.name",
+    sortingField: "userEmail",
     cell: (
       lease: Lease, // NOSONAR typescript:S6478 - the way the table component works requires defining component during render
     ) => <RequestorCell lease={lease} includeLinks={includeLinks} />,
@@ -73,7 +79,9 @@ const createColumnDefinitions = (includeLinks: boolean) => [
   {
     id: "dateRequested",
     header: "Requested",
-    sortingField: "dateRequested",
+    sortingComparator: createDateSortingComparator<Lease>(
+      (a) => a.meta?.createdTime,
+    ),
     cell: (lease: Lease) => <DateRequestedCell lease={lease} />, // NOSONAR typescript:S6478 - the way the table component works requires defining component during render
   },
   {
@@ -88,6 +96,8 @@ const ReviewModalContent = ({
   selectedRequests,
   mode,
   reviewLease,
+  queryClient,
+  setSelectedRequests,
 }: ReviewModalContentProps) => {
   return (
     <BatchActionReview
@@ -95,13 +105,21 @@ const ReviewModalContent = ({
       description={`${selectedRequests.length} lease request(s) to review`}
       columnDefinitions={createColumnDefinitions(false)}
       identifierKey="leaseId"
+      sequential
       onSubmit={async (lease: Lease) => {
         await reviewLease({
           leaseId: lease.leaseId,
           approve: mode === "approve",
         });
+        setSelectedRequests((prev) =>
+          prev.filter((r) => r.leaseId !== lease.leaseId),
+        );
       }}
       onSuccess={() => {
+        queryClient.invalidateQueries({
+          queryKey: ["leases"],
+          refetchType: "all",
+        });
         showSuccessToast(
           mode === "approve"
             ? "Lease request(s) were successfully approved."
@@ -126,12 +144,17 @@ export const ListApprovals = () => {
   // modal hook
   const { showModal } = useModal();
 
+  // query client
+  const queryClient = useQueryClient();
+
   // state
   const [selectedRequests, setSelectedRequests] = useState<Lease[]>([]);
 
   // api hooks
   const { data: requests, isFetching, refetch } = useGetPendingApprovals();
-  const { mutateAsync: reviewLease } = useReviewLease();
+  const { mutateAsync: reviewLease } = useReviewLease({
+    skipInvalidation: true,
+  });
 
   useEffect(() => {
     setBreadcrumb([
@@ -149,6 +172,8 @@ export const ListApprovals = () => {
           selectedRequests={selectedRequests}
           mode={mode}
           reviewLease={reviewLease}
+          queryClient={queryClient}
+          setSelectedRequests={setSelectedRequests}
         />
       ),
       size: "max",
@@ -162,6 +187,7 @@ export const ListApprovals = () => {
 
   return (
     <ContentLayout
+      disablePadding
       header={
         <Header
           variant="h1"

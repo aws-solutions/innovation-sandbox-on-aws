@@ -20,7 +20,8 @@
     "baseUrl": ".",
     "paths": {
       "@amzn/innovation-sandbox-configurations/*": ["src/*"],
-      "@amzn/innovation-sandbox-configurations/test/*": ["test/*"]
+      "@amzn/innovation-sandbox-configurations/test/*": ["test/*"],
+      "@amzn/innovation-sandbox-commons/*": ["../../../common/*"]
     }
   }
 }

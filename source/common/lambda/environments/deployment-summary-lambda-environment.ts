@@ -14,8 +14,8 @@ export const DeploymentSummaryLambdaEnvironmentSchema =
     ORG_MGT_ACCOUNT_ID: z.string(),
     ACCOUNT_TABLE_NAME: z.string(),
     ISB_NAMESPACE: z.string(),
-    SANDBOX_OU_ID: z.string(),
     LEASE_TEMPLATE_TABLE_NAME: z.string(),
+    BLUEPRINT_TABLE_NAME: z.string(),
     ORG_MGT_ROLE_ARN: z.string(),
     INTERMEDIATE_ROLE_ARN: z.string(),
     APP_CONFIG_APPLICATION_ID: z.string(),
@@ -24,6 +24,7 @@ export const DeploymentSummaryLambdaEnvironmentSchema =
     REPORTING_CONFIG_PROFILE_ID: z.string(),
     AWS_APPCONFIG_EXTENSION_PREFETCH_LIST: z.string(),
     IS_STABLE_TAGGING_ENABLED: z.string(),
+    ACCOUNT_POOL_CONFIG_PARAM_ARN: z.string(),
   });
 
 export type DeploymentSummaryLambdaEnvironment = z.infer<

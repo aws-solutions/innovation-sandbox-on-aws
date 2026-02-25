@@ -5,7 +5,7 @@ import { SandboxAccountStatus } from "@amzn/innovation-sandbox-commons/data/sand
 import { getColor } from "@amzn/innovation-sandbox-frontend/components/AccountsSummary/helpers";
 import { Box, Icon, Popover } from "@cloudscape-design/components";
 import { colorChartsStatusHigh } from "@cloudscape-design/design-tokens";
-import moment from "moment";
+import { DateTime } from "luxon";
 
 interface AccountStatusIndicatorProps {
   status: SandboxAccountStatus;
@@ -39,7 +39,10 @@ export const AccountStatusIndicator = ({
       );
 
     case "CleanUp": {
-      const hoursElapsed = moment().diff(moment(lastCleanupStartTime), "hours");
+      const hoursElapsed = DateTime.now().diff(
+        DateTime.fromISO(lastCleanupStartTime),
+        "hours",
+      ).hours;
       const isStale = hoursElapsed >= 24;
       const message = isStale
         ? "The cleanup process may be stuck, please retry."
@@ -55,7 +58,7 @@ export const AccountStatusIndicator = ({
             <div style={{ color }}>
               {message}
               <Box color={"inherit"} fontWeight={"heavy"}>
-                Cleanup initiated:{` ${moment(lastCleanupStartTime)}`}
+                Cleanup initiated:{` ${DateTime.fromISO(lastCleanupStartTime)}`}
               </Box>
             </div>
           }

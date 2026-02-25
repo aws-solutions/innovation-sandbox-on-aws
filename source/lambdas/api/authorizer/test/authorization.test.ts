@@ -402,6 +402,121 @@ describe("authorization", () => {
     },
   );
 
+  // Blueprint endpoint authorization tests
+  it.each([
+    { role: "Admin", authorized: true },
+    { role: "Manager", authorized: true },
+    { role: "User", authorized: false },
+  ] as const)(
+    "GET /blueprints authorization for $role -> expected: $authorized",
+    async ({ role, authorized }) => {
+      const methodArn = methodArnPrefix + "/GET/blueprints";
+      const testUser: IsbUser = {
+        ...testUserBase,
+        roles: [role],
+      };
+      const authorizationToken = jwt.sign({ user: testUser }, jwtSecret);
+      expect(
+        await isAuthorized({ methodArn, authorizationToken }, testContext),
+      ).toEqual(authorized);
+    },
+  );
+
+  it.each([
+    { role: "Admin", authorized: true },
+    { role: "Manager", authorized: false },
+    { role: "User", authorized: false },
+  ] as const)(
+    "POST /blueprints authorization for $role -> expected: $authorized",
+    async ({ role, authorized }) => {
+      const methodArn = methodArnPrefix + "/POST/blueprints";
+      const testUser: IsbUser = {
+        ...testUserBase,
+        roles: [role],
+      };
+      const authorizationToken = jwt.sign({ user: testUser }, jwtSecret);
+      expect(
+        await isAuthorized({ methodArn, authorizationToken }, testContext),
+      ).toEqual(authorized);
+    },
+  );
+
+  it.each([
+    { role: "Admin", authorized: true },
+    { role: "Manager", authorized: true },
+    { role: "User", authorized: false },
+  ] as const)(
+    "GET /blueprints/stacksets authorization for $role -> expected: $authorized",
+    async ({ role, authorized }) => {
+      const methodArn = methodArnPrefix + "/GET/blueprints/stacksets";
+      const testUser: IsbUser = {
+        ...testUserBase,
+        roles: [role],
+      };
+      const authorizationToken = jwt.sign({ user: testUser }, jwtSecret);
+      expect(
+        await isAuthorized({ methodArn, authorizationToken }, testContext),
+      ).toEqual(authorized);
+    },
+  );
+
+  it.each([
+    { role: "Admin", authorized: true },
+    { role: "Manager", authorized: true },
+    { role: "User", authorized: false },
+  ] as const)(
+    "GET /blueprints/{param} authorization for $role -> expected: $authorized",
+    async ({ role, authorized }) => {
+      const methodArn = methodArnPrefix + "/GET/blueprints/Blueprint101";
+      const testUser: IsbUser = {
+        ...testUserBase,
+        roles: [role],
+      };
+      const authorizationToken = jwt.sign({ user: testUser }, jwtSecret);
+      expect(
+        await isAuthorized({ methodArn, authorizationToken }, testContext),
+      ).toEqual(authorized);
+    },
+  );
+
+  it.each([
+    { role: "Admin", authorized: true },
+    { role: "Manager", authorized: false },
+    { role: "User", authorized: false },
+  ] as const)(
+    "PUT /blueprints/{param} authorization for $role -> expected: $authorized",
+    async ({ role, authorized }) => {
+      const methodArn = methodArnPrefix + "/PUT/blueprints/Blueprint101";
+      const testUser: IsbUser = {
+        ...testUserBase,
+        roles: [role],
+      };
+      const authorizationToken = jwt.sign({ user: testUser }, jwtSecret);
+      expect(
+        await isAuthorized({ methodArn, authorizationToken }, testContext),
+      ).toEqual(authorized);
+    },
+  );
+
+  it.each([
+    { role: "Admin", authorized: true },
+    { role: "Manager", authorized: false },
+    { role: "User", authorized: false },
+  ] as const)(
+    "DELETE /blueprints/{param} authorization for $role -> expected: $authorized",
+    async ({ role, authorized }) => {
+      const methodArn = methodArnPrefix + "/DELETE/blueprints/Blueprint101";
+      const testUser: IsbUser = {
+        ...testUserBase,
+        roles: [role],
+      };
+      const authorizationToken = jwt.sign({ user: testUser }, jwtSecret);
+      expect(
+        await isAuthorized({ methodArn, authorizationToken }, testContext),
+      ).toEqual(authorized);
+    },
+  );
+
   it("should not authorize if token is invalid", async () => {
     const methodArn = methodArnPrefix + "/GET/leases";
     const authorizationToken = "invalid token";

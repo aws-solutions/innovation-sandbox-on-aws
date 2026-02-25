@@ -19,6 +19,15 @@ export function nowAsIsoDatetimeString() {
   return now().toISO();
 }
 
+export function calculateDurationInMinutes(
+  startTimeIso: string,
+  endTime?: DateTime,
+): number {
+  const startTime = DateTime.fromISO(startTimeIso);
+  const end = endTime ?? DateTime.now();
+  return Math.round(end.diff(startTime, "minutes").minutes);
+}
+
 export function calculateTtlInEpochSeconds(ttlDays: number) {
   // DynamoDB expects ttl to be in epoch second format
   return Math.floor(DateTime.now().plus({ days: ttlDays }).valueOf() / 1000);

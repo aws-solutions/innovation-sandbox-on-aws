@@ -2,11 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 import { z } from "zod";
 
-import { AwsAccountIdSchema } from "@amzn/innovation-sandbox-commons/data/common-schemas.js";
 import {
   createItemWithMetadataSchema,
   createVersionRangeSchema,
 } from "@amzn/innovation-sandbox-commons/data/metadata.js";
+import {
+  AwsAccountIdSchema,
+  enumErrorMap,
+} from "@amzn/innovation-sandbox-commons/utils/zod.js";
 
 // IMPORTANT -- this value must be updated whenever the schema changes.
 export const SandboxAccountSchemaVersion = 1;
@@ -22,15 +25,12 @@ const SandboxAccountItemWithMetadataSchema = createItemWithMetadataSchema(
   SandboxAccountSupportedVersionsSchema,
 );
 
-export const IsbOuSchema = z.enum([
-  "Available",
-  "Active",
-  "CleanUp",
-  "Quarantine",
-  "Frozen",
-  "Entry",
-  "Exit",
-]);
+export const IsbOuSchema = z.enum(
+  ["Available", "Active", "CleanUp", "Quarantine", "Frozen", "Entry", "Exit"],
+  {
+    errorMap: enumErrorMap,
+  },
+);
 
 export const SandboxAccountStatusSchema = IsbOuSchema.exclude([
   "Entry",
