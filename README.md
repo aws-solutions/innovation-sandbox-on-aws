@@ -1,19 +1,14 @@
 # Innovation Sandbox on AWS
 
-## Solution Overview
+**[🚀 Solution Landing Page](https://aws.amazon.com/solutions/implementations/innovation-sandbox-on-aws)** | **[🚧 Feature request](https://github.com/aws-solutions/innovation-sandbox-on-aws/issues/new?assignees=&labels=enhancement&template=feature_request.md&title=)** | **[🐛 Bug Report](https://github.com/aws-solutions/innovation-sandbox-on-aws/issues/new?assignees=&labels=bug&template=bug_report.md&title=)**
 
-The Innovation Sandbox on AWS solution allows cloud administrators to set up and recycle temporary sandbox environments by automating
-the implementation of security and governance policies,spend management mechanisms, and account recycling preferences through a web user interface (UI).
-Using the solution, customers can empower their teams to experiment, learn, and innovate with AWS services in production-isolated AWS accounts that are recycled after use.
-
-To find out more about Innovation Sandbox on AWS visit our [AWS Solutions](https://aws.amazon.com/solutions/implementations/innovation-sandbox-on-aws)
-page.
+**Note:** If you want to use the solution without building from source, navigate to Solution Landing Page.
 
 ## Table of Contents
 
 - [Innovation Sandbox on AWS](#innovation-sandbox-on-aws)
-  - [Solution Overview](#solution-overview)
   - [Table of Contents](#table-of-contents)
+  - [Solution Overview](#solution-overview)
   - [Architecture](#architecture)
   - [Prerequisites](#prerequisites)
   - [Environment Variables](#environment-variables)
@@ -31,8 +26,18 @@ page.
   - [Pre-Commit](#pre-commit)
   - [Collection of Operational Metrics](#collection-of-operational-metrics)
   - [License](#license)
-  - [Contact Information](#contact-information)
   - [Additional Resources](#additional-resources)
+
+## Solution Overview
+
+The Innovation Sandbox on AWS solution allows cloud administrators to set up and recycle temporary sandbox environments by automating
+the implementation of security and governance policies, spend management mechanisms, and account recycling preferences through a web user interface (UI).
+Using the solution, customers can empower their teams to experiment, learn, and innovate with AWS services in production-isolated AWS accounts that are recycled after use.
+
+Administrators can register self-managed CloudFormation StackSets as blueprints to automatically deploy pre-configured infrastructure when provisioning sandbox accounts. Users receive accounts with ready-to-use resources, tools, and configurations, reducing setup time from hours to minutes.
+
+To find out more about Innovation Sandbox on AWS visit our [AWS Solutions](https://aws.amazon.com/solutions/implementations/innovation-sandbox-on-aws)
+page.
 
 ## Architecture
 
@@ -230,17 +235,11 @@ or in the "[LICENSE](./LICENSE)" file accompanying this file. This file is distr
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, express or implied. See the License for the
 specific language governing permissions and limitations under the License.
 
-## Contact Information
-
-For questions or feedback about this solution, please contact:
-
-- AWS Solutions: [aws-solutions@amazon.com](mailto:aws-solutions@amazon.com)
-- GitHub Issues: Submit questions or issues through the [GitHub repository issues page](https://github.com/aws-solutions/innovation-sandbox-on-aws/issues)
-
 ## Additional Resources
 
 - [AWS Solutions Library](https://aws.amazon.com/solutions/)
 - [AWS CloudFormation Documentation](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/Welcome.html)
+- [AWS CloudFormation StackSets Documentation](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/what-is-cfnstacksets.html)
 - [AWS CDK Documentation](https://docs.aws.amazon.com/cdk/v2/guide/home.html)
 - [AWS Account Management](https://docs.aws.amazon.com/accounts/latest/reference/accounts-welcome.html)
 - [AWS Nuke Repository](https://github.com/ekristen/aws-nuke)

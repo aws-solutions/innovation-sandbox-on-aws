@@ -4,6 +4,7 @@ import { Logger } from "@aws-lambda-powertools/logger";
 import { Tracer } from "@aws-lambda-powertools/tracer";
 import type { Context } from "aws-lambda";
 
+import { BlueprintStore } from "@amzn/innovation-sandbox-commons/data/blueprint/blueprint-store.js";
 import {
   collect,
   stream,
@@ -22,7 +23,13 @@ import {
   isbReportingConfigMiddleware,
 } from "@amzn/innovation-sandbox-commons/lambda/middleware/isb-config-middleware.js";
 import { SubscribableLog } from "@amzn/innovation-sandbox-commons/observability/log-types.js";
+import { IsbClients } from "@amzn/innovation-sandbox-commons/sdk-clients/index.js";
 import { fromTemporaryIsbOrgManagementCredentials } from "@amzn/innovation-sandbox-commons/utils/cross-account-roles.js";
+import { getCloudFormationTemplateServices } from "@amzn/innovation-sandbox-commons/utils/stack-set-parser.js";
+import {
+  CloudFormationClient,
+  GetTemplateSummaryCommand,
+} from "@aws-sdk/client-cloudformation";
 
 const tracer = new Tracer();
 const logger = new Logger({ serviceName: "HeartbeatMetrics" });
@@ -44,12 +51,28 @@ async function summarizeDeployment(
     ContextWithGlobalAndReportingConfig,
 ) {
   const leaseTemplateStore = IsbServices.leaseTemplateStore(context.env);
+  const blueprintStore = IsbServices.blueprintStore(context.env);
+  const cfnClient = IsbClients.cloudFormation(context.env);
+
+  const leaseTemplates = await collect(
+    stream(leaseTemplateStore, leaseTemplateStore.findAll, {}),
+  );
+
+  const blueprints = await collect(
+    stream(blueprintStore, blueprintStore.listBlueprints, {}),
+  );
 
   logger.info("ISB Deployment Summary", {
     logDetailType: "DeploymentSummary",
-    numLeaseTemplates: (
-      await collect(stream(leaseTemplateStore, leaseTemplateStore.findAll, {}))
+    numLeaseTemplates: leaseTemplates.length,
+    numLeaseTemplatesWithBlueprint: leaseTemplates.filter(
+      (template) => !!template.blueprintId,
     ).length,
+    numBlueprints: blueprints.length,
+    blueprintServiceCounts: await getBlueprintServiceCounts(
+      blueprintStore,
+      cfnClient,
+    ),
     config: {
       numCostReportGroups: context.reportingConfig.costReportGroups.length,
       requireMaxBudget: context.globalConfig.leases.requireMaxBudget,
@@ -91,4 +114,64 @@ async function summarizeAccountPool(context: {
     cleanup: (await orgsService.listAllAccountsInOU("CleanUp")).length,
     quarantine: (await orgsService.listAllAccountsInOU("Quarantine")).length,
   };
+}
+
+async function getBlueprintServiceCounts(
+  blueprintStore: BlueprintStore,
+  cfnClient: CloudFormationClient,
+): Promise<Record<string, number>> {
+  const serviceCounts: Record<string, number> = {};
+  try {
+    const blueprints = await collect(
+      stream(blueprintStore, blueprintStore.listBlueprints, {}),
+    );
+
+    const blueprintWithStackSets = await Promise.all(
+      blueprints.map((blueprint) =>
+        blueprintStore.get(blueprint.blueprint.blueprintId),
+      ),
+    );
+
+    const stackSetIds = blueprintWithStackSets.flatMap(
+      (blueprint) =>
+        blueprint.result?.stackSets?.map((stackSet) => stackSet.stackSetId) ??
+        [],
+    );
+
+    await Promise.all(
+      stackSetIds.map(async (stackSetId) => {
+        try {
+          const response = await cfnClient.send(
+            new GetTemplateSummaryCommand({
+              StackSetName: stackSetId,
+            }),
+          );
+
+          const resourceTypes = response.ResourceTypes ?? [];
+          if (resourceTypes.length === 0) {
+            return;
+          }
+
+          const templateServiceCounts =
+            getCloudFormationTemplateServices(resourceTypes);
+
+          Object.entries(templateServiceCounts).forEach(([service, count]) => {
+            serviceCounts[service] = (serviceCounts[service] || 0) + count;
+          });
+        } catch (error) {
+          logger.warn("Failed to analyze StackSet", {
+            stackSetId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }),
+    );
+
+    return serviceCounts;
+  } catch (error) {
+    logger.error("Failed to collect blueprint service counts", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return {};
+  }
 }

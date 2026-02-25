@@ -51,7 +51,7 @@ export function httpJsonBodyParser(): MiddlewareObj<
       throw createHttpJSendError({
         statusCode: 415,
         data: {
-          errors: [{ message: "Invalid or malformed JSON was provided." }],
+          errors: [{ message: "Invalid JSON in request body. Please check your JSON syntax." }],
         },
       });
     }

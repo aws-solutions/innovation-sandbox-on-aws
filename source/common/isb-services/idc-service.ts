@@ -11,7 +11,6 @@ import {
   User,
   paginateListGroupMembershipsForMember,
 } from "@aws-sdk/client-identitystore";
-import { GetParameterCommand, SSMClient } from "@aws-sdk/client-ssm";
 import {
   CreateAccountAssignmentCommand,
   DeleteAccountAssignmentCommand,
@@ -24,6 +23,8 @@ import {
 } from "@aws-sdk/client-sso-admin";
 
 import { PaginatedQueryResult } from "@amzn/innovation-sandbox-commons/data/common-types.js";
+import { IdcConfig } from "@amzn/innovation-sandbox-commons/data/idc-stack-config/idc-stack-config.js";
+import { IdcStackConfigStore } from "@amzn/innovation-sandbox-commons/data/idc-stack-config/ssm-idc-stack-config-store.js";
 import {
   cacheAdmins,
   cacheManagers,
@@ -35,10 +36,8 @@ import {
 import {
   IsbRole,
   IsbUser,
-  sharedIdcSsmParamName,
 } from "@amzn/innovation-sandbox-commons/types/isb-types.js";
 import { Transaction } from "@amzn/innovation-sandbox-commons/utils/transactions.js";
-import { IdcConfig } from "@amzn/innovation-sandbox-shared-json-param-parser/src/shared-json-param-parser-handler.js";
 import pThrottle from "p-throttle";
 
 // IDC supports 20 TPS for all requests
@@ -49,37 +48,24 @@ const throttle1PerSec = pThrottle({
 });
 
 export class IdcService {
-  readonly namespace;
   readonly identityStoreClient;
   readonly ssoAdminClient;
-  readonly ssmClient;
-  private idcConfig?: IdcConfig;
+  readonly idcStackConfigStore: IdcStackConfigStore;
   public static defaultPageSize = 50;
 
   constructor(props: {
-    namespace: string;
     identityStoreClient: IdentitystoreClient;
     ssoAdminClient: SSOAdminClient;
-    ssmClient: SSMClient;
+    idcStackConfigStore: IdcStackConfigStore;
   }) {
-    this.namespace = props.namespace;
     this.identityStoreClient = props.identityStoreClient;
     this.ssoAdminClient = props.ssoAdminClient;
-    this.ssmClient = props.ssmClient;
+    this.idcStackConfigStore = props.idcStackConfigStore;
   }
 
   private async getIdcConfig(): Promise<IdcConfig> {
-    if (!this.idcConfig) {
-      const command = new GetParameterCommand({
-        Name: sharedIdcSsmParamName(this.namespace),
-      });
-      const response = await this.ssmClient.send(command);
-      if (!response.Parameter?.Value) {
-        throw new Error("IDC configuration not found in SSM parameter store");
-      }
-      this.idcConfig = JSON.parse(response.Parameter.Value) as IdcConfig;
-    }
-    return this.idcConfig;
+    // SSMProvider in the store already caches for 5 minutes
+    return this.idcStackConfigStore.get();
   }
 
   private isbUserFromIdcUser(user: User, roles?: IsbRole[]): IsbUser {

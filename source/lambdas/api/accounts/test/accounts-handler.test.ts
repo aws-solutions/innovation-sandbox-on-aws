@@ -45,6 +45,11 @@ import {
   bulkStubEnv,
   mockAppConfigMiddleware,
 } from "@amzn/innovation-sandbox-commons/test/lambdas/utils.js";
+import {
+  GetSecretValueCommand,
+  SecretsManagerClient,
+} from "@aws-sdk/client-secrets-manager";
+import { mockClient } from "aws-sdk-client-mock";
 
 const testEnv = generateSchemaData(AccountLambdaEnvironmentSchema, {
   ORG_MGT_ACCOUNT_ID: "000000000000",
@@ -53,6 +58,7 @@ const testEnv = generateSchemaData(AccountLambdaEnvironmentSchema, {
 });
 let mockedGlobalConfig: GlobalConfig;
 let handler: typeof import("@amzn/innovation-sandbox-accounts/accounts-handler.js").handler;
+const secretsManagerMock = mockClient(SecretsManagerClient);
 
 beforeAll(async () => {
   handler = (
@@ -65,10 +71,17 @@ beforeAll(async () => {
 beforeEach(() => {
   bulkStubEnv(testEnv);
   mockAppConfigMiddleware(mockedGlobalConfig);
+
+  // Mock Secrets Manager to return JWT secret
+  secretsManagerMock.on(GetSecretValueCommand).resolves({
+    SecretString: "testSecret",
+  });
 });
+
 afterEach(() => {
   vi.unstubAllEnvs();
   vi.resetAllMocks();
+  secretsManagerMock.reset();
 });
 
 describe("Accounts Handler", () => {
@@ -290,7 +303,8 @@ describe("Accounts Handler", () => {
       expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
         statusCode: 415,
         body: createFailureResponseBody({
-          message: "Invalid or malformed JSON was provided.",
+          message:
+            "Invalid JSON in request body. Please check your JSON syntax.",
         }),
         headers: responseHeaders,
       });

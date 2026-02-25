@@ -27,20 +27,20 @@ import {
   ExecutionDoesNotExist,
   SFNClient,
 } from "@aws-sdk/client-sfn";
+import { GetCallerIdentityCommand, STSClient } from "@aws-sdk/client-sts";
 import { mockClient } from "aws-sdk-client-mock";
 
 const testEnv = generateSchemaData(InitializeCleanupLambdaEnvironmentSchema);
 let handler: typeof import("@amzn/innovation-sandbox-initialize-cleanup/initialize-cleanup-handler.js").handler;
 const sfnClient = mockClient(SFNClient);
+const stsClient = mockClient(STSClient);
 const mockedGlobalConfig = generateSchemaData(GlobalConfigSchema);
 
 beforeAll(async () => {
   bulkStubEnv(testEnv);
 
   handler = (
-    await import(
-      "@amzn/innovation-sandbox-initialize-cleanup/initialize-cleanup-handler.js"
-    )
+    await import("@amzn/innovation-sandbox-initialize-cleanup/initialize-cleanup-handler.js")
   ).handler;
 });
 
@@ -51,6 +51,7 @@ beforeEach(() => {
 
 afterEach(() => {
   sfnClient.reset();
+  stsClient.reset();
   vi.resetAllMocks();
   vi.unstubAllEnvs();
 });
@@ -110,6 +111,11 @@ describe("InitializeCleanup Handler", async () => {
       });
 
     sfnClient.on(DescribeExecutionCommand).resolves({ status: "SUCCEEDED" });
+    stsClient.on(GetCallerIdentityCommand).resolves({
+      Account: mockedAccount.awsAccountId,
+      UserId: "test-user",
+      Arn: `arn:aws:iam::${mockedAccount.awsAccountId}:role/${testEnv.CLEANUP_SPOKE_ROLE_NAME}`,
+    });
 
     expect(
       await handler(event, mockContext(testEnv, mockedGlobalConfig)),
@@ -143,6 +149,10 @@ describe("InitializeCleanup Handler", async () => {
       });
 
     sfnClient.on(DescribeExecutionCommand).resolves({ status: "RUNNING" });
+    // STS client should not be called when cleanup is already in progress
+    stsClient
+      .on(GetCallerIdentityCommand)
+      .rejects(new Error("Should not be called"));
 
     expect(
       await handler(event, mockContext(testEnv, mockedGlobalConfig)),
@@ -189,6 +199,12 @@ describe("InitializeCleanup Handler", async () => {
         $metadata: {},
       }),
     );
+
+    stsClient.on(GetCallerIdentityCommand).resolves({
+      Account: mockedAccount.awsAccountId,
+      UserId: "test-user",
+      Arn: `arn:aws:iam::${mockedAccount.awsAccountId}:role/${testEnv.CLEANUP_SPOKE_ROLE_NAME}`,
+    });
 
     expect(
       await handler(event, mockContext(testEnv, mockedGlobalConfig)),
@@ -245,6 +261,10 @@ describe("InitializeCleanup Handler", async () => {
         });
 
       sfnClient.on(DescribeExecutionCommand).resolves({ status: "SUCCEEDED" });
+      // STS client should not be called for control plane accounts
+      stsClient
+        .on(GetCallerIdentityCommand)
+        .rejects(new Error("Should not be called"));
 
       await expect(
         handler(event, mockContext(testEnv, mockedGlobalConfig)),
@@ -257,4 +277,114 @@ describe("InitializeCleanup Handler", async () => {
       expect(sfnClient.calls()).toHaveLength(0);
     },
   );
+
+  it("should throw error when cleanup spoke role cannot be assumed", async () => {
+    const mockedAccount = generateSchemaData(SandboxAccountSchema, {
+      status: "CleanUp",
+      cleanupExecutionContext: undefined,
+    });
+
+    const event: InitializeCleanupLambdaEvent = {
+      accountId: mockedAccount.awsAccountId,
+      cleanupExecutionContext: {
+        stateMachineExecutionArn:
+          "arn:aws:states:us-east-1:000000000000:execution:00000000-0000-0000-0000-000000000000:00000000-0000-0000-0000-000000000000",
+        stateMachineExecutionStartTime: "2024-01-01T00:00:00.000Z",
+      },
+    };
+
+    const getAccountSpy = vi
+      .spyOn(DynamoSandboxAccountStore.prototype, "get")
+      .mockResolvedValue({
+        result: mockedAccount,
+      });
+
+    const putAccountSpy = vi
+      .spyOn(DynamoSandboxAccountStore.prototype, "put")
+      .mockResolvedValue({
+        newItem: {
+          ...mockedAccount,
+          cleanupExecutionContext: event.cleanupExecutionContext,
+        },
+        oldItem: mockedAccount,
+      });
+
+    sfnClient.on(DescribeExecutionCommand).resolves({ status: "SUCCEEDED" });
+
+    // Simulate role not existing or not assumable
+    stsClient
+      .on(GetCallerIdentityCommand)
+      .rejects(
+        new Error(
+          "AccessDenied: User is not authorized to perform: sts:AssumeRole",
+        ),
+      );
+
+    const expectedRoleArn = `arn:aws:iam::${mockedAccount.awsAccountId}:role/${testEnv.CLEANUP_SPOKE_ROLE_NAME}`;
+
+    await expect(
+      handler(event, mockContext(testEnv, mockedGlobalConfig)),
+    ).rejects.toThrow(
+      `Cleanup spoke role ${expectedRoleArn} not found in account ${event.accountId}`,
+    );
+
+    expect(getAccountSpy).toHaveBeenCalledOnce();
+    expect(putAccountSpy).not.toHaveBeenCalled();
+  });
+
+  it("should throw error when account is not found in database", async () => {
+    const event: InitializeCleanupLambdaEvent = {
+      accountId: "999999999999",
+      cleanupExecutionContext: {
+        stateMachineExecutionArn:
+          "arn:aws:states:us-east-1:000000000000:execution:00000000-0000-0000-0000-000000000000:00000000-0000-0000-0000-000000000000",
+        stateMachineExecutionStartTime: "2024-01-01T00:00:00.000Z",
+      },
+    };
+
+    const getAccountSpy = vi
+      .spyOn(DynamoSandboxAccountStore.prototype, "get")
+      .mockResolvedValue({
+        result: undefined,
+      });
+
+    await expect(
+      handler(event, mockContext(testEnv, mockedGlobalConfig)),
+    ).rejects.toThrow("Unable to find account.");
+
+    expect(getAccountSpy).toHaveBeenCalledOnce();
+  });
+
+  it("should re-throw unexpected errors from Step Functions DescribeExecution", async () => {
+    const mockedAccount = generateSchemaData(SandboxAccountSchema, {
+      status: "CleanUp",
+      cleanupExecutionContext: {
+        stateMachineExecutionArn:
+          "arn:aws:states:us-east-1:000000000000:execution:00000000-0000-0000-0000-000000000000:old-execution-id",
+        stateMachineExecutionStartTime: "2024-01-01T00:00:00.000Z",
+      },
+    });
+
+    const event: InitializeCleanupLambdaEvent = {
+      accountId: mockedAccount.awsAccountId,
+      cleanupExecutionContext: mockedAccount.cleanupExecutionContext!,
+    };
+
+    const getAccountSpy = vi
+      .spyOn(DynamoSandboxAccountStore.prototype, "get")
+      .mockResolvedValue({
+        result: mockedAccount,
+      });
+
+    // Simulate an unexpected error (not ExecutionDoesNotExist)
+    const unexpectedError = new Error("InternalServerError");
+    unexpectedError.name = "InternalServerError";
+    sfnClient.on(DescribeExecutionCommand).rejects(unexpectedError);
+
+    await expect(
+      handler(event, mockContext(testEnv, mockedGlobalConfig)),
+    ).rejects.toThrow("InternalServerError");
+
+    expect(getAccountSpy).toHaveBeenCalledOnce();
+  });
 });

@@ -19,39 +19,58 @@ export const useGetUnregisteredAccounts = () => {
   });
 };
 
-export const useAddAccount = () => {
+export const useAddAccount = (options?: { skipInvalidation?: boolean }) => {
   const client = useQueryClient();
   return useMutation({
     mutationFn: async (awsAccountId: string) =>
       await new AccountService().addAccount(awsAccountId),
     onSuccess: () => {
-      client.invalidateQueries({ queryKey: ["accounts"], refetchType: "all" });
-      client.invalidateQueries({
-        queryKey: ["unregisteredAccounts"],
-        refetchType: "all",
-      });
+      // Only invalidate if skipInvalidation is not set
+      if (!options?.skipInvalidation) {
+        client.invalidateQueries({
+          queryKey: ["accounts"],
+          refetchType: "all",
+        });
+        client.invalidateQueries({
+          queryKey: ["unregisteredAccounts"],
+          refetchType: "all",
+        });
+      }
     },
   });
 };
 
-export const useEjectAccount = () => {
+export const useEjectAccount = (options?: { skipInvalidation?: boolean }) => {
   const client = useQueryClient();
   return useMutation({
     mutationFn: async (awsAccountId: string) =>
       await new AccountService().ejectAccount(awsAccountId),
     onSuccess: () => {
-      client.invalidateQueries({ queryKey: ["accounts"], refetchType: "all" });
-      client.invalidateQueries({ queryKey: ["leases"], refetchType: "all" });
+      // Only invalidate if skipInvalidation is not set
+      if (!options?.skipInvalidation) {
+        client.invalidateQueries({
+          queryKey: ["accounts"],
+          refetchType: "all",
+        });
+        client.invalidateQueries({ queryKey: ["leases"], refetchType: "all" });
+      }
     },
   });
 };
 
-export const useCleanupAccount = () => {
+export const useCleanupAccount = (options?: { skipInvalidation?: boolean }) => {
   const client = useQueryClient();
   return useMutation({
     mutationFn: async (awsAccountId: string) =>
       await new AccountService().cleanupAccount(awsAccountId),
-    onSuccess: () =>
-      client.invalidateQueries({ queryKey: ["accounts"], refetchType: "all" }),
+    onSuccess: () => {
+      // Only invalidate if skipInvalidation is not set
+      if (!options?.skipInvalidation) {
+        client.invalidateQueries({
+          queryKey: ["accounts"],
+          refetchType: "all",
+        });
+      }
+    },
   });
 };

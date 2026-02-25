@@ -1,6 +1,7 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+import { BlueprintStore } from "@amzn/innovation-sandbox-commons/data/blueprint/blueprint-store.js";
 import {
   PaginatedQueryResult,
   PutResult,
@@ -10,6 +11,7 @@ import { LeaseStore } from "@amzn/innovation-sandbox-commons/data/lease/lease-st
 import { Lease } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
 import { SandboxAccountStore } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account-store.js";
 import { SandboxAccount } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account.js";
+import { BlueprintDeploymentService } from "@amzn/innovation-sandbox-commons/isb-services/blueprint-deployment-service.js";
 import { IdcService } from "@amzn/innovation-sandbox-commons/isb-services/idc-service.js";
 import { SandboxOuService } from "@amzn/innovation-sandbox-commons/isb-services/sandbox-ou-service.js";
 import { IsbEventBridgeClient } from "@amzn/innovation-sandbox-commons/sdk-clients/event-bridge-client.js";
@@ -96,6 +98,14 @@ export function mockedIsbEventBridge() {
   return createMockOf(IsbEventBridgeClient, {
     usingRealFunctions: ["sendIsbEvents"],
   });
+}
+
+export function mockedBlueprintStore() {
+  return createMockOf(BlueprintStore);
+}
+
+export function mockedBlueprintDeploymentService() {
+  return createMockOf(BlueprintDeploymentService);
 }
 
 export function mockTransaction<T>(returnValue: T): Transaction<T> {

@@ -2,18 +2,19 @@
 // SPDX-License-Identifier: Apache-2.0
 import { z } from "zod";
 
-import {
-  AwsAccountIdSchema,
-  FreeTextSchema,
-} from "@amzn/innovation-sandbox-commons/data/common-schemas.js";
 import { LeaseTemplateSchema } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template.js";
 import {
   createItemWithMetadataSchema,
   createVersionRangeSchema,
 } from "@amzn/innovation-sandbox-commons/data/metadata.js";
+import {
+  AwsAccountIdSchema,
+  enumErrorMap,
+  FreeTextSchema,
+} from "@amzn/innovation-sandbox-commons/utils/zod.js";
 
 // IMPORTANT -- this value must be updated whenever the schema changes.
-export const LeaseSchemaVersion = 2; //v1.1.0
+export const LeaseSchemaVersion = 3; //v1.2.0 - Added Provisioning and ProvisioningFailed statuses
 
 // Define supported version range for backwards compatibility
 const LeaseSupportedVersionsSchema = createVersionRangeSchema(
@@ -38,23 +39,39 @@ export const PendingLeaseStatusSchema = z.literal("PendingApproval");
 export const ApprovalDeniedLeaseStatusSchema = z.literal("ApprovalDenied");
 
 // Leases that are active and are being monitored
-export const MonitoredLeaseStatusSchema = z.enum(["Active", "Frozen"]);
+export const MonitoredLeaseStatusSchema = z.enum(
+  ["Active", "Frozen", "Provisioning"],
+  {
+    errorMap: enumErrorMap,
+  },
+);
 
 // Leases that are no longer active (terminal, no more actions should occur on these leases)
-export const ExpiredLeaseStatusSchema = z.enum([
-  "Expired",
-  "BudgetExceeded",
-  "ManuallyTerminated",
-  "AccountQuarantined",
-  "Ejected",
-]);
+export const ExpiredLeaseStatusSchema = z.enum(
+  [
+    "Expired",
+    "BudgetExceeded",
+    "ManuallyTerminated",
+    "AccountQuarantined",
+    "Ejected",
+    "ProvisioningFailed",
+  ],
+  {
+    errorMap: enumErrorMap,
+  },
+);
 
-export const AllLeaseStatusSchema = z.enum([
-  PendingLeaseStatusSchema.value,
-  ApprovalDeniedLeaseStatusSchema.value,
-  ...MonitoredLeaseStatusSchema.options,
-  ...ExpiredLeaseStatusSchema.options,
-]);
+export const AllLeaseStatusSchema = z.enum(
+  [
+    PendingLeaseStatusSchema.value,
+    ApprovalDeniedLeaseStatusSchema.value,
+    ...MonitoredLeaseStatusSchema.options,
+    ...ExpiredLeaseStatusSchema.options,
+  ],
+  {
+    errorMap: enumErrorMap,
+  },
+);
 
 export const LeaseKeySchema = z.object({
   userEmail: z.string().email(),
@@ -67,6 +84,8 @@ export const PendingLeaseSchema = LeaseKeySchema.extend({
   originalLeaseTemplateName: LeaseTemplateSchema.shape.name,
   comments: FreeTextSchema.optional(),
   createdBy: z.string().email().optional(),
+  blueprintId: z.string().uuid().nullable().optional(), // Copied from template for blueprint deployment
+  blueprintName: z.string().nullable().optional(), // Copied from blueprint for display/logging
 }).merge(
   LeaseTemplateSchema.pick({
     maxSpend: true,

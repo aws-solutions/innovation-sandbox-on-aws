@@ -15,6 +15,7 @@ import { LeaseBudgetThresholdTriggeredEventSchema } from "@amzn/innovation-sandb
 import { LeaseDeniedEventSchema } from "@amzn/innovation-sandbox-commons/events/lease-denied-event.js";
 import { LeaseExpirationAlertEventSchema } from "@amzn/innovation-sandbox-commons/events/lease-duration-threshold-breached-alert.js";
 import { LeaseFrozenEventSchema } from "@amzn/innovation-sandbox-commons/events/lease-frozen-event.js";
+import { LeaseProvisioningFailedEventSchema } from "@amzn/innovation-sandbox-commons/events/lease-provisioning-failed-event.js";
 import { LeaseRequestedEventSchema } from "@amzn/innovation-sandbox-commons/events/lease-requested-event.js";
 import { LeaseTerminatedEventSchema } from "@amzn/innovation-sandbox-commons/events/lease-terminated-event.js";
 import { LeaseUnfrozenEventSchema } from "@amzn/innovation-sandbox-commons/events/lease-unfrozen-event.js";
@@ -65,9 +66,7 @@ beforeAll(async () => {
   });
   mockedContext = mockContext(testEnv, mockedGlobalConfig);
   handler = (
-    await import(
-      "@amzn/innovation-sandbox-email-notification/email-notification-handler.js"
-    )
+    await import("@amzn/innovation-sandbox-email-notification/email-notification-handler.js")
   ).handler;
 });
 beforeEach(() => {
@@ -113,6 +112,10 @@ describe("email-notification-handler", () => {
     [EventDetailTypes.LeaseUnfrozen]: {
       eventName: EventDetailTypes.LeaseUnfrozen,
       schema: LeaseUnfrozenEventSchema,
+    },
+    [EventDetailTypes.LeaseProvisioningFailed]: {
+      eventName: EventDetailTypes.LeaseProvisioningFailed,
+      schema: LeaseProvisioningFailedEventSchema,
     },
     [EventDetailTypes.AccountCleanupFailure]: {
       eventName: EventDetailTypes.AccountCleanupFailure,

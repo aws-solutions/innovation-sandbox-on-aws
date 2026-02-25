@@ -7,6 +7,8 @@ import {
   Lease,
   LeaseStatus,
 } from "@amzn/innovation-sandbox-commons/data/lease/lease";
+import { getLeaseExpiryInfo } from "@amzn/innovation-sandbox-frontend/helpers/LeaseExpiryInfo";
+import { DateTime } from "luxon";
 
 // helper function to turn labels like "PendingApproval" into "Pending Approval"
 const splitCamelCase = (str: string): string => {
@@ -75,18 +77,36 @@ export const generateBreadcrumb = (
 export const leaseStatusSortingComparator = (a: Lease, b: Lease): number => {
   const statusOrder = {
     PendingApproval: 1,
-    Frozen: 2,
-    Active: 3,
-    Expired: 4,
-    BudgetExceeded: 5,
-    AccountQuarantined: 6,
-    ManuallyTerminated: 7,
-    Ejected: 8,
-    ApprovalDenied: 9,
+    Provisioning: 2,
+    Frozen: 3,
+    Active: 4,
+    Expired: 5,
+    BudgetExceeded: 6,
+    AccountQuarantined: 7,
+    ManuallyTerminated: 8,
+    Ejected: 9,
+    ApprovalDenied: 10,
+    ProvisioningFailed: 11,
   };
 
   const statusA = statusOrder[a.status] || Number.MAX_VALUE;
   const statusB = statusOrder[b.status] || Number.MAX_VALUE;
 
   return statusA - statusB;
+};
+
+const getExpirySortValue = (
+  info: ReturnType<typeof getLeaseExpiryInfo>,
+): number => {
+  if (info?.date) return DateTime.fromISO(String(info.date)).toMillis();
+  if (info?.durationInHours)
+    return DateTime.now().plus({ hours: info.durationInHours }).toMillis();
+  return Number.MAX_VALUE;
+};
+
+export const leaseExpirySortingComparator = (a: Lease, b: Lease): number => {
+  return (
+    getExpirySortValue(getLeaseExpiryInfo(a)) -
+    getExpirySortValue(getLeaseExpiryInfo(b))
+  );
 };

@@ -148,9 +148,9 @@ export function addParameterGroup(
   });
 }
 
-export class ConditionAspect<T extends new (...args: never[]) => CfnResource>
-  implements IAspect
-{
+export class ConditionAspect<
+  T extends new (...args: never[]) => CfnResource,
+> implements IAspect {
   constructor(
     private condition: CfnCondition,
     private resourceType?: T,

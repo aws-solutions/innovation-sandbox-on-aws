@@ -9,8 +9,6 @@ import { FC, useMemo } from "react";
 
 import { IsbUser } from "@amzn/innovation-sandbox-commons/types/isb-types";
 import { useAppContext } from "@amzn/innovation-sandbox-frontend/components/AppContext/context";
-import { spacerSvg } from "@amzn/innovation-sandbox-frontend/components/AppLayout/constants";
-import { useAppLayoutContext } from "@aws-northstar/ui/components/AppLayout";
 
 export interface NavHeaderProps {
   title: string;
@@ -28,7 +26,6 @@ export const NavHeader: FC<NavHeaderProps> = ({
   onExit,
 }) => {
   const { theme, density, setTheme, setDensity } = useAppContext();
-  const { setToolsOpen, setToolsHide } = useAppLayoutContext();
 
   const utilities: TopNavigationProps.Utility[] = useMemo(() => {
     const menu: TopNavigationProps.Utility[] = [
@@ -40,18 +37,19 @@ export const NavHeader: FC<NavHeaderProps> = ({
           {
             id: "theme",
             text: "Theme",
+            itemType: "group",
             items: [
               {
                 id: "theme.light",
                 text: "Light",
-                iconName: theme === Mode.Light ? "check" : undefined,
-                iconSvg: theme !== Mode.Light ? spacerSvg : undefined,
+                itemType: "checkbox",
+                checked: theme === Mode.Light,
               },
               {
                 id: "theme.dark",
                 text: "Dark",
-                iconName: theme === Mode.Dark ? "check" : undefined,
-                iconSvg: theme !== Mode.Dark ? spacerSvg : undefined,
+                itemType: "checkbox",
+                checked: theme === Mode.Dark,
               },
             ],
           },
@@ -62,15 +60,14 @@ export const NavHeader: FC<NavHeaderProps> = ({
               {
                 id: "density.comfortable",
                 text: "Comfortable",
-                iconName: density === Density.Comfortable ? "check" : undefined,
-                iconSvg:
-                  density !== Density.Comfortable ? spacerSvg : undefined,
+                itemType: "checkbox",
+                checked: density === Density.Comfortable,
               },
               {
                 id: "density.compact",
                 text: "Compact",
-                iconName: density === Density.Compact ? "check" : undefined,
-                iconSvg: density !== Density.Compact ? spacerSvg : undefined,
+                itemType: "checkbox",
+                checked: density === Density.Compact,
               },
             ],
           },
@@ -94,14 +91,6 @@ export const NavHeader: FC<NavHeaderProps> = ({
           }
         },
       },
-      {
-        type: "button",
-        iconName: "status-info",
-        onClick: () => {
-          setToolsHide(false);
-          setToolsOpen((prev) => !prev);
-        },
-      },
     ];
 
     if (user) {
@@ -121,21 +110,17 @@ export const NavHeader: FC<NavHeaderProps> = ({
   const topNavLogo = logo ? { src: logo, alt: title } : undefined;
 
   return (
-    <>
-      <div id="app-header">
-        <TopNavigation
-          utilities={utilities}
-          i18nStrings={{
-            overflowMenuTitleText: title,
-            overflowMenuTriggerText: title,
-          }}
-          identity={{
-            title: title,
-            href: href,
-            logo: topNavLogo,
-          }}
-        />
-      </div>
-    </>
+    <TopNavigation
+      utilities={utilities}
+      i18nStrings={{
+        overflowMenuTitleText: title,
+        overflowMenuTriggerText: title,
+      }}
+      identity={{
+        title: title,
+        href: href,
+        logo: topNavLogo,
+      }}
+    />
   );
 };

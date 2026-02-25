@@ -26,6 +26,7 @@ import { Asset } from "aws-cdk-lib/aws-s3-assets";
 import { ParameterTier } from "aws-cdk-lib/aws-ssm";
 import { Construct } from "constructs";
 
+import { TokenSafeAccountPoolConfig } from "@amzn/innovation-sandbox-commons/data/account-pool-stack-config/account-pool-stack-config.js";
 import { sharedAccountPoolSsmParamName } from "@amzn/innovation-sandbox-commons/types/isb-types.js";
 import { CostAllocationTagActivator } from "@amzn/innovation-sandbox-infrastructure/components/custom-resources/cost-allocation-tag-activator";
 import {
@@ -45,7 +46,6 @@ import {
   getOrgMgtRoleName,
 } from "@amzn/innovation-sandbox-infrastructure/helpers/isb-roles";
 import { IsbSandboxAccountStack } from "@amzn/innovation-sandbox-infrastructure/isb-sandbox-account-stack";
-import { AccountPoolConfig } from "@amzn/innovation-sandbox-shared-json-param-parser/src/shared-json-param-parser-handler.js";
 import path from "path";
 
 /*
@@ -289,10 +289,17 @@ export class IsbAccountPoolResources {
         description: "The Account pool configuration for Innovation Sandbox",
         stringValue: JSON.stringify({
           sandboxOuId: sandboxOu.attrId,
+          availableOuId: availableOu.attrId,
+          activeOuId: activeOu.attrId,
+          frozenOuId: frozenOu.attrId,
+          cleanupOuId: cleanUpOu.attrId,
+          quarantineOuId: quarantineOu.attrId,
+          entryOuId: entryOu.attrId,
+          exitOuId: exitOu.attrId,
           solutionVersion: getContextFromMapping(scope, "version"),
           supportedSchemas: JSON.stringify(supportedSchemas),
           isbManagedRegions: Fn.join(",", props.isbManagedRegions),
-        } satisfies AccountPoolConfig),
+        } satisfies TokenSafeAccountPoolConfig),
         tier: ParameterTier.ADVANCED,
         simpleName: true,
       },

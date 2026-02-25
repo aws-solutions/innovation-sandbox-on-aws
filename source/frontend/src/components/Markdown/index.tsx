@@ -68,9 +68,5 @@ export const Markdown = ({ file }: MarkdownProps) => {
     );
   }
 
-  return (
-    <HelpPanel header="Loading...">
-      <p>Loading markdown content...</p>
-    </HelpPanel>
-  );
+  return <HelpPanel header="Loading..." />;
 };

@@ -67,7 +67,7 @@ describe("InnovationSandbox.retryCleanup()", () => {
       mockContext.tracer,
       new CleanAccountRequest({
         accountId: account.awsAccountId,
-        reason: "Initiated by admin",
+        reason: "RETRY_FAILED_CLEANUP",
       }),
     );
   });
@@ -90,7 +90,7 @@ describe("InnovationSandbox.retryCleanup()", () => {
       mockContext.tracer,
       new CleanAccountRequest({
         accountId: account.awsAccountId,
-        reason: "Initiated by admin",
+        reason: "RETRY_FAILED_CLEANUP",
       }),
     );
   });

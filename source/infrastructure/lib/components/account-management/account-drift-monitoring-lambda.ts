@@ -12,7 +12,10 @@ import {
   IntermediateRole,
   getOrgMgtRoleArn,
 } from "@amzn/innovation-sandbox-infrastructure/helpers/isb-roles";
-import { grantIsbDbReadWrite } from "@amzn/innovation-sandbox-infrastructure/helpers/policy-generators";
+import {
+  grantIsbDbReadWrite,
+  grantIsbSsmParameterRead,
+} from "@amzn/innovation-sandbox-infrastructure/helpers/policy-generators";
 import { IsbComputeResources } from "@amzn/innovation-sandbox-infrastructure/isb-compute-resources";
 import { IsbComputeStack } from "@amzn/innovation-sandbox-infrastructure/isb-compute-stack";
 
@@ -50,14 +53,15 @@ export class AccountDriftMonitoringLambda extends Construct {
         ISB_EVENT_BUS: props.isbEventBus.eventBusName,
         ACCOUNT_TABLE_NAME: IsbComputeStack.sharedSpokeConfig.data.accountTable,
         ISB_NAMESPACE: props.namespace,
-        SANDBOX_OU_ID:
-          IsbComputeStack.sharedSpokeConfig.accountPool.sandboxOuId,
         INTERMEDIATE_ROLE_ARN: IntermediateRole.getRoleArn(),
         ORG_MGT_ROLE_ARN: getOrgMgtRoleArn(
           scope,
           props.namespace,
           props.orgMgtAccountId,
         ),
+        ACCOUNT_POOL_CONFIG_PARAM_ARN:
+          IsbComputeStack.sharedSpokeConfig.parameterArns
+            .accountPoolConfigParamArn,
       },
       logGroup: IsbComputeResources.globalLogGroup,
       envSchema: AccountDriftMonitoringEnvironmentSchema,
@@ -78,6 +82,10 @@ export class AccountDriftMonitoringLambda extends Construct {
       scope,
       driftLambda,
       IsbComputeStack.sharedSpokeConfig.data.accountTable,
+    );
+    grantIsbSsmParameterRead(
+      driftLambda.lambdaFunction.role! as Role,
+      IsbComputeStack.sharedSpokeConfig.parameterArns.accountPoolConfigParamArn,
     );
 
     new CfnSchedule(scope, "AccountDriftMonitoringScheduledEvent", {

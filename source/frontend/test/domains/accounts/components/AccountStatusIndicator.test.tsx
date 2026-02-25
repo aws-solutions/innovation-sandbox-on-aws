@@ -6,13 +6,12 @@ import { describe, expect, test } from "vitest";
 
 import { AccountStatusIndicator } from "@amzn/innovation-sandbox-frontend/domains/accounts/components/AccountStatusIndicator";
 import { renderWithQueryClient } from "@amzn/innovation-sandbox-frontend/setupTests";
-import moment from "moment";
-
+import { DateTime } from "luxon";
 describe("AccountStatusIndicator", () => {
   test("renders error status for Quarantine, Frozen, Entry, and Exit", () => {
     renderWithQueryClient(
       <AccountStatusIndicator
-        lastCleanupStartTime={moment.now().toString()}
+        lastCleanupStartTime={DateTime.now().toString()}
         status={"Quarantine"}
       />,
     );
@@ -22,7 +21,7 @@ describe("AccountStatusIndicator", () => {
   test("renders warning status for CleanUp", () => {
     renderWithQueryClient(
       <AccountStatusIndicator
-        lastCleanupStartTime={moment.now().toString()}
+        lastCleanupStartTime={DateTime.now().toString()}
         status="CleanUp"
       />,
     );
@@ -32,7 +31,7 @@ describe("AccountStatusIndicator", () => {
   test("renders success status for Available", () => {
     renderWithQueryClient(
       <AccountStatusIndicator
-        lastCleanupStartTime={moment.now().toString()}
+        lastCleanupStartTime={DateTime.now().toString()}
         status="Available"
       />,
     );
@@ -42,7 +41,7 @@ describe("AccountStatusIndicator", () => {
   test("renders info status for Active", () => {
     renderWithQueryClient(
       <AccountStatusIndicator
-        lastCleanupStartTime={moment.now().toString()}
+        lastCleanupStartTime={DateTime.now().toString()}
         status="Active"
       />,
     );
@@ -52,7 +51,7 @@ describe("AccountStatusIndicator", () => {
   test("renders popover for CleanUp status", () => {
     renderWithQueryClient(
       <AccountStatusIndicator
-        lastCleanupStartTime={moment.now().toString()}
+        lastCleanupStartTime={DateTime.now().toString()}
         status="CleanUp"
       />,
     );
@@ -65,7 +64,7 @@ describe("AccountStatusIndicator", () => {
   test("does not render popover for non-CleanUp statuses", () => {
     renderWithQueryClient(
       <AccountStatusIndicator
-        lastCleanupStartTime={moment.now().toString()}
+        lastCleanupStartTime={DateTime.now().toString()}
         status="Available"
       />,
     );
@@ -75,7 +74,7 @@ describe("AccountStatusIndicator", () => {
   test("renders correct text in CleanUp popover", async () => {
     renderWithQueryClient(
       <AccountStatusIndicator
-        lastCleanupStartTime={moment.now().toString()}
+        lastCleanupStartTime={DateTime.now().toString()}
         status="CleanUp"
       />,
     );

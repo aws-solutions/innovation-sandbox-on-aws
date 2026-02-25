@@ -12,7 +12,7 @@ export class User {
   ): Promise<Omit<IsbUser, "userId"> | undefined> {
     const idcService = IsbServices.idcService(
       {
-        ISB_NAMESPACE: process.env.ISB_NAMESPACE!,
+        IDC_CONFIG_PARAM_ARN: process.env.IDC_CONFIG_PARAM_ARN!,
         USER_AGENT_EXTRA: process.env.USER_AGENT_EXTRA!,
       },
       fromTemporaryIsbIdcCredentials({

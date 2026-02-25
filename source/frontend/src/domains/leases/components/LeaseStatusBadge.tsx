@@ -19,6 +19,10 @@ const getBadgeColor = (status: string) => {
     return "severity-low";
   }
 
+  if (status === "Provisioning") {
+    return "blue";
+  }
+
   // everything else is red
   return "red";
 };

@@ -1,6 +1,12 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
-import { Role, ServicePrincipal } from "aws-cdk-lib/aws-iam";
+import { ArnFormat, Stack } from "aws-cdk-lib";
+import {
+  Effect,
+  PolicyStatement,
+  Role,
+  ServicePrincipal,
+} from "aws-cdk-lib/aws-iam";
 import { CfnSchedule } from "aws-cdk-lib/aws-scheduler";
 import { Construct } from "constructs";
 import path from "path";
@@ -16,6 +22,7 @@ import {
 import {
   grantIsbAppConfigRead,
   grantIsbDbReadOnly,
+  grantIsbSsmParameterRead,
 } from "@amzn/innovation-sandbox-infrastructure/helpers/policy-generators";
 import { IsbComputeResources } from "@amzn/innovation-sandbox-infrastructure/isb-compute-resources";
 import { IsbComputeStack } from "@amzn/innovation-sandbox-infrastructure/isb-compute-stack";
@@ -24,10 +31,10 @@ export class DeploymentSummaryLambda extends Construct {
   constructor(scope: Construct, id: string, props: AnonymizedMetricsProps) {
     super(scope, id);
 
-    const { sandboxOuId } = IsbComputeStack.sharedSpokeConfig.accountPool;
     const {
       accountTable,
       leaseTemplateTable,
+      blueprintTable,
       configApplicationId,
       configEnvironmentId,
       globalConfigConfigurationProfileId,
@@ -60,8 +67,8 @@ export class DeploymentSummaryLambda extends Construct {
         ORG_MGT_ACCOUNT_ID: props.orgManagementAccountId,
         ACCOUNT_TABLE_NAME: accountTable,
         LEASE_TEMPLATE_TABLE_NAME: leaseTemplateTable,
+        BLUEPRINT_TABLE_NAME: blueprintTable,
         ISB_NAMESPACE: props.namespace,
-        SANDBOX_OU_ID: sandboxOuId,
         ORG_MGT_ROLE_ARN: getOrgMgtRoleArn(
           scope,
           props.namespace,
@@ -74,22 +81,49 @@ export class DeploymentSummaryLambda extends Construct {
         REPORTING_CONFIG_PROFILE_ID: reportingConfigConfigurationProfileId,
         AWS_APPCONFIG_EXTENSION_PREFETCH_LIST: `/applications/${configApplicationId}/environments/${configEnvironmentId}/configurations/${globalConfigConfigurationProfileId},/applications/${configApplicationId}/environments/${configEnvironmentId}/configurations/${reportingConfigConfigurationProfileId},`,
         IS_STABLE_TAGGING_ENABLED: props.isStableTaggingEnabled,
+        ACCOUNT_POOL_CONFIG_PARAM_ARN:
+          IsbComputeStack.sharedSpokeConfig.parameterArns
+            .accountPoolConfigParamArn,
       },
       logGroup: IsbComputeResources.globalLogGroup,
       envSchema: DeploymentSummaryLambdaEnvironmentSchema,
       reservedConcurrentExecutions: 1,
     });
 
-    grantIsbDbReadOnly(scope, lambda, leaseTemplateTable, accountTable);
+    grantIsbDbReadOnly(
+      scope,
+      lambda,
+      leaseTemplateTable,
+      accountTable,
+      blueprintTable,
+    );
     grantIsbAppConfigRead(scope, lambda, globalConfigConfigurationProfileId);
     grantIsbAppConfigRead(scope, lambda, reportingConfigConfigurationProfileId);
+    grantIsbSsmParameterRead(
+      lambda.lambdaFunction.role! as Role,
+      IsbComputeStack.sharedSpokeConfig.parameterArns.accountPoolConfigParamArn,
+    );
+    lambda.lambdaFunction.addToRolePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ["cloudformation:GetTemplateSummary"],
+        resources: [
+          Stack.of(scope).formatArn({
+            service: "cloudformation",
+            resource: "stackset",
+            arnFormat: ArnFormat.SLASH_RESOURCE_NAME,
+            resourceName: "*",
+          }),
+        ],
+      }),
+    );
     addAppConfigExtensionLayer(lambda);
 
     IntermediateRole.addTrustedRole(lambda.lambdaFunction.role! as Role);
 
     const role = new Role(scope, "LambdaInvokeRole", {
       description:
-        "allows EventBridgeScheduler to invoke Innovation Sandbox's heartbeat metrics lamdba",
+        "allows EventBridgeScheduler to invoke Innovation Sandbox's heartbeat metrics lambda",
       assumedBy: new ServicePrincipal("scheduler.amazonaws.com"),
     });
 

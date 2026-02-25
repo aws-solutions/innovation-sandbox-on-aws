@@ -21,6 +21,12 @@ staging/
 tmp/
 temp/
 .temp_*/
+.test-reports
+scratch/
+
+# Kiro
+.kiro/specs/
+.kiro/reviews/
 
 ### VisualStudioCode ###
 .vscode

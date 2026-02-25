@@ -25,7 +25,7 @@ export function httpUrlencodeQueryParser(): MiddlewareObj<
         } catch (error) {
           errors.push({
             field: key,
-            message: `The ${key} query string parameter could not be url decoded.`,
+            message: "The query string parameter could not be url decoded.",
           });
         }
       });

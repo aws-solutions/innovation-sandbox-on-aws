@@ -12,6 +12,7 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import { now } from "@amzn/innovation-sandbox-commons/utils/time-utils";
 import { ListLeases } from "@amzn/innovation-sandbox-frontend/domains/leases/pages/ListLeases";
+import { MonitoredLeaseWithLeaseId } from "@amzn/innovation-sandbox-frontend/domains/leases/types";
 import { config } from "@amzn/innovation-sandbox-frontend/helpers/config";
 import { ModalProvider } from "@amzn/innovation-sandbox-frontend/hooks/useModal";
 import { createConfiguration } from "@amzn/innovation-sandbox-frontend/mocks/factories/configurationFactory";
@@ -26,7 +27,7 @@ import {
 } from "@amzn/innovation-sandbox-frontend/mocks/mockApi";
 import { server } from "@amzn/innovation-sandbox-frontend/mocks/server";
 import { renderWithQueryClient } from "@amzn/innovation-sandbox-frontend/setupTests";
-import moment from "moment";
+import { DateTime } from "luxon";
 
 // Mock ResizeObserver
 class ResizeObserver {
@@ -81,23 +82,40 @@ describe("ListLeases", () => {
       </ModalProvider>,
     );
 
-  const mockActiveLease = createActiveLease({
-    userEmail: "test@example.com",
-    originalLeaseTemplateName: "Basic Template",
-    status: "Active",
-    awsAccountId: "123456789012",
-    totalCostAccrued: 100,
-    maxSpend: 1000,
-  });
+  const testUserEmail = "test@example.com";
+  const testUuid = "00000000-0000-0000-0000-000000000000";
+  const testLeaseId = btoa(
+    JSON.stringify({
+      userEmail: testUserEmail,
+      uuid: testUuid,
+    }),
+  );
 
-  const mockFrozenLease = createActiveLease({
-    userEmail: "test@example.com",
-    originalLeaseTemplateName: "Basic Template",
-    status: "Frozen",
-    awsAccountId: "123456789012",
-    totalCostAccrued: 100,
-    maxSpend: 1000,
-  });
+  const mockActiveLease: MonitoredLeaseWithLeaseId = {
+    ...createActiveLease({
+      userEmail: testUserEmail,
+      uuid: testUuid,
+      originalLeaseTemplateName: "Basic Template",
+      status: "Active",
+      awsAccountId: "123456789012",
+      totalCostAccrued: 100,
+      maxSpend: 1000,
+    }),
+    leaseId: testLeaseId,
+  };
+
+  const mockFrozenLease: MonitoredLeaseWithLeaseId = {
+    ...createActiveLease({
+      userEmail: testUserEmail,
+      uuid: testUuid,
+      originalLeaseTemplateName: "Basic Template",
+      status: "Frozen",
+      awsAccountId: "123456789012",
+      totalCostAccrued: 100,
+      maxSpend: 1000,
+    }),
+    leaseId: testLeaseId,
+  };
 
   const mockPendingLease = createPendingLease({
     userEmail: "pending@example.com",
@@ -462,22 +480,22 @@ describe("ListLeases", () => {
     renderComponent();
 
     await waitFor(() => {
-      expect(screen.getByText(/in 7 days/i)).toBeInTheDocument();
+      expect(screen.getByText(/in 6 days/i)).toBeInTheDocument();
     });
   });
 
   test.each([
-    { amount: 1, unit: "hours", expected: /an hour ago/i },
+    { amount: 1, unit: "hours", expected: /1 hour ago/i },
     { amount: 3, unit: "hours", expected: /3 hours ago/i },
-    { amount: 1, unit: "days", expected: /a day ago/i },
+    { amount: 1, unit: "days", expected: /1 day ago/i },
     { amount: 3, unit: "days", expected: /3 days ago/i },
-    { amount: 1, unit: "months", expected: /a month ago/i },
+    { amount: 1, unit: "months", expected: /1 month ago/i },
   ])(
     "renders expiry status correctly for expired leases - $amount $unit ago",
     async ({ amount, unit, expected }) => {
-      const expirationDate = moment()
-        .subtract(amount, unit as any)
-        .toISOString();
+      const expirationDate = DateTime.now()
+        .minus({ [unit]: amount })
+        .toISO();
       const mockLease = createExpiredLease({
         endDate: expirationDate,
       });
@@ -557,7 +575,7 @@ describe("ListLeases", () => {
     const wrapper = createWrapper();
     const table = wrapper.findTable();
 
-    expect(table?.findColumnHeaders()).toHaveLength(10);
+    expect(table?.findColumnHeaders()).toHaveLength(11);
 
     const columnHeaders = table?.findColumnHeaders();
     const headerTexts = columnHeaders?.map(
@@ -567,6 +585,7 @@ describe("ListLeases", () => {
     expect(headerTexts).toContain("User");
     expect(headerTexts).toContain("Created By");
     expect(headerTexts).toContain("Lease Template");
+    expect(headerTexts).toContain("Blueprint");
     expect(headerTexts).toContain("Cost Report Group");
     expect(headerTexts).toContain("Budget");
     expect(headerTexts).toContain("Expiry");
@@ -670,5 +689,256 @@ describe("ListLeases", () => {
     expect(
       modalContent.queryByText("Threshold Breach Warning"),
     ).not.toBeInTheDocument();
+  });
+
+  test("successfully terminates lease and shows success status", async () => {
+    mockLeaseApi.returns([mockActiveLease]);
+    server.use(
+      mockLeaseApi.getHandler(),
+      http.post(
+        `${config.ApiUrl}/leases/${mockActiveLease.leaseId}/terminate`,
+        () => {
+          return HttpResponse.json({
+            status: "success",
+            data: { message: "Lease terminated" },
+          });
+        },
+      ),
+    );
+
+    renderComponent();
+    const user = userEvent.setup();
+
+    await waitFor(() => {
+      expect(screen.getByText(mockActiveLease.userEmail)).toBeInTheDocument();
+    });
+
+    const checkbox = screen.getAllByRole("checkbox")[1];
+    await user.click(checkbox);
+
+    const actionsButton = screen.getByText("Actions");
+    await user.click(actionsButton);
+
+    const terminateOption = await screen.findByText("Terminate");
+    await user.click(terminateOption);
+
+    const modal = screen.getByRole("dialog");
+    await waitFor(() => {
+      expect(modal).toBeInTheDocument();
+    });
+
+    const submitButton = within(modal).getByRole("button", { name: /Submit/i });
+    await user.click(submitButton);
+
+    // Verify success status appears
+    await waitFor(() => {
+      expect(within(modal).getByText("Success")).toBeInTheDocument();
+    });
+  });
+
+  test("shows error status when terminate fails", async () => {
+    mockLeaseApi.returns([mockActiveLease]);
+    server.use(
+      mockLeaseApi.getHandler(),
+      http.post(
+        `${config.ApiUrl}/leases/${mockActiveLease.leaseId}/terminate`,
+        () => {
+          return HttpResponse.json(
+            {
+              status: "fail",
+              data: { message: "Termination failed" },
+            },
+            { status: 500 },
+          );
+        },
+      ),
+    );
+
+    renderComponent();
+    const user = userEvent.setup();
+
+    await waitFor(() => {
+      expect(screen.getByText(mockActiveLease.userEmail)).toBeInTheDocument();
+    });
+
+    const checkbox = screen.getAllByRole("checkbox")[1];
+    await user.click(checkbox);
+
+    const actionsButton = screen.getByText("Actions");
+    await user.click(actionsButton);
+
+    const terminateOption = await screen.findByText("Terminate");
+    await user.click(terminateOption);
+
+    const modal = screen.getByRole("dialog");
+    await waitFor(() => {
+      expect(modal).toBeInTheDocument();
+    });
+
+    const submitButton = within(modal).getByRole("button", { name: /Submit/i });
+    await user.click(submitButton);
+
+    // Verify failed status appears
+    await waitFor(() => {
+      expect(within(modal).getByText("Failed")).toBeInTheDocument();
+    });
+  });
+
+  test("successfully freezes lease and shows success status", async () => {
+    mockLeaseApi.returns([mockActiveLease]);
+    server.use(
+      mockLeaseApi.getHandler(),
+      http.post(
+        `${config.ApiUrl}/leases/${mockActiveLease.leaseId}/freeze`,
+        () => {
+          return HttpResponse.json({
+            status: "success",
+            data: { message: "Lease frozen" },
+          });
+        },
+      ),
+    );
+
+    renderComponent();
+    const user = userEvent.setup();
+
+    await waitFor(() => {
+      expect(screen.getByText(mockActiveLease.userEmail)).toBeInTheDocument();
+    });
+
+    const checkbox = screen.getAllByRole("checkbox")[1];
+    await user.click(checkbox);
+
+    const actionsButton = screen.getByText("Actions");
+    await user.click(actionsButton);
+
+    const freezeOption = await screen.findByText("Freeze");
+    await user.click(freezeOption);
+
+    const modal = screen.getByRole("dialog");
+    await waitFor(() => {
+      expect(modal).toBeInTheDocument();
+    });
+
+    const submitButton = within(modal).getByRole("button", { name: /Submit/i });
+    await user.click(submitButton);
+
+    // Verify success status appears
+    await waitFor(() => {
+      expect(within(modal).getByText("Success")).toBeInTheDocument();
+    });
+  });
+
+  test("successfully unfreezes lease and shows success status", async () => {
+    mockLeaseApi.returns([mockFrozenLease]);
+    server.use(
+      mockLeaseApi.getHandler(),
+      http.post(
+        `${config.ApiUrl}/leases/${mockFrozenLease.leaseId}/unfreeze`,
+        () => {
+          return HttpResponse.json({
+            status: "success",
+            data: { message: "Lease unfrozen" },
+          });
+        },
+      ),
+    );
+
+    renderComponent();
+    const user = userEvent.setup();
+
+    await waitFor(() => {
+      expect(screen.getByText(mockFrozenLease.userEmail)).toBeInTheDocument();
+    });
+
+    const checkbox = screen.getAllByRole("checkbox")[1];
+    await user.click(checkbox);
+
+    const actionsButton = screen.getByText("Actions");
+    await user.click(actionsButton);
+
+    const unfreezeOption = await screen.findByText("Unfreeze");
+    await user.click(unfreezeOption);
+
+    const modal = screen.getByRole("dialog");
+    await waitFor(() => {
+      expect(modal).toBeInTheDocument();
+    });
+
+    const submitButton = within(modal).getByRole("button", { name: /Submit/i });
+    await user.click(submitButton);
+
+    // Verify success status appears
+    await waitFor(() => {
+      expect(within(modal).getByText("Success")).toBeInTheDocument();
+    });
+  });
+
+  test("navigates to lease details when 'Update' action is selected", async () => {
+    mockLeaseApi.returns([mockActiveLease]);
+    server.use(mockLeaseApi.getHandler());
+
+    renderComponent();
+    const user = userEvent.setup();
+
+    await waitFor(() => {
+      expect(screen.getByText(mockActiveLease.userEmail)).toBeInTheDocument();
+    });
+
+    const checkbox = screen.getAllByRole("checkbox")[1];
+    await user.click(checkbox);
+
+    const actionsButton = screen.getByText("Actions");
+    await user.click(actionsButton);
+
+    const updateOption = await screen.findByText("Update");
+    await user.click(updateOption);
+
+    expect(mockNavigate).toHaveBeenCalledWith(
+      `/leases/${mockActiveLease.leaseId}`,
+    );
+  });
+
+  test("filters leases by lease template", async () => {
+    const lease1 = createActiveLease({
+      userEmail: "user1@example.com",
+      originalLeaseTemplateName: "Template A",
+    });
+    const lease2 = createActiveLease({
+      userEmail: "user2@example.com",
+      originalLeaseTemplateName: "Template B",
+    });
+
+    mockLeaseApi.returns([lease1, lease2]);
+    server.use(mockLeaseApi.getHandler());
+
+    renderComponent();
+    const user = userEvent.setup();
+
+    await waitFor(() => {
+      expect(screen.getByText(lease1.userEmail)).toBeInTheDocument();
+      expect(screen.getByText(lease2.userEmail)).toBeInTheDocument();
+    });
+
+    // Find the lease template filter
+    const leaseTemplateFilters = screen.getAllByText("Choose options");
+    const leaseTemplateFilter = leaseTemplateFilters[1]; // Second filter is lease template
+
+    await user.click(leaseTemplateFilter);
+
+    await waitFor(() => {
+      const options = screen.getAllByRole("option");
+      const templateAOption = options.find((option) =>
+        option.textContent!.includes("Template A"),
+      );
+      if (templateAOption) {
+        user.click(templateAOption);
+      }
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText(lease1.userEmail)).toBeInTheDocument();
+      expect(screen.queryByText(lease2.userEmail)).not.toBeInTheDocument();
+    });
   });
 });

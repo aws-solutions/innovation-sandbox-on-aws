@@ -12,6 +12,8 @@ import { InnovationSandbox } from "@amzn/innovation-sandbox-commons/innovation-s
 import { generateSchemaData } from "@amzn/innovation-sandbox-commons/test/generate-schema-data.js";
 import {
   mockedAccountStore,
+  mockedBlueprintDeploymentService,
+  mockedBlueprintStore,
   mockedIdcService,
   mockedIsbEventBridge,
   mockedLeaseStore,
@@ -34,6 +36,8 @@ function createMockContext() {
     eventBridgeClient: mockedIsbEventBridge(),
     idcService: mockedIdcService(),
     orgsService: mockedOrgsService(),
+    blueprintStore: mockedBlueprintStore(),
+    blueprintDeploymentService: mockedBlueprintDeploymentService(),
     logger: createMockOf(Logger),
     tracer: new Tracer(),
     globalConfig: generateSchemaData(GlobalConfigSchema),

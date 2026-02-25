@@ -1,0 +1,11 @@
+{
+  "name": "@amzn/innovation-sandbox-blueprints-handler",
+  "description": "Blueprints API Handler - Lambda - Innovation Sandbox on AWS (SO0284)",
+  "version": "1.2.0",
+  "scripts": {
+    "build": "tsc --incremental --noEmit",
+    "test": "vitest run"
+  },
+  "type": "module",
+  "license": "Apache-2.0"
+}

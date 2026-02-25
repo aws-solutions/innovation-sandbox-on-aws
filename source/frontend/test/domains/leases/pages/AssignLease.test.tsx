@@ -90,7 +90,7 @@ describe("AssignLease", () => {
     ).toContain("Terms of Service");
     expect(
       wizard?.findMenuNavigationLink(4)?.getElement().textContent,
-    ).toContain("Review & Assign");
+    ).toContain("Review & Submit");
   });
 
   test("displays the lease templates in step 1", async () => {
@@ -127,7 +127,7 @@ describe("AssignLease", () => {
 
     // Should show error and stay on step 1
     expect(
-      screen.getByText("Please select a lease template to continue"),
+      screen.getByText("You must choose a lease template"),
     ).toBeInTheDocument();
 
     const wizard = createWrapper().findWizard();
@@ -170,14 +170,16 @@ describe("AssignLease", () => {
 
     // Try to proceed without email
     await user.click(await screen.findByRole("button", { name: /next/i }));
-    expect(screen.getByText("Please provide a user email")).toBeInTheDocument();
+    expect(
+      screen.getByText("You must provide a user email"),
+    ).toBeInTheDocument();
 
     // Enter invalid email
     const emailInput = screen.getByRole("textbox");
     await user.type(emailInput, "invalid-email");
     await user.click(await screen.findByRole("button", { name: /next/i }));
     expect(
-      screen.getByText("Please enter a valid email address"),
+      screen.getByText("You must provide a valid email address"),
     ).toBeInTheDocument();
 
     // Enter valid email
@@ -211,7 +213,7 @@ describe("AssignLease", () => {
     // Try to proceed without accepting terms
     await user.click(await screen.findByRole("button", { name: /next/i }));
     expect(
-      screen.getByText("Please accept the terms of service to continue"),
+      screen.getByText("You must accept the terms of service to continue"),
     ).toBeInTheDocument();
 
     // Accept terms
@@ -251,7 +253,7 @@ describe("AssignLease", () => {
     await user.click(await screen.findByRole("button", { name: /next/i }));
 
     // Check review step content
-    expect(screen.getByText("Review assignment details")).toBeInTheDocument();
+    expect(screen.getAllByText("Review & Submit")).toHaveLength(3);
     expect(screen.getByText("Comments")).toBeInTheDocument();
     expect(
       screen.getByPlaceholderText("Enter any additional comments..."),
@@ -436,7 +438,7 @@ describe("AssignLease", () => {
     await user.click(nextButton);
 
     expect(
-      screen.getByText("Please select a lease template to continue"),
+      screen.getByText("You must choose a lease template"),
     ).toBeInTheDocument();
 
     // Select template - error should clear
@@ -447,7 +449,7 @@ describe("AssignLease", () => {
     await user.click(leaseTemplateCard);
 
     expect(
-      screen.queryByText("Please select a lease template to continue"),
+      screen.queryByText("You must choose a lease template"),
     ).not.toBeInTheDocument();
   });
 });

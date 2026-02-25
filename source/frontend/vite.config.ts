@@ -23,6 +23,7 @@ export default defineConfig({
   ...commonConfig,
   define: {
     global: {},
+    SOLUTION_VERSION: JSON.stringify(process.env.npm_package_version),
   },
   build: {
     chunkSizeWarningLimit: 3000,

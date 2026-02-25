@@ -112,9 +112,8 @@ beforeAll(async () => {
   }));
 
   // Import the handler after mocking dependencies
-  const module = await import(
-    "@amzn/innovation-sandbox-group-cost-reporting/group-cost-reporting-handler.js"
-  );
+  const module =
+    await import("@amzn/innovation-sandbox-group-cost-reporting/group-cost-reporting-handler.js");
   generateReport = module.generateReport;
 });
 

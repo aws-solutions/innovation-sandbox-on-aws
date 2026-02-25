@@ -8,6 +8,7 @@ import { LeaseTemplate } from "@amzn/innovation-sandbox-commons/data/lease-templ
 import { Lease } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
 import { SandboxAccount } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account.js";
 import { UnregisteredAccount } from "@amzn/innovation-sandbox-frontend/domains/accounts/types";
+import { BlueprintWithStackSets } from "@amzn/innovation-sandbox-frontend/domains/blueprints/types";
 import { config } from "@amzn/innovation-sandbox-frontend/helpers/config";
 import {
   ApiFailResponse,
@@ -98,7 +99,10 @@ class MockApi<T> {
 
     if (params.id) {
       filteredResult = filteredResult.filter(
-        (item: any) => item.uuid === params.id,
+        (item: any) =>
+          item.uuid === params.id ||
+          item.blueprintId === params.id ||
+          item.blueprint?.blueprintId === params.id,
       );
     }
 
@@ -269,3 +273,6 @@ export const mockUnregisteredAccountApi = new MockApi<UnregisteredAccount>(
   "/accounts/unregistered",
 );
 export const mockAccountApi = new MockApi<SandboxAccount>("/accounts");
+export const mockBlueprintApi = new MockApi<BlueprintWithStackSets>(
+  "/blueprints",
+);

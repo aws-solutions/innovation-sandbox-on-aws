@@ -165,6 +165,13 @@ export class IntermediateRole {
           },
         },
       },
+      {
+        Effect: "Allow",
+        Action: "sts:AssumeRole",
+        Principal: {
+          Service: "cloudformation.amazonaws.com",
+        },
+      },
     ]);
 
     IntermediateRole.instance.grantAssumeRole(role);

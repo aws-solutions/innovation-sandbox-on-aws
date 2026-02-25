@@ -21,7 +21,6 @@ import { IsbLambdaFunction } from "@amzn/innovation-sandbox-infrastructure/compo
 import { IsbKmsKeys } from "@amzn/innovation-sandbox-infrastructure/components/kms.js";
 import { getContextFromMapping } from "@amzn/innovation-sandbox-infrastructure/helpers/cdk-context";
 
-import { sharedAccountPoolSsmParamName } from "@amzn/innovation-sandbox-commons/types/isb-types";
 import { addAppConfigExtensionLayer } from "@amzn/innovation-sandbox-infrastructure/components/config/app-config-lambda-extension";
 import { ConditionAspect } from "@amzn/innovation-sandbox-infrastructure/helpers/cfn-utils";
 import {
@@ -32,6 +31,7 @@ import {
 import {
   AppConfigReadPolicyStatement,
   grantIsbDbReadWrite,
+  grantIsbSsmParameterRead,
 } from "@amzn/innovation-sandbox-infrastructure/helpers/policy-generators";
 import { IsbComputeResources } from "@amzn/innovation-sandbox-infrastructure/isb-compute-resources";
 import { IsbComputeStack } from "@amzn/innovation-sandbox-infrastructure/isb-compute-stack";
@@ -70,11 +70,6 @@ export class AccountCleaner extends Construct {
       resourceName: intermediateRoleName,
     });
     const sandboxAccountRoleName = getSandboxAccountRoleName(props.namespace);
-
-    const iamAssumeRolePolicyStatement = new PolicyStatement({
-      actions: ["sts:AssumeRole"],
-      resources: [intermediateRoleArn],
-    });
 
     const iamAppConfigPolicyStatement = new AppConfigReadPolicyStatement(this, {
       configurations: [
@@ -119,13 +114,15 @@ export class AccountCleaner extends Construct {
           ORG_MGT_ACCOUNT_ID: props.orgMgtAccountId,
           IDC_ACCOUNT_ID: props.idcAccountId,
           HUB_ACCOUNT_ID: Aws.ACCOUNT_ID,
+          CLEANUP_SPOKE_ROLE_NAME: sandboxAccountRoleName,
+          INTERMEDIATE_ROLE_ARN: intermediateRoleArn,
         },
         envSchema: InitializeCleanupLambdaEnvironmentSchema,
         logGroup: IsbComputeResources.cleanupLogGroup,
       },
     );
-    initializeCleanupLambda.lambdaFunction.addToRolePolicy(
-      iamAssumeRolePolicyStatement,
+    IntermediateRole.addTrustedRole(
+      initializeCleanupLambda.lambdaFunction.role! as Role,
     );
     initializeCleanupLambda.lambdaFunction.addToRolePolicy(
       iamAppConfigPolicyStatement,
@@ -133,13 +130,6 @@ export class AccountCleaner extends Construct {
     addAppConfigExtensionLayer(initializeCleanupLambda);
 
     grantIsbDbReadWrite(this, initializeCleanupLambda, accountTable);
-
-    const accountPoolConfigParamArn = Stack.of(scope).formatArn({
-      service: "ssm",
-      account: props.orgMgtAccountId,
-      resource: "parameter",
-      resourceName: sharedAccountPoolSsmParamName(props.namespace),
-    });
 
     const usePrivateEcr = new CfnCondition(this, "UsePrivateEcrRepo", {
       expression: Fn.conditionNot(
@@ -203,7 +193,9 @@ export class AccountCleaner extends Construct {
               type: BuildEnvironmentVariableType.PLAINTEXT,
             },
             ACCOUNT_POOL_CONFIG_PARAM_ARN: {
-              value: accountPoolConfigParamArn,
+              value:
+                IsbComputeStack.sharedSpokeConfig.parameterArns
+                  .accountPoolConfigParamArn,
               type: BuildEnvironmentVariableType.PLAINTEXT,
             },
           },
@@ -250,14 +242,11 @@ export class AccountCleaner extends Construct {
     });
     Aspects.of(privateEcrRepoPolicy).add(new ConditionAspect(usePrivateEcr));
 
-    const ssmReadPolicy = new PolicyStatement({
-      actions: ["ssm:GetParameter"],
-      resources: [accountPoolConfigParamArn],
-    });
-    codeBuildCleanupProject.addToRolePolicy(ssmReadPolicy);
-
+    grantIsbSsmParameterRead(
+      codeBuildCleanupProject.role! as Role,
+      IsbComputeStack.sharedSpokeConfig.parameterArns.accountPoolConfigParamArn,
+    );
     codeBuildCleanupProject.addToRolePolicy(iamAppConfigPolicyStatement);
-    codeBuildCleanupProject.addToRolePolicy(iamAssumeRolePolicyStatement);
     IntermediateRole.addTrustedRole(codeBuildCleanupProject.role! as Role);
 
     new AccountCleanerStepFunction(this, "StepFunction", {

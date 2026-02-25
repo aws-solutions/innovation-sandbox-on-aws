@@ -20,6 +20,8 @@ import {
 import { generateSchemaData } from "@amzn/innovation-sandbox-commons/test/generate-schema-data.js";
 import {
   mockedAccountStore,
+  mockedBlueprintDeploymentService,
+  mockedBlueprintStore,
   mockedIdcService,
   mockedIsbEventBridge,
   mockedLeaseStore,
@@ -43,6 +45,8 @@ function createMockContext() {
     idcService: mockedIdcService(),
     orgsService: mockedOrgsService(),
     eventBridgeClient: mockedIsbEventBridge(),
+    blueprintStore: mockedBlueprintStore(),
+    blueprintDeploymentService: mockedBlueprintDeploymentService(),
     logger: createMockOf(Logger),
     tracer: new Tracer(),
     globalConfig: generateSchemaData(GlobalConfigSchema, {
@@ -101,7 +105,6 @@ describe("InnovationSandbox.terminateLease()", () => {
   });
 
   test("HappyPath - terminate active lease", async () => {
-    console.log(mockContext);
     const lease = generateSchemaData(MonitoredLeaseSchema, {
       status: "Active",
       awsAccountId: mockLeaseAccount.awsAccountId,
@@ -137,7 +140,7 @@ describe("InnovationSandbox.terminateLease()", () => {
       mockContext.tracer,
       new CleanAccountRequest({
         accountId: lease.awsAccountId,
-        reason: `Lease ${lease.uuid} ManuallyTerminated`,
+        reason: "LEASE_TERMINATION",
       }),
       new LeaseTerminatedEvent({
         leaseId: {
@@ -188,7 +191,7 @@ describe("InnovationSandbox.terminateLease()", () => {
       mockContext.tracer,
       new CleanAccountRequest({
         accountId: lease.awsAccountId,
-        reason: `Lease ${lease.uuid} Expired`,
+        reason: "LEASE_TERMINATION",
       }),
       new LeaseTerminatedEvent({
         leaseId: {

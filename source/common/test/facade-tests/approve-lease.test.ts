@@ -1,6 +1,7 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+import { BlueprintWithStackSets } from "@amzn/innovation-sandbox-commons/data/blueprint/blueprint.js";
 import { PaginatedQueryResult } from "@amzn/innovation-sandbox-commons/data/common-types.js";
 import {
   MonitoredLease,
@@ -11,16 +12,15 @@ import {
   SandboxAccountSchema,
 } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account.js";
 import { InnovationSandbox } from "@amzn/innovation-sandbox-commons/innovation-sandbox.js";
-import {
-  searchableAccountProperties,
-  searchableLeaseProperties,
-} from "@amzn/innovation-sandbox-commons/observability/logging.js";
 import { IsbEventBridgeClient } from "@amzn/innovation-sandbox-commons/sdk-clients/event-bridge-client.js";
 import { generateSchemaData } from "@amzn/innovation-sandbox-commons/test/generate-schema-data.js";
 import {
   mockedAccountStore,
+  mockedBlueprintDeploymentService,
+  mockedBlueprintStore,
   mockedIdcService,
   mockedLeaseStore,
+  mockedLeaseTemplateStore,
   mockedOrgsService,
 } from "@amzn/innovation-sandbox-commons/test/mocking/common-mocks.js";
 import { createMockOf } from "@amzn/innovation-sandbox-commons/test/mocking/mock-utils.js";
@@ -37,6 +37,9 @@ function createMockContext() {
     idcService: mockedIdcService(),
     leaseStore: mockedLeaseStore(),
     sandboxAccountStore: mockedAccountStore(),
+    blueprintStore: mockedBlueprintStore(),
+    blueprintDeploymentService: mockedBlueprintDeploymentService(),
+    leaseTemplateStore: mockedLeaseTemplateStore(),
     logger: createMockOf(Logger),
     tracer: new Tracer(),
   };
@@ -72,6 +75,54 @@ describe("InnovationSandbox.approveLease()", () => {
       result: [mockAvailableAccount],
     } as PaginatedQueryResult<SandboxAccount>);
 
+    mockContext.blueprintDeploymentService.validateBlueprintForDeployment.mockResolvedValue(
+      {
+        blueprint: {
+          PK: "bp#b1c2d3e4-5678-90ab-cdef-blueprintabc",
+          SK: "blueprint",
+          itemType: "BLUEPRINT",
+          blueprintId: "b1c2d3e4-5678-90ab-cdef-blueprintabc",
+          name: "TestBlueprint",
+          regionConcurrencyType: "SEQUENTIAL",
+          deploymentTimeoutMinutes: 60,
+          tags: {},
+          createdBy: "test@example.com",
+          totalHealthMetrics: {
+            totalDeploymentCount: 0,
+            totalSuccessfulCount: 0,
+          },
+          meta: {
+            schemaVersion: 1,
+            createdTime: currentDateTime.toISO(),
+            lastEditTime: currentDateTime.toISO(),
+          },
+        },
+        stackSets: [
+          {
+            PK: "bp#b1c2d3e4-5678-90ab-cdef-blueprintabc",
+            SK: "stackset#a1b2c3d4-5678-90ab-cdef-123456789abc",
+            itemType: "STACKSET",
+            blueprintId: "b1c2d3e4-5678-90ab-cdef-blueprintabc",
+            stackSetId: "a1b2c3d4-5678-90ab-cdef-123456789abc",
+            administrationRoleArn: "arn:aws:iam::123456789012:role/admin",
+            executionRoleName: "execution-role",
+            regions: ["us-east-1"],
+            deploymentOrder: 1,
+            healthMetrics: {
+              deploymentCount: 0,
+              successfulDeploymentCount: 0,
+              consecutiveFailures: 0,
+            },
+            meta: {
+              schemaVersion: 1,
+              createdTime: currentDateTime.toISO(),
+              lastEditTime: currentDateTime.toISO(),
+            },
+          },
+        ],
+      } as BlueprintWithStackSets,
+    );
+
     vi.useFakeTimers();
     vi.setSystemTime(currentDateTime.toJSDate());
   });
@@ -87,6 +138,8 @@ describe("InnovationSandbox.approveLease()", () => {
       status: "PendingApproval",
       leaseDurationInHours: 100,
       userEmail: mockUser.email,
+      blueprintId: null,
+      blueprintName: null,
     });
     const approver = "HappyManager@managers.com";
 
@@ -141,6 +194,8 @@ describe("InnovationSandbox.approveLease()", () => {
       const leaseToApprove = generateSchemaData(PendingLeaseSchema, {
         status: "PendingApproval",
         leaseDurationInHours: 100,
+        blueprintId: null,
+        blueprintName: null,
         userEmail: mockUser.email,
         createdBy: createdBy,
       });
@@ -154,17 +209,15 @@ describe("InnovationSandbox.approveLease()", () => {
         mockContext,
       );
 
+      // After refactoring, publishLease() is called which logs the detailed approval
       expect(mockContext.logger.info).toHaveBeenCalledWith(
-        `(${approver}) approved lease for (${mockUser.email})`,
-        {
-          ...searchableLeaseProperties(leaseToApprove),
-          ...searchableAccountProperties(mockAvailableAccount),
-          logDetailType: "LeaseApproved",
-          maxBudget: leaseToApprove.maxSpend,
-          maxDurationHours: leaseToApprove.leaseDurationInHours,
+        expect.stringContaining("Published lease"),
+        expect.objectContaining({
+          logDetailType: "LeasePublished",
           autoApproved: false,
           creationMethod: expectedCreationMethod,
-        },
+          hasBlueprint: false,
+        }),
       );
     },
   );
@@ -208,6 +261,8 @@ describe("InnovationSandbox.approveLease()", () => {
       const leaseToApprove = generateSchemaData(PendingLeaseSchema, {
         status: "PendingApproval",
         userEmail: mockUser.email,
+        blueprintId: null,
+        blueprintName: null,
       });
 
       const { newItem: approvedLease } = (await InnovationSandbox.approveLease(
@@ -229,6 +284,8 @@ describe("InnovationSandbox.approveLease()", () => {
       const leaseToApprove = generateSchemaData(PendingLeaseSchema, {
         status: "PendingApproval",
         userEmail: mockUser.email,
+        blueprintId: null,
+        blueprintName: null,
       });
 
       const { newItem: approvedLease } = (await InnovationSandbox.approveLease(
@@ -250,6 +307,8 @@ describe("InnovationSandbox.approveLease()", () => {
       const leaseToApprove = generateSchemaData(PendingLeaseSchema, {
         status: "PendingApproval",
         userEmail: mockUser.email,
+        blueprintId: null,
+        blueprintName: null,
       });
 
       const { newItem: approvedLease } = (await InnovationSandbox.approveLease(

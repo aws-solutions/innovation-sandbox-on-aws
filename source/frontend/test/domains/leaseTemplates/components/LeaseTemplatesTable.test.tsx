@@ -153,7 +153,7 @@ describe("LeaseTemplatesTable", () => {
 
     expect(templateLink.closest("a")).toHaveAttribute(
       "href",
-      `/lease_templates/edit/${mockLeaseTemplates[0].uuid}`,
+      `/lease_templates/${mockLeaseTemplates[0].uuid}`,
     );
   });
 });

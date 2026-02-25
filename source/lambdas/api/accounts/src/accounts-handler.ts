@@ -282,6 +282,10 @@ async function ejectAccountHandler(
         ),
         eventBridgeClient: IsbServices.isbEventBridge(context.env),
         globalConfig: context.globalConfig,
+        blueprintStore: IsbServices.blueprintStore(context.env),
+        blueprintDeploymentService: IsbServices.blueprintDeploymentService(
+          context.env,
+        ),
       },
     );
   } catch (error) {

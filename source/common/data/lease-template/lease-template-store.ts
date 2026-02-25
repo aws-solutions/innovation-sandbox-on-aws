@@ -46,4 +46,13 @@ export abstract class LeaseTemplateStore {
     manager: string;
     pageIdentifier?: string;
   }): Promise<PaginatedQueryResult<LeaseTemplate>>;
+
+  /**
+   * Finds lease templates that reference a specific blueprint.
+   * Returns only key fields (uuid, blueprintId) since the GSI uses KEYS_ONLY projection.
+   * Used for validation checks (e.g., preventing blueprint deletion when in use).
+   */
+  abstract findByBlueprintId(
+    blueprintId: string,
+  ): Promise<{ uuid: string; blueprintId: string }[]>;
 }

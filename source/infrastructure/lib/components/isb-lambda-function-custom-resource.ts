@@ -12,8 +12,9 @@ import { Provider } from "aws-cdk-lib/custom-resources";
 import { Construct } from "constructs";
 import { z } from "zod";
 
-interface IsbLambdaFunctionCRProps<T extends z.ZodSchema<any>>
-  extends IsbLambdaFunctionProps<T> {
+interface IsbLambdaFunctionCRProps<
+  T extends z.ZodSchema<any>,
+> extends IsbLambdaFunctionProps<T> {
   customResourceType: `Custom::${string}`;
   customResourceProperties?: { [p: string]: any };
 }

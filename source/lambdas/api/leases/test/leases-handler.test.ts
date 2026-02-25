@@ -6,6 +6,11 @@ import {
   TooManyRequestsException,
 } from "@aws-sdk/client-organizations";
 import {
+  GetSecretValueCommand,
+  SecretsManagerClient,
+} from "@aws-sdk/client-secrets-manager";
+import { mockClient } from "aws-sdk-client-mock";
+import {
   afterEach,
   beforeAll,
   beforeEach,
@@ -71,6 +76,7 @@ import {
 import { randomUUID } from "crypto";
 import { DateTime } from "luxon";
 
+const secretsManagerMock = mockClient(SecretsManagerClient);
 let mockedGlobalConfig: GlobalConfig;
 let mockedReportingConfig: ReportingConfig;
 const testEnv = generateSchemaData(LeaseLambdaEnvironmentSchema);
@@ -105,11 +111,17 @@ beforeEach(() => {
 
   bulkStubEnv(testEnv);
   mockAppConfigMiddleware(mockedGlobalConfig, mockedReportingConfig);
+
+  // Mock Secrets Manager to return JWT secret
+  secretsManagerMock.on(GetSecretValueCommand).resolves({
+    SecretString: "testSecret",
+  });
 });
 
 afterEach(() => {
   vi.clearAllMocks();
   vi.unstubAllEnvs();
+  secretsManagerMock.reset();
 });
 
 describe("Leases Handler", async () => {
@@ -523,7 +535,8 @@ describe("Leases Handler", async () => {
       ).toEqual({
         statusCode: 415,
         body: createFailureResponseBody({
-          message: "Invalid or malformed JSON was provided.",
+          message:
+            "Invalid JSON in request body. Please check your JSON syntax.",
         }),
         headers: responseHeaders,
       });
@@ -1225,10 +1238,9 @@ describe("Leases Handler", async () => {
       });
 
       it("should return 404 when target user does not exist in Identity Center", async () => {
-        const nonExistentUserEmail = "nonexistent@example.com";
         const leaseRequest = {
           leaseTemplateUuid: randomUUID(),
-          userEmail: nonExistentUserEmail,
+          userEmail: "nonexistent@example.com",
           comments: "User does not exist",
         };
 
@@ -1264,7 +1276,7 @@ describe("Leases Handler", async () => {
         expect(response).toEqual({
           statusCode: 404,
           body: createFailureResponseBody({
-            message: `User not found in Identity Center: ${nonExistentUserEmail}`,
+            message: `User not found in Identity Center`,
           }),
           headers: responseHeaders,
         });
@@ -1941,7 +1953,7 @@ describe("Leases Handler", async () => {
       {
         costReportGroup: "invalid-group",
         reportingConfig: testReportingConfig,
-        expectedError: "Cost report group: invalid-group is not valid",
+        expectedError: "Invalid cost report group",
       },
       {
         costReportGroup: undefined,
@@ -2893,7 +2905,7 @@ describe("Leases Handler", async () => {
       ).toEqual({
         statusCode: 409,
         body: createFailureResponseBody({
-          message: `Only [Active, Frozen] leases can be terminated.`,
+          message: `Only [Active, Frozen, Provisioning] leases can be terminated.`,
         }),
         headers: responseHeaders,
       });

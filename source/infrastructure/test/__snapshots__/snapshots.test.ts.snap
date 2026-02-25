@@ -37,12 +37,12 @@ exports[`IdcStack Snapshot > matches the snapshot 1`] = `
         "deploymentMode": "prod",
         "logLevel": "INFO",
         "publicEcrRegistry": "public.ecr.aws/aws-solutions",
-        "publicEcrTag": "v1.1.8",
+        "publicEcrTag": "v1.2.0",
         "s3LogsArchiveRetentionInDays": 365,
         "s3LogsGlacierRetentionInDays": 2555,
         "solutionId": "SO0284",
         "solutionName": "innovation-sandbox-on-aws",
-        "version": "v1.1.8",
+        "version": "v1.2.0",
       },
     },
   },
@@ -417,7 +417,7 @@ exports[`IdcStack Snapshot > matches the snapshot 1`] = `
               ],
             },
             "POWERTOOLS_SERVICE_NAME": "IdcConfigurer",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.1.8",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.0",
           },
         },
         "FunctionName": {
@@ -923,54 +923,6 @@ exports[`IdcStack Snapshot > matches the snapshot 1`] = `
       },
       "Type": "AWS::IAM::Policy",
     },
-    "IdcRoleDefaultPolicy8B91236C": {
-      "Properties": {
-        "PolicyDocument": {
-          "Statement": [
-            {
-              "Action": [
-                "ssm:DescribeParameters",
-                "ssm:GetParameters",
-                "ssm:GetParameter",
-                "ssm:GetParameterHistory",
-              ],
-              "Effect": "Allow",
-              "Resource": {
-                "Fn::Join": [
-                  "",
-                  [
-                    "arn:",
-                    {
-                      "Ref": "AWS::Partition",
-                    },
-                    ":ssm:",
-                    {
-                      "Ref": "AWS::Region",
-                    },
-                    ":",
-                    {
-                      "Ref": "AWS::AccountId",
-                    },
-                    ":parameter/",
-                    {
-                      "Ref": "IdcConfiguration94B4F37E",
-                    },
-                  ],
-                ],
-              },
-            },
-          ],
-          "Version": "2012-10-17",
-        },
-        "PolicyName": "IdcRoleDefaultPolicy8B91236C",
-        "Roles": [
-          {
-            "Ref": "IdcRoleF5AE7C04",
-          },
-        ],
-      },
-      "Type": "AWS::IAM::Policy",
-    },
     "IdcRoleF5AE7C04": {
       "Metadata": {
         "guard": {
@@ -1443,12 +1395,12 @@ exports[`IsbAccountPoolStack Snapshot > matches the snapshot 1`] = `
         "deploymentMode": "prod",
         "logLevel": "INFO",
         "publicEcrRegistry": "public.ecr.aws/aws-solutions",
-        "publicEcrTag": "v1.1.8",
+        "publicEcrTag": "v1.2.0",
         "s3LogsArchiveRetentionInDays": 365,
         "s3LogsGlacierRetentionInDays": 2555,
         "solutionId": "SO0284",
         "solutionName": "innovation-sandbox-on-aws",
-        "version": "v1.1.8",
+        "version": "v1.2.0",
       },
     },
   },
@@ -1621,6 +1573,55 @@ exports[`IsbAccountPoolStack Snapshot > matches the snapshot 1`] = `
                   "Id",
                 ],
               },
+              "","availableOuId":"",
+              {
+                "Fn::GetAtt": [
+                  "AvailableOu",
+                  "Id",
+                ],
+              },
+              "","activeOuId":"",
+              {
+                "Fn::GetAtt": [
+                  "ActiveOu",
+                  "Id",
+                ],
+              },
+              "","frozenOuId":"",
+              {
+                "Fn::GetAtt": [
+                  "FrozenOu",
+                  "Id",
+                ],
+              },
+              "","cleanupOuId":"",
+              {
+                "Fn::GetAtt": [
+                  "CleanUpOu",
+                  "Id",
+                ],
+              },
+              "","quarantineOuId":"",
+              {
+                "Fn::GetAtt": [
+                  "QuarantineOu",
+                  "Id",
+                ],
+              },
+              "","entryOuId":"",
+              {
+                "Fn::GetAtt": [
+                  "EntryOu",
+                  "Id",
+                ],
+              },
+              "","exitOuId":"",
+              {
+                "Fn::GetAtt": [
+                  "ExitOu",
+                  "Id",
+                ],
+              },
               "","solutionVersion":"",
               {
                 "Fn::FindInMap": [
@@ -1767,7 +1768,7 @@ exports[`IsbAccountPoolStack Snapshot > matches the snapshot 1`] = `
               ],
             },
             "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.1.8",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.0",
           },
         },
         "FunctionName": {
@@ -3900,12 +3901,12 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
         "deploymentMode": "prod",
         "logLevel": "INFO",
         "publicEcrRegistry": "public.ecr.aws/aws-solutions",
-        "publicEcrTag": "v1.1.8",
+        "publicEcrTag": "v1.2.0",
         "s3LogsArchiveRetentionInDays": 365,
         "s3LogsGlacierRetentionInDays": 2555,
         "solutionId": "SO0284",
         "solutionName": "innovation-sandbox-on-aws",
-        "version": "v1.1.8",
+        "version": "v1.2.0",
       },
     },
   },
@@ -4642,30 +4643,6 @@ phases:
               "Action": "sts:AssumeRole",
               "Effect": "Allow",
               "Resource": {
-                "Fn::Join": [
-                  "",
-                  [
-                    "arn:",
-                    {
-                      "Ref": "AWS::Partition",
-                    },
-                    ":iam::",
-                    {
-                      "Ref": "AWS::AccountId",
-                    },
-                    ":role/InnovationSandbox-",
-                    {
-                      "Ref": "Namespace",
-                    },
-                    "-IntermediateRole",
-                  ],
-                ],
-              },
-            },
-            {
-              "Action": "sts:AssumeRole",
-              "Effect": "Allow",
-              "Resource": {
                 "Fn::GetAtt": [
                   "IntermediateRole6D2F2036",
                   "Arn",
@@ -4759,11 +4736,43 @@ phases:
               ],
             },
             "AWS_XRAY_CONTEXT_MISSING": "IGNORE_ERROR",
+            "CLEANUP_SPOKE_ROLE_NAME": {
+              "Fn::Join": [
+                "",
+                [
+                  "InnovationSandbox-",
+                  {
+                    "Ref": "Namespace",
+                  },
+                  "-SandboxAccountRole",
+                ],
+              ],
+            },
             "HUB_ACCOUNT_ID": {
               "Ref": "AWS::AccountId",
             },
             "IDC_ACCOUNT_ID": {
               "Ref": "IdcAccountId",
+            },
+            "INTERMEDIATE_ROLE_ARN": {
+              "Fn::Join": [
+                "",
+                [
+                  "arn:",
+                  {
+                    "Ref": "AWS::Partition",
+                  },
+                  ":iam::",
+                  {
+                    "Ref": "AWS::AccountId",
+                  },
+                  ":role/InnovationSandbox-",
+                  {
+                    "Ref": "Namespace",
+                  },
+                  "-IntermediateRole",
+                ],
+              ],
             },
             "NODE_OPTIONS": "--enable-source-maps",
             "ORG_MGT_ACCOUNT_ID": {
@@ -4780,7 +4789,7 @@ phases:
               ],
             },
             "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.1.8",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.0",
           },
         },
         "FunctionName": {
@@ -4912,23 +4921,9 @@ phases:
               "Action": "sts:AssumeRole",
               "Effect": "Allow",
               "Resource": {
-                "Fn::Join": [
-                  "",
-                  [
-                    "arn:",
-                    {
-                      "Ref": "AWS::Partition",
-                    },
-                    ":iam::",
-                    {
-                      "Ref": "AWS::AccountId",
-                    },
-                    ":role/InnovationSandbox-",
-                    {
-                      "Ref": "Namespace",
-                    },
-                    "-IntermediateRole",
-                  ],
+                "Fn::GetAtt": [
+                  "IntermediateRole6D2F2036",
+                  "Arn",
                 ],
               },
             },
@@ -5476,7 +5471,7 @@ phases:
               {
                 "Ref": "AWS::Partition",
               },
-              ":states:::events:putEvents","Parameters":{"Entries":[{"Detail":{"accountId.$":"$.input.accountId","cleanupExecutionContext":{"stateMachineExecutionArn.$":"$$.Execution.Id","stateMachineExecutionStartTime.$":"$$.Execution.StartTime"}},"DetailType":"AccountCleanupFailed","EventBusName":"",
+              ":states:::events:putEvents","Parameters":{"Entries":[{"Detail":{"accountId.$":"$.input.accountId","cleanupExecutionContext":{"stateMachineExecutionArn.$":"$$.Execution.Id","stateMachineExecutionStartTime.$":"$$.Execution.StartTime"},"reason.$":"$.input.reason"},"DetailType":"AccountCleanupFailed","EventBusName":"",
               {
                 "Fn::GetAtt": [
                   "ISBEventBusD5514129",
@@ -5487,7 +5482,7 @@ phases:
               {
                 "Ref": "AWS::Partition",
               },
-              ":states:::events:putEvents","Parameters":{"Entries":[{"Detail":{"accountId.$":"$.input.accountId","cleanupExecutionContext":{"stateMachineExecutionArn.$":"$$.Execution.Id","stateMachineExecutionStartTime.$":"$$.Execution.StartTime"}},"DetailType":"AccountCleanupSucceeded","EventBusName":"",
+              ":states:::events:putEvents","Parameters":{"Entries":[{"Detail":{"accountId.$":"$.input.accountId","cleanupExecutionContext":{"stateMachineExecutionArn.$":"$$.Execution.Id","stateMachineExecutionStartTime.$":"$$.Execution.StartTime"},"reason.$":"$.input.reason"},"DetailType":"AccountCleanupSucceeded","EventBusName":"",
               {
                 "Fn::GetAtt": [
                   "ISBEventBusD5514129",
@@ -5672,6 +5667,30 @@ phases:
         "Description": "Scans the sandbox ous and accounts and checks if there is any drift with what is in the database",
         "Environment": {
           "Variables": {
+            "ACCOUNT_POOL_CONFIG_PARAM_ARN": {
+              "Fn::Join": [
+                "",
+                [
+                  "arn:",
+                  {
+                    "Ref": "AWS::Partition",
+                  },
+                  ":ssm:",
+                  {
+                    "Ref": "AWS::Region",
+                  },
+                  ":",
+                  {
+                    "Ref": "OrgMgtAccountId",
+                  },
+                  ":parameter/InnovationSandbox_",
+                  {
+                    "Ref": "Namespace",
+                  },
+                  "_AccountPool_Configuration",
+                ],
+              ],
+            },
             "ACCOUNT_TABLE_NAME": {
               "Fn::GetAtt": [
                 "IsbSpokeConfigJsonParamResolverParseJsonConfigurationIsbCustomResource57F98B57",
@@ -5723,13 +5742,7 @@ phases:
               ],
             },
             "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
-            "SANDBOX_OU_ID": {
-              "Fn::GetAtt": [
-                "IsbSpokeConfigJsonParamResolverParseJsonConfigurationIsbCustomResource57F98B57",
-                "sandboxOuId",
-              ],
-            },
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.1.8",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.0",
           },
         },
         "FunctionName": {
@@ -5833,6 +5846,34 @@ phases:
                 "Fn::GetAtt": [
                   "IntermediateRole6D2F2036",
                   "Arn",
+                ],
+              },
+            },
+            {
+              "Action": "ssm:GetParameter",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition",
+                    },
+                    ":ssm:",
+                    {
+                      "Ref": "AWS::Region",
+                    },
+                    ":",
+                    {
+                      "Ref": "OrgMgtAccountId",
+                    },
+                    ":parameter/InnovationSandbox_",
+                    {
+                      "Ref": "Namespace",
+                    },
+                    "_AccountPool_Configuration",
+                  ],
                 ],
               },
             },
@@ -6249,6 +6290,8 @@ phases:
             "AccountCleanupFailed",
             "AccountDriftDetected",
             "LeaseFreezingThresholdAlert",
+            "BlueprintDeploymentSucceeded",
+            "BlueprintDeploymentFailed",
           ],
         },
         "State": "ENABLED",
@@ -6310,6 +6353,30 @@ phases:
         "Description": "Lambda used as API GW method integration for account resources",
         "Environment": {
           "Variables": {
+            "ACCOUNT_POOL_CONFIG_PARAM_ARN": {
+              "Fn::Join": [
+                "",
+                [
+                  "arn:",
+                  {
+                    "Ref": "AWS::Partition",
+                  },
+                  ":ssm:",
+                  {
+                    "Ref": "AWS::Region",
+                  },
+                  ":",
+                  {
+                    "Ref": "OrgMgtAccountId",
+                  },
+                  ":parameter/InnovationSandbox_",
+                  {
+                    "Ref": "Namespace",
+                  },
+                  "_AccountPool_Configuration",
+                ],
+              ],
+            },
             "ACCOUNT_TABLE_NAME": {
               "Fn::GetAtt": [
                 "IsbSpokeConfigJsonParamResolverParseJsonConfigurationIsbCustomResource57F98B57",
@@ -6365,11 +6432,41 @@ phases:
               ],
             },
             "AWS_XRAY_CONTEXT_MISSING": "IGNORE_ERROR",
+            "BLUEPRINT_TABLE_NAME": {
+              "Fn::GetAtt": [
+                "IsbSpokeConfigJsonParamResolverParseJsonConfigurationIsbCustomResource57F98B57",
+                "blueprintTable",
+              ],
+            },
             "HUB_ACCOUNT_ID": {
               "Ref": "AWS::AccountId",
             },
             "IDC_ACCOUNT_ID": {
               "Ref": "IdcAccountId",
+            },
+            "IDC_CONFIG_PARAM_ARN": {
+              "Fn::Join": [
+                "",
+                [
+                  "arn:",
+                  {
+                    "Ref": "AWS::Partition",
+                  },
+                  ":ssm:",
+                  {
+                    "Ref": "AWS::Region",
+                  },
+                  ":",
+                  {
+                    "Ref": "IdcAccountId",
+                  },
+                  ":parameter/InnovationSandbox_",
+                  {
+                    "Ref": "Namespace",
+                  },
+                  "_Idc_Configuration",
+                ],
+              ],
             },
             "IDC_ROLE_ARN": {
               "Fn::Join": [
@@ -6402,6 +6499,18 @@ phases:
             },
             "ISB_NAMESPACE": {
               "Ref": "Namespace",
+            },
+            "JWT_SECRET_NAME": {
+              "Fn::Join": [
+                "",
+                [
+                  "/InnovationSandbox/",
+                  {
+                    "Ref": "Namespace",
+                  },
+                  "/Auth/JwtSecret",
+                ],
+              ],
             },
             "LEASE_TABLE_NAME": {
               "Fn::GetAtt": [
@@ -6444,13 +6553,19 @@ phases:
               ],
             },
             "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
-            "SANDBOX_OU_ID": {
-              "Fn::GetAtt": [
-                "IsbSpokeConfigJsonParamResolverParseJsonConfigurationIsbCustomResource57F98B57",
-                "sandboxOuId",
+            "SANDBOX_ACCOUNT_ROLE_NAME": {
+              "Fn::Join": [
+                "",
+                [
+                  "InnovationSandbox-",
+                  {
+                    "Ref": "Namespace",
+                  },
+                  "-SandboxAccountRole",
+                ],
               ],
             },
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.1.8",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.0",
           },
         },
         "FunctionName": {
@@ -6607,6 +6722,34 @@ phases:
               },
             },
             {
+              "Action": "ssm:GetParameter",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition",
+                    },
+                    ":ssm:",
+                    {
+                      "Ref": "AWS::Region",
+                    },
+                    ":",
+                    {
+                      "Ref": "OrgMgtAccountId",
+                    },
+                    ":parameter/InnovationSandbox_",
+                    {
+                      "Ref": "Namespace",
+                    },
+                    "_AccountPool_Configuration",
+                  ],
+                ],
+              },
+            },
+            {
               "Action": [
                 "appconfig:StartConfigurationSession",
                 "appconfig:GetLatestConfiguration",
@@ -6662,6 +6805,124 @@ phases:
                   "Arn",
                 ],
               },
+            },
+            {
+              "Action": [
+                "secretsmanager:GetSecretValue",
+                "secretsmanager:DescribeSecret",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Ref": "JwtSecretB8834B39",
+              },
+            },
+            {
+              "Action": [
+                "kms:Decrypt",
+                "kms:Encrypt",
+                "kms:ReEncrypt*",
+                "kms:GenerateDataKey*",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "IsbKmsKeyIsbComputeStack45953B87",
+                  "Arn",
+                ],
+              },
+            },
+            {
+              "Action": [
+                "cloudformation:DescribeStackSet",
+                "cloudformation:ListStackInstances",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition",
+                    },
+                    ":cloudformation:",
+                    {
+                      "Ref": "AWS::Region",
+                    },
+                    ":",
+                    {
+                      "Ref": "AWS::AccountId",
+                    },
+                    ":stackset/*:*",
+                  ],
+                ],
+              },
+            },
+            {
+              "Action": "cloudformation:DeleteStackInstances",
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":cloudformation:",
+                      {
+                        "Ref": "AWS::Region",
+                      },
+                      ":",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":stackset/*:*",
+                    ],
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":cloudformation:",
+                      {
+                        "Ref": "AWS::Region",
+                      },
+                      ":",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":stackset-target/*",
+                    ],
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":cloudformation:",
+                      {
+                        "Ref": "AWS::Region",
+                      },
+                      ":",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":type/resource/*",
+                    ],
+                  ],
+                },
+              ],
             },
             {
               "Action": "sts:AssumeRole",
@@ -6829,6 +7090,75 @@ phases:
             },
             {
               "Action": [
+                "dynamodb:GetItem",
+                "dynamodb:PutItem",
+                "dynamodb:UpdateItem",
+                "dynamodb:DeleteItem",
+                "dynamodb:Query",
+                "dynamodb:Scan",
+                "dynamodb:ConditionCheckItem",
+                "dynamodb:BatchGetItem",
+                "dynamodb:BatchWriteItem",
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":dynamodb:",
+                      {
+                        "Ref": "AWS::Region",
+                      },
+                      ":",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":table/",
+                      {
+                        "Fn::GetAtt": [
+                          "IsbSpokeConfigJsonParamResolverParseJsonConfigurationIsbCustomResource57F98B57",
+                          "blueprintTable",
+                        ],
+                      },
+                    ],
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":dynamodb:",
+                      {
+                        "Ref": "AWS::Region",
+                      },
+                      ":",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":table/",
+                      {
+                        "Fn::GetAtt": [
+                          "IsbSpokeConfigJsonParamResolverParseJsonConfigurationIsbCustomResource57F98B57",
+                          "blueprintTable",
+                        ],
+                      },
+                      "/index/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": [
                 "kms:Decrypt",
                 "kms:DescribeKey",
                 "kms:Encrypt",
@@ -6931,7 +7261,7 @@ phases:
           ],
           "Version": "2012-10-17",
         },
-        "Description": "allows EventBridgeScheduler to invoke Innovation Sandbox's heartbeat metrics lamdba",
+        "Description": "allows EventBridgeScheduler to invoke Innovation Sandbox's heartbeat metrics lambda",
         "Tags": [
           {
             "Key": "aws-solutions:isb-id",
@@ -6973,7 +7303,7 @@ phases:
           "Variables": {
             "AWS_XRAY_CONTEXT_MISSING": "IGNORE_ERROR",
             "HUB_ACCOUNT_ID": {
-              "Ref": "OrgMgtAccountId",
+              "Ref": "AWS::AccountId",
             },
             "METRICS_URL": "https://metrics.awssolutionsbuilder.com/generic",
             "METRICS_UUID": {
@@ -7014,7 +7344,7 @@ phases:
                 },
               ],
             },
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.1.8",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.0",
           },
         },
         "FunctionName": {
@@ -7203,6 +7533,30 @@ phases:
         "Description": "Periodic heartbeat lambda for summarizing the solution deployment",
         "Environment": {
           "Variables": {
+            "ACCOUNT_POOL_CONFIG_PARAM_ARN": {
+              "Fn::Join": [
+                "",
+                [
+                  "arn:",
+                  {
+                    "Ref": "AWS::Partition",
+                  },
+                  ":ssm:",
+                  {
+                    "Ref": "AWS::Region",
+                  },
+                  ":",
+                  {
+                    "Ref": "OrgMgtAccountId",
+                  },
+                  ":parameter/InnovationSandbox_",
+                  {
+                    "Ref": "Namespace",
+                  },
+                  "_AccountPool_Configuration",
+                ],
+              ],
+            },
             "ACCOUNT_TABLE_NAME": {
               "Fn::GetAtt": [
                 "IsbSpokeConfigJsonParamResolverParseJsonConfigurationIsbCustomResource57F98B57",
@@ -7280,8 +7634,14 @@ phases:
               ],
             },
             "AWS_XRAY_CONTEXT_MISSING": "IGNORE_ERROR",
+            "BLUEPRINT_TABLE_NAME": {
+              "Fn::GetAtt": [
+                "IsbSpokeConfigJsonParamResolverParseJsonConfigurationIsbCustomResource57F98B57",
+                "blueprintTable",
+              ],
+            },
             "HUB_ACCOUNT_ID": {
-              "Ref": "OrgMgtAccountId",
+              "Ref": "AWS::AccountId",
             },
             "INTERMEDIATE_ROLE_ARN": {
               "Fn::GetAtt": [
@@ -7349,12 +7709,6 @@ phases:
                 "reportingConfigConfigurationProfileId",
               ],
             },
-            "SANDBOX_OU_ID": {
-              "Fn::GetAtt": [
-                "IsbSpokeConfigJsonParamResolverParseJsonConfigurationIsbCustomResource57F98B57",
-                "sandboxOuId",
-              ],
-            },
             "SOLUTION_ID": {
               "Fn::FindInMap": [
                 "Mapping",
@@ -7375,7 +7729,7 @@ phases:
                 },
               ],
             },
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.1.8",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.0",
           },
         },
         "FunctionName": {
@@ -7599,6 +7953,58 @@ phases:
               },
             },
             {
+              "Action": "ssm:GetParameter",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition",
+                    },
+                    ":ssm:",
+                    {
+                      "Ref": "AWS::Region",
+                    },
+                    ":",
+                    {
+                      "Ref": "OrgMgtAccountId",
+                    },
+                    ":parameter/InnovationSandbox_",
+                    {
+                      "Ref": "Namespace",
+                    },
+                    "_AccountPool_Configuration",
+                  ],
+                ],
+              },
+            },
+            {
+              "Action": "cloudformation:GetTemplateSummary",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition",
+                    },
+                    ":cloudformation:",
+                    {
+                      "Ref": "AWS::Region",
+                    },
+                    ":",
+                    {
+                      "Ref": "AWS::AccountId",
+                    },
+                    ":stackset/*",
+                  ],
+                ],
+              },
+            },
+            {
               "Action": "sts:AssumeRole",
               "Effect": "Allow",
               "Resource": {
@@ -7746,6 +8152,71 @@ phases:
                         "Fn::GetAtt": [
                           "IsbSpokeConfigJsonParamResolverParseJsonConfigurationIsbCustomResource57F98B57",
                           "accountTable",
+                        ],
+                      },
+                      "/index/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": [
+                "dynamodb:GetItem",
+                "dynamodb:Query",
+                "dynamodb:Scan",
+                "dynamodb:ConditionCheckItem",
+                "dynamodb:BatchGetItem",
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":dynamodb:",
+                      {
+                        "Ref": "AWS::Region",
+                      },
+                      ":",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":table/",
+                      {
+                        "Fn::GetAtt": [
+                          "IsbSpokeConfigJsonParamResolverParseJsonConfigurationIsbCustomResource57F98B57",
+                          "blueprintTable",
+                        ],
+                      },
+                    ],
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":dynamodb:",
+                      {
+                        "Ref": "AWS::Region",
+                      },
+                      ":",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":table/",
+                      {
+                        "Fn::GetAtt": [
+                          "IsbSpokeConfigJsonParamResolverParseJsonConfigurationIsbCustomResource57F98B57",
+                          "blueprintTable",
                         ],
                       },
                       "/index/*",
@@ -7986,7 +8457,7 @@ phases:
               ],
             },
             "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.1.8",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.0",
           },
         },
         "FunctionName": {
@@ -8116,6 +8587,31 @@ phases:
             },
             {
               "Action": [
+                "secretsmanager:GetSecretValue",
+                "secretsmanager:DescribeSecret",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Ref": "JwtSecretB8834B39",
+              },
+            },
+            {
+              "Action": [
+                "kms:Decrypt",
+                "kms:Encrypt",
+                "kms:ReEncrypt*",
+                "kms:GenerateDataKey*",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "IsbKmsKeyIsbComputeStack45953B87",
+                  "Arn",
+                ],
+              },
+            },
+            {
+              "Action": [
                 "appconfig:StartConfigurationSession",
                 "appconfig:GetLatestConfiguration",
               ],
@@ -8158,28 +8654,6 @@ phases:
                       ],
                     },
                   ],
-                ],
-              },
-            },
-            {
-              "Action": "secretsmanager:GetSecretValue",
-              "Effect": "Allow",
-              "Resource": {
-                "Ref": "JwtSecretB8834B39",
-              },
-            },
-            {
-              "Action": [
-                "kms:Decrypt",
-                "kms:Encrypt",
-                "kms:ReEncrypt*",
-                "kms:GenerateDataKey*",
-              ],
-              "Effect": "Allow",
-              "Resource": {
-                "Fn::GetAtt": [
-                  "IsbKmsKeyIsbComputeStack45953B87",
-                  "Arn",
                 ],
               },
             },
@@ -8234,6 +8708,1300 @@ phases:
         },
       },
       "Type": "AWS::Lambda::Permission",
+    },
+    "BlueprintDeploymentDeploymentOrchestratorLambdaFunctionC368A43B": {
+      "DependsOn": [
+        "BlueprintDeploymentDeploymentOrchestratorLambdaFunctionRoleDefaultPolicy18C6E050",
+        "BlueprintDeploymentDeploymentOrchestratorLambdaFunctionRole1ABC0710",
+      ],
+      "Metadata": {
+        "guard": {
+          "SuppressedRules": [
+            "LAMBDA_INSIDE_VPC",
+            "LAMBDA_CONCURRENCY_CHECK",
+          ],
+        },
+      },
+      "Properties": {
+        "Architectures": [
+          "arm64",
+        ],
+        "Code": "Omitted to remove snapshot dependency on hash",
+        "Description": "Orchestrates blueprint deployments via CloudFormation StackSets",
+        "Environment": {
+          "Variables": {
+            "AWS_XRAY_CONTEXT_MISSING": "IGNORE_ERROR",
+            "BLUEPRINT_TABLE_NAME": {
+              "Fn::GetAtt": [
+                "IsbSpokeConfigJsonParamResolverParseJsonConfigurationIsbCustomResource57F98B57",
+                "blueprintTable",
+              ],
+            },
+            "HUB_ACCOUNT_ID": {
+              "Ref": "AWS::AccountId",
+            },
+            "INTERMEDIATE_ROLE_ARN": {
+              "Fn::GetAtt": [
+                "IntermediateRole6D2F2036",
+                "Arn",
+              ],
+            },
+            "ISB_EVENT_BUS": {
+              "Ref": "ISBEventBusD5514129",
+            },
+            "ISB_NAMESPACE": {
+              "Ref": "Namespace",
+            },
+            "LEASE_TABLE_NAME": {
+              "Fn::GetAtt": [
+                "IsbSpokeConfigJsonParamResolverParseJsonConfigurationIsbCustomResource57F98B57",
+                "leaseTable",
+              ],
+            },
+            "NODE_OPTIONS": "--enable-source-maps",
+            "ORG_MGT_ACCOUNT_ID": {
+              "Ref": "OrgMgtAccountId",
+            },
+            "POWERTOOLS_LOG_LEVEL": {
+              "Fn::FindInMap": [
+                "Mapping",
+                "context",
+                "logLevel",
+                {
+                  "DefaultValue": "",
+                },
+              ],
+            },
+            "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
+            "SANDBOX_ACCOUNT_ROLE_NAME": {
+              "Fn::Join": [
+                "",
+                [
+                  "InnovationSandbox-",
+                  {
+                    "Ref": "Namespace",
+                  },
+                  "-SandboxAccountRole",
+                ],
+              ],
+            },
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.0",
+          },
+        },
+        "FunctionName": {
+          "Fn::Join": [
+            "",
+            [
+              "ISB-DeploymentOrchestratorLambda-",
+              {
+                "Ref": "Namespace",
+              },
+            ],
+          ],
+        },
+        "Handler": "index.handler",
+        "Layers": [
+          {
+            "Ref": "IsbSpokeConfigJsonParamResolverISBLambdaLayerIsbComputeStackDependenciesLayerVersion5B4AA878",
+          },
+          {
+            "Ref": "IsbSpokeConfigJsonParamResolverISBLambdaLayerIsbComputeStackCommonLayerVersion27C21445",
+          },
+        ],
+        "LoggingConfig": {
+          "LogFormat": "JSON",
+          "LogGroup": {
+            "Ref": "ISBLogGroupE607F9A7",
+          },
+          "SystemLogLevel": "INFO",
+        },
+        "MemorySize": 1024,
+        "Role": {
+          "Fn::GetAtt": [
+            "BlueprintDeploymentDeploymentOrchestratorLambdaFunctionRole1ABC0710",
+            "Arn",
+          ],
+        },
+        "Runtime": "nodejs22.x",
+        "Tags": [
+          {
+            "Key": "aws-solutions:isb-id",
+            "Value": {
+              "Fn::Join": [
+                "",
+                [
+                  {
+                    "Ref": "Namespace",
+                  },
+                  "_isb",
+                ],
+              ],
+            },
+          },
+        ],
+        "Timeout": 300,
+        "TracingConfig": {
+          "Mode": "Active",
+        },
+      },
+      "Type": "AWS::Lambda::Function",
+    },
+    "BlueprintDeploymentDeploymentOrchestratorLambdaFunctionRole1ABC0710": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "Tags": [
+          {
+            "Key": "aws-solutions:isb-id",
+            "Value": {
+              "Fn::Join": [
+                "",
+                [
+                  {
+                    "Ref": "Namespace",
+                  },
+                  "_isb",
+                ],
+              ],
+            },
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "BlueprintDeploymentDeploymentOrchestratorLambdaFunctionRoleDefaultPolicy18C6E050": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "xray:PutTraceSegments",
+                "xray:PutTelemetryRecords",
+              ],
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+            {
+              "Action": [
+                "logs:CreateLogStream",
+                "logs:PutLogEvents",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "ISBLogGroupE607F9A7",
+                  "Arn",
+                ],
+              },
+            },
+            {
+              "Action": [
+                "cloudformation:DescribeStackSet",
+                "cloudformation:DescribeStackSetOperation",
+                "cloudformation:ListStackInstances",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition",
+                    },
+                    ":cloudformation:",
+                    {
+                      "Ref": "AWS::Region",
+                    },
+                    ":",
+                    {
+                      "Ref": "AWS::AccountId",
+                    },
+                    ":stackset/*:*",
+                  ],
+                ],
+              },
+            },
+            {
+              "Action": "cloudformation:CreateStackInstances",
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":cloudformation:",
+                      {
+                        "Ref": "AWS::Region",
+                      },
+                      ":",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":stackset/*:*",
+                    ],
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":cloudformation:",
+                      {
+                        "Ref": "AWS::Region",
+                      },
+                      ":",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":stackset-target/*",
+                    ],
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":cloudformation:",
+                      {
+                        "Ref": "AWS::Region",
+                      },
+                      ":",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":type/resource/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": "events:PutEvents",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "ISBEventBusD5514129",
+                  "Arn",
+                ],
+              },
+            },
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "IntermediateRole6D2F2036",
+                  "Arn",
+                ],
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "BlueprintDeploymentDeploymentOrchestratorLambdaFunctionRoleDefaultPolicy18C6E050",
+        "Roles": [
+          {
+            "Ref": "BlueprintDeploymentDeploymentOrchestratorLambdaFunctionRole1ABC0710",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "BlueprintDeploymentDeploymentOrchestratorLambdaIsbDbTableReadWriteB3217AE2": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "dynamodb:GetItem",
+                "dynamodb:PutItem",
+                "dynamodb:UpdateItem",
+                "dynamodb:DeleteItem",
+                "dynamodb:Query",
+                "dynamodb:Scan",
+                "dynamodb:ConditionCheckItem",
+                "dynamodb:BatchGetItem",
+                "dynamodb:BatchWriteItem",
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":dynamodb:",
+                      {
+                        "Ref": "AWS::Region",
+                      },
+                      ":",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":table/",
+                      {
+                        "Fn::GetAtt": [
+                          "IsbSpokeConfigJsonParamResolverParseJsonConfigurationIsbCustomResource57F98B57",
+                          "blueprintTable",
+                        ],
+                      },
+                    ],
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":dynamodb:",
+                      {
+                        "Ref": "AWS::Region",
+                      },
+                      ":",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":table/",
+                      {
+                        "Fn::GetAtt": [
+                          "IsbSpokeConfigJsonParamResolverParseJsonConfigurationIsbCustomResource57F98B57",
+                          "blueprintTable",
+                        ],
+                      },
+                      "/index/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": [
+                "kms:Decrypt",
+                "kms:DescribeKey",
+                "kms:Encrypt",
+                "kms:GenerateDataKey",
+                "kms:ReEncrypt*",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition",
+                    },
+                    ":kms:",
+                    {
+                      "Ref": "AWS::Region",
+                    },
+                    ":",
+                    {
+                      "Ref": "AWS::AccountId",
+                    },
+                    ":key/",
+                    {
+                      "Fn::GetAtt": [
+                        "IsbSpokeConfigJsonParamResolverParseJsonConfigurationIsbCustomResource57F98B57",
+                        "tableKmsKeyId",
+                      ],
+                    },
+                  ],
+                ],
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "DynamoDBReadWriteAccess",
+        "Roles": [
+          {
+            "Ref": "BlueprintDeploymentDeploymentOrchestratorLambdaFunctionRole1ABC0710",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "BlueprintDeploymentStepFunctionBlueprintDeploymentRule9F0D2688": {
+      "Properties": {
+        "Description": "EventBus rule that triggers blueprint deployment Step Functions workflow",
+        "EventBusName": {
+          "Ref": "ISBEventBusD5514129",
+        },
+        "EventPattern": {
+          "detail-type": [
+            "BlueprintDeploymentRequest",
+          ],
+        },
+        "State": "ENABLED",
+        "Tags": [
+          {
+            "Key": "aws-solutions:isb-id",
+            "Value": {
+              "Fn::Join": [
+                "",
+                [
+                  {
+                    "Ref": "Namespace",
+                  },
+                  "_isb",
+                ],
+              ],
+            },
+          },
+        ],
+        "Targets": [
+          {
+            "Arn": {
+              "Ref": "BlueprintDeploymentStepFunctionBlueprintDeploymentStateMachine6A6DE17A",
+            },
+            "Id": "Target0",
+            "RoleArn": {
+              "Fn::GetAtt": [
+                "BlueprintDeploymentStepFunctionBlueprintDeploymentStateMachineEventsRole340D296A",
+                "Arn",
+              ],
+            },
+          },
+        ],
+      },
+      "Type": "AWS::Events::Rule",
+    },
+    "BlueprintDeploymentStepFunctionBlueprintDeploymentStateMachine6A6DE17A": {
+      "DeletionPolicy": "Delete",
+      "DependsOn": [
+        "BlueprintDeploymentStepFunctionBlueprintDeploymentStateMachineRoleDefaultPolicy14EF5FC5",
+        "BlueprintDeploymentStepFunctionBlueprintDeploymentStateMachineRole25EC71CB",
+      ],
+      "Properties": {
+        "DefinitionString": {
+          "Fn::Join": [
+            "",
+            [
+              "{"StartAt":"CreateStackInstances","States":{"CreateStackInstances":{"Next":"EvaluateCreateResult","Retry":[{"ErrorEquals":["Lambda.ClientExecutionTimeoutException","Lambda.ServiceException","Lambda.AWSLambdaException","Lambda.SdkClientException"],"IntervalSeconds":2,"MaxAttempts":6,"BackoffRate":2}],"Catch":[{"ErrorEquals":["States.ALL"],"ResultPath":"$.Error","Next":"AddLambdaErrorToContext"}],"Type":"Task","ResultPath":"$.context.deploymentResult","ResultSelector":{"success.$":"$.Payload.success","operationId.$":"$.Payload.operationId","status.$":"$.Payload.status","errorMessage.$":"$.Payload.errorMessage"},"Resource":"arn:",
+              {
+                "Ref": "AWS::Partition",
+              },
+              ":states:::lambda:invoke","Parameters":{"FunctionName":"",
+              {
+                "Fn::GetAtt": [
+                  "BlueprintDeploymentDeploymentOrchestratorLambdaFunctionC368A43B",
+                  "Arn",
+                ],
+              },
+              "","Payload":{"action":"CREATE","blueprintId.$":"$.detail.blueprintId","leaseId.$":"$.detail.leaseId","accountId.$":"$.detail.accountId","stackSetId.$":"$.detail.stackSetId","regions.$":"$.detail.regions","regionConcurrencyType.$":"$.detail.regionConcurrencyType","maxConcurrentPercentage.$":"$.detail.maxConcurrentPercentage","failureTolerancePercentage.$":"$.detail.failureTolerancePercentage","concurrencyMode.$":"$.detail.concurrencyMode","executionStartTime.$":"$$.Execution.StartTime"}}},"EvaluateCreateResult":{"Type":"Choice","Choices":[{"Variable":"$.context.deploymentResult.success","BooleanEquals":false,"Next":"PublishDeploymentResult"}],"Default":"CheckDeploymentStatus"},"CheckDeploymentStatus":{"Next":"EvaluateDeploymentStatus","Retry":[{"ErrorEquals":["Lambda.ClientExecutionTimeoutException","Lambda.ServiceException","Lambda.AWSLambdaException","Lambda.SdkClientException"],"IntervalSeconds":2,"MaxAttempts":6,"BackoffRate":2}],"Catch":[{"ErrorEquals":["States.ALL"],"ResultPath":"$.Error","Next":"AddLambdaErrorToContext"}],"Type":"Task","ResultPath":"$.context.deploymentResult","ResultSelector":{"operationId.$":"$.Payload.operationId","status.$":"$.Payload.status","errorMessage.$":"$.Payload.errorMessage"},"Resource":"arn:",
+              {
+                "Ref": "AWS::Partition",
+              },
+              ":states:::lambda:invoke","Parameters":{"FunctionName":"",
+              {
+                "Fn::GetAtt": [
+                  "BlueprintDeploymentDeploymentOrchestratorLambdaFunctionC368A43B",
+                  "Arn",
+                ],
+              },
+              "","Payload":{"action":"CHECK_STATUS","blueprintId.$":"$.detail.blueprintId","leaseId.$":"$.detail.leaseId","accountId.$":"$.detail.accountId","stackSetId.$":"$.detail.stackSetId","operationId.$":"$.context.deploymentResult.operationId","deploymentTimeoutMinutes.$":"$.detail.deploymentTimeoutMinutes","executionStartTime.$":"$$.Execution.StartTime"}}},"WaitForDeployment":{"Type":"Wait","Seconds":30,"Next":"CheckDeploymentStatus"},"EvaluateDeploymentStatus":{"Type":"Choice","Choices":[{"Variable":"$.context.deploymentResult.status","StringEquals":"SUCCEEDED","Next":"PublishDeploymentResult"},{"Variable":"$.context.deploymentResult.status","StringEquals":"FAILED","Next":"PublishDeploymentResult"}],"Default":"WaitForDeployment"},"PublishDeploymentResult":{"End":true,"Retry":[{"ErrorEquals":["Lambda.ClientExecutionTimeoutException","Lambda.ServiceException","Lambda.AWSLambdaException","Lambda.SdkClientException"],"IntervalSeconds":2,"MaxAttempts":6,"BackoffRate":2}],"Type":"Task","Resource":"arn:",
+              {
+                "Ref": "AWS::Partition",
+              },
+              ":states:::lambda:invoke","Parameters":{"FunctionName":"",
+              {
+                "Fn::GetAtt": [
+                  "BlueprintDeploymentDeploymentOrchestratorLambdaFunctionC368A43B",
+                  "Arn",
+                ],
+              },
+              "","Payload":{"action":"PUBLISH_RESULT","blueprintId.$":"$.detail.blueprintId","leaseId.$":"$.detail.leaseId","userEmail.$":"$.detail.userEmail","accountId.$":"$.detail.accountId","blueprintName.$":"$.detail.blueprintName","operationId.$":"$.context.deploymentResult.operationId","status.$":"$.context.deploymentResult.status","errorMessage.$":"$.context.deploymentResult.errorMessage"}}},"AddLambdaErrorToContext":{"Type":"Pass","Parameters":{"detail.$":"$.detail","Execution.$":"$.Execution","context":{"deploymentResult":{"success":false,"operationId":"N/A","status":"FAILED","errorMessage.$":"States.Format('Step Functions error - Lambda function invocation failed: {}', $.Error.Cause)"}}},"Next":"PublishDeploymentResult"}},"TimeoutSeconds":28800}",
+            ],
+          ],
+        },
+        "LoggingConfiguration": {
+          "Destinations": [
+            {
+              "CloudWatchLogsLogGroup": {
+                "LogGroupArn": {
+                  "Fn::GetAtt": [
+                    "ISBLogGroupE607F9A7",
+                    "Arn",
+                  ],
+                },
+              },
+            },
+          ],
+          "IncludeExecutionData": true,
+          "Level": "ALL",
+        },
+        "RoleArn": {
+          "Fn::GetAtt": [
+            "BlueprintDeploymentStepFunctionBlueprintDeploymentStateMachineRole25EC71CB",
+            "Arn",
+          ],
+        },
+        "StateMachineType": "STANDARD",
+        "Tags": [
+          {
+            "Key": "Component",
+            "Value": "BlueprintDeployment",
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "InnovationSandbox",
+          },
+        ],
+        "TracingConfiguration": {
+          "Enabled": true,
+        },
+      },
+      "Type": "AWS::StepFunctions::StateMachine",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "BlueprintDeploymentStepFunctionBlueprintDeploymentStateMachineEventsRole340D296A": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "events.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "Tags": [
+          {
+            "Key": "aws-solutions:isb-id",
+            "Value": {
+              "Fn::Join": [
+                "",
+                [
+                  {
+                    "Ref": "Namespace",
+                  },
+                  "_isb",
+                ],
+              ],
+            },
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "BlueprintDeploymentStepFunctionBlueprintDeploymentStateMachineEventsRoleDefaultPolicyA171F120": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "states:StartExecution",
+              "Effect": "Allow",
+              "Resource": {
+                "Ref": "BlueprintDeploymentStepFunctionBlueprintDeploymentStateMachine6A6DE17A",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "BlueprintDeploymentStepFunctionBlueprintDeploymentStateMachineEventsRoleDefaultPolicyA171F120",
+        "Roles": [
+          {
+            "Ref": "BlueprintDeploymentStepFunctionBlueprintDeploymentStateMachineEventsRole340D296A",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "BlueprintDeploymentStepFunctionBlueprintDeploymentStateMachineRole25EC71CB": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "states.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "Tags": [
+          {
+            "Key": "aws-solutions:isb-id",
+            "Value": {
+              "Fn::Join": [
+                "",
+                [
+                  {
+                    "Ref": "Namespace",
+                  },
+                  "_isb",
+                ],
+              ],
+            },
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "BlueprintDeploymentStepFunctionBlueprintDeploymentStateMachineRoleDefaultPolicy14EF5FC5": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "lambda:InvokeFunction",
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "BlueprintDeploymentDeploymentOrchestratorLambdaFunctionC368A43B",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "BlueprintDeploymentDeploymentOrchestratorLambdaFunctionC368A43B",
+                          "Arn",
+                        ],
+                      },
+                      ":*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": [
+                "logs:CreateLogDelivery",
+                "logs:GetLogDelivery",
+                "logs:UpdateLogDelivery",
+                "logs:DeleteLogDelivery",
+                "logs:ListLogDeliveries",
+                "logs:PutResourcePolicy",
+                "logs:DescribeResourcePolicies",
+                "logs:DescribeLogGroups",
+              ],
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+            {
+              "Action": [
+                "xray:PutTraceSegments",
+                "xray:PutTelemetryRecords",
+                "xray:GetSamplingRules",
+                "xray:GetSamplingTargets",
+              ],
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "BlueprintDeploymentStepFunctionBlueprintDeploymentStateMachineRoleDefaultPolicy14EF5FC5",
+        "Roles": [
+          {
+            "Ref": "BlueprintDeploymentStepFunctionBlueprintDeploymentStateMachineRole25EC71CB",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "BlueprintsLambdaFunction92CE4466": {
+      "DependsOn": [
+        "BlueprintsLambdaFunctionFunctionRoleDefaultPolicy1A29AFF1",
+        "BlueprintsLambdaFunctionFunctionRoleE6A626CE",
+      ],
+      "Metadata": {
+        "guard": {
+          "SuppressedRules": [
+            "LAMBDA_INSIDE_VPC",
+            "LAMBDA_CONCURRENCY_CHECK",
+          ],
+        },
+      },
+      "Properties": {
+        "Architectures": [
+          "arm64",
+        ],
+        "Code": "Omitted to remove snapshot dependency on hash",
+        "Description": "Lambda used as API GW method integration for blueprints resources",
+        "Environment": {
+          "Variables": {
+            "APP_CONFIG_APPLICATION_ID": {
+              "Fn::GetAtt": [
+                "IsbSpokeConfigJsonParamResolverParseJsonConfigurationIsbCustomResource57F98B57",
+                "configApplicationId",
+              ],
+            },
+            "APP_CONFIG_ENVIRONMENT_ID": {
+              "Fn::GetAtt": [
+                "IsbSpokeConfigJsonParamResolverParseJsonConfigurationIsbCustomResource57F98B57",
+                "configEnvironmentId",
+              ],
+            },
+            "APP_CONFIG_PROFILE_ID": {
+              "Fn::GetAtt": [
+                "IsbSpokeConfigJsonParamResolverParseJsonConfigurationIsbCustomResource57F98B57",
+                "globalConfigConfigurationProfileId",
+              ],
+            },
+            "AWS_APPCONFIG_EXTENSION_HTTP_PORT": "2772",
+            "AWS_APPCONFIG_EXTENSION_POLL_INTERVAL_SECONDS": "10m",
+            "AWS_APPCONFIG_EXTENSION_PREFETCH_LIST": {
+              "Fn::Join": [
+                "",
+                [
+                  "/applications/",
+                  {
+                    "Fn::GetAtt": [
+                      "IsbSpokeConfigJsonParamResolverParseJsonConfigurationIsbCustomResource57F98B57",
+                      "configApplicationId",
+                    ],
+                  },
+                  "/environments/",
+                  {
+                    "Fn::GetAtt": [
+                      "IsbSpokeConfigJsonParamResolverParseJsonConfigurationIsbCustomResource57F98B57",
+                      "configEnvironmentId",
+                    ],
+                  },
+                  "/configurations/",
+                  {
+                    "Fn::GetAtt": [
+                      "IsbSpokeConfigJsonParamResolverParseJsonConfigurationIsbCustomResource57F98B57",
+                      "globalConfigConfigurationProfileId",
+                    ],
+                  },
+                ],
+              ],
+            },
+            "AWS_XRAY_CONTEXT_MISSING": "IGNORE_ERROR",
+            "BLUEPRINT_TABLE_NAME": {
+              "Fn::GetAtt": [
+                "IsbSpokeConfigJsonParamResolverParseJsonConfigurationIsbCustomResource57F98B57",
+                "blueprintTable",
+              ],
+            },
+            "HUB_ACCOUNT_ID": {
+              "Ref": "AWS::AccountId",
+            },
+            "INTERMEDIATE_ROLE_ARN": {
+              "Fn::GetAtt": [
+                "IntermediateRole6D2F2036",
+                "Arn",
+              ],
+            },
+            "ISB_NAMESPACE": {
+              "Ref": "Namespace",
+            },
+            "JWT_SECRET_NAME": {
+              "Fn::Join": [
+                "",
+                [
+                  "/InnovationSandbox/",
+                  {
+                    "Ref": "Namespace",
+                  },
+                  "/Auth/JwtSecret",
+                ],
+              ],
+            },
+            "LEASE_TEMPLATE_TABLE_NAME": {
+              "Fn::GetAtt": [
+                "IsbSpokeConfigJsonParamResolverParseJsonConfigurationIsbCustomResource57F98B57",
+                "leaseTemplateTable",
+              ],
+            },
+            "NODE_OPTIONS": "--enable-source-maps",
+            "ORG_MGT_ACCOUNT_ID": {
+              "Ref": "OrgMgtAccountId",
+            },
+            "POWERTOOLS_LOG_LEVEL": {
+              "Fn::FindInMap": [
+                "Mapping",
+                "context",
+                "logLevel",
+                {
+                  "DefaultValue": "",
+                },
+              ],
+            },
+            "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
+            "SANDBOX_ACCOUNT_ROLE_NAME": {
+              "Fn::Join": [
+                "",
+                [
+                  "InnovationSandbox-",
+                  {
+                    "Ref": "Namespace",
+                  },
+                  "-SandboxAccountRole",
+                ],
+              ],
+            },
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.0",
+          },
+        },
+        "FunctionName": {
+          "Fn::Join": [
+            "",
+            [
+              "ISB-BlueprintsLambdaFunction-",
+              {
+                "Ref": "Namespace",
+              },
+            ],
+          ],
+        },
+        "Handler": "index.handler",
+        "Layers": [
+          {
+            "Ref": "IsbSpokeConfigJsonParamResolverISBLambdaLayerIsbComputeStackDependenciesLayerVersion5B4AA878",
+          },
+          {
+            "Ref": "IsbSpokeConfigJsonParamResolverISBLambdaLayerIsbComputeStackCommonLayerVersion27C21445",
+          },
+          {
+            "Fn::FindInMap": [
+              "AppConfigExtensionArnMap",
+              {
+                "Ref": "AWS::Region",
+              },
+              "arn",
+            ],
+          },
+        ],
+        "LoggingConfig": {
+          "LogFormat": "JSON",
+          "LogGroup": {
+            "Ref": "ISBLogGroupE607F9A7",
+          },
+          "SystemLogLevel": "INFO",
+        },
+        "MemorySize": 1024,
+        "Role": {
+          "Fn::GetAtt": [
+            "BlueprintsLambdaFunctionFunctionRoleE6A626CE",
+            "Arn",
+          ],
+        },
+        "Runtime": "nodejs22.x",
+        "Tags": [
+          {
+            "Key": "aws-solutions:isb-id",
+            "Value": {
+              "Fn::Join": [
+                "",
+                [
+                  {
+                    "Ref": "Namespace",
+                  },
+                  "_isb",
+                ],
+              ],
+            },
+          },
+        ],
+        "Timeout": 60,
+        "TracingConfig": {
+          "Mode": "Active",
+        },
+      },
+      "Type": "AWS::Lambda::Function",
+    },
+    "BlueprintsLambdaFunctionFunctionRoleDefaultPolicy1A29AFF1": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "xray:PutTraceSegments",
+                "xray:PutTelemetryRecords",
+              ],
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+            {
+              "Action": [
+                "logs:CreateLogStream",
+                "logs:PutLogEvents",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "ISBLogGroupE607F9A7",
+                  "Arn",
+                ],
+              },
+            },
+            {
+              "Action": [
+                "appconfig:StartConfigurationSession",
+                "appconfig:GetLatestConfiguration",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition",
+                    },
+                    ":appconfig:",
+                    {
+                      "Ref": "AWS::Region",
+                    },
+                    ":",
+                    {
+                      "Ref": "AWS::AccountId",
+                    },
+                    ":application/",
+                    {
+                      "Fn::GetAtt": [
+                        "IsbSpokeConfigJsonParamResolverParseJsonConfigurationIsbCustomResource57F98B57",
+                        "configApplicationId",
+                      ],
+                    },
+                    "/environment/",
+                    {
+                      "Fn::GetAtt": [
+                        "IsbSpokeConfigJsonParamResolverParseJsonConfigurationIsbCustomResource57F98B57",
+                        "configEnvironmentId",
+                      ],
+                    },
+                    "/configuration/",
+                    {
+                      "Fn::GetAtt": [
+                        "IsbSpokeConfigJsonParamResolverParseJsonConfigurationIsbCustomResource57F98B57",
+                        "globalConfigConfigurationProfileId",
+                      ],
+                    },
+                  ],
+                ],
+              },
+            },
+            {
+              "Action": "cloudformation:DescribeStackSet",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition",
+                    },
+                    ":cloudformation:",
+                    {
+                      "Ref": "AWS::Region",
+                    },
+                    ":",
+                    {
+                      "Ref": "AWS::AccountId",
+                    },
+                    ":stackset/*:*",
+                  ],
+                ],
+              },
+            },
+            {
+              "Action": "cloudformation:ListStackSets",
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+            {
+              "Action": [
+                "secretsmanager:GetSecretValue",
+                "secretsmanager:DescribeSecret",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Ref": "JwtSecretB8834B39",
+              },
+            },
+            {
+              "Action": [
+                "kms:Decrypt",
+                "kms:Encrypt",
+                "kms:ReEncrypt*",
+                "kms:GenerateDataKey*",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "IsbKmsKeyIsbComputeStack45953B87",
+                  "Arn",
+                ],
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "BlueprintsLambdaFunctionFunctionRoleDefaultPolicy1A29AFF1",
+        "Roles": [
+          {
+            "Ref": "BlueprintsLambdaFunctionFunctionRoleE6A626CE",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "BlueprintsLambdaFunctionFunctionRoleE6A626CE": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "Tags": [
+          {
+            "Key": "aws-solutions:isb-id",
+            "Value": {
+              "Fn::Join": [
+                "",
+                [
+                  {
+                    "Ref": "Namespace",
+                  },
+                  "_isb",
+                ],
+              ],
+            },
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "BlueprintsLambdaFunctionIsbDbTableReadWrite685D08DC": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "dynamodb:GetItem",
+                "dynamodb:PutItem",
+                "dynamodb:UpdateItem",
+                "dynamodb:DeleteItem",
+                "dynamodb:Query",
+                "dynamodb:Scan",
+                "dynamodb:ConditionCheckItem",
+                "dynamodb:BatchGetItem",
+                "dynamodb:BatchWriteItem",
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":dynamodb:",
+                      {
+                        "Ref": "AWS::Region",
+                      },
+                      ":",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":table/",
+                      {
+                        "Fn::GetAtt": [
+                          "IsbSpokeConfigJsonParamResolverParseJsonConfigurationIsbCustomResource57F98B57",
+                          "blueprintTable",
+                        ],
+                      },
+                    ],
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":dynamodb:",
+                      {
+                        "Ref": "AWS::Region",
+                      },
+                      ":",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":table/",
+                      {
+                        "Fn::GetAtt": [
+                          "IsbSpokeConfigJsonParamResolverParseJsonConfigurationIsbCustomResource57F98B57",
+                          "blueprintTable",
+                        ],
+                      },
+                      "/index/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": [
+                "dynamodb:GetItem",
+                "dynamodb:PutItem",
+                "dynamodb:UpdateItem",
+                "dynamodb:DeleteItem",
+                "dynamodb:Query",
+                "dynamodb:Scan",
+                "dynamodb:ConditionCheckItem",
+                "dynamodb:BatchGetItem",
+                "dynamodb:BatchWriteItem",
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":dynamodb:",
+                      {
+                        "Ref": "AWS::Region",
+                      },
+                      ":",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":table/",
+                      {
+                        "Fn::GetAtt": [
+                          "IsbSpokeConfigJsonParamResolverParseJsonConfigurationIsbCustomResource57F98B57",
+                          "leaseTemplateTable",
+                        ],
+                      },
+                    ],
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":dynamodb:",
+                      {
+                        "Ref": "AWS::Region",
+                      },
+                      ":",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":table/",
+                      {
+                        "Fn::GetAtt": [
+                          "IsbSpokeConfigJsonParamResolverParseJsonConfigurationIsbCustomResource57F98B57",
+                          "leaseTemplateTable",
+                        ],
+                      },
+                      "/index/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": [
+                "kms:Decrypt",
+                "kms:DescribeKey",
+                "kms:Encrypt",
+                "kms:GenerateDataKey",
+                "kms:ReEncrypt*",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition",
+                    },
+                    ":kms:",
+                    {
+                      "Ref": "AWS::Region",
+                    },
+                    ":",
+                    {
+                      "Ref": "AWS::AccountId",
+                    },
+                    ":key/",
+                    {
+                      "Fn::GetAtt": [
+                        "IsbSpokeConfigJsonParamResolverParseJsonConfigurationIsbCustomResource57F98B57",
+                        "tableKmsKeyId",
+                      ],
+                    },
+                  ],
+                ],
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "DynamoDBReadWriteAccess",
+        "Roles": [
+          {
+            "Ref": "BlueprintsLambdaFunctionFunctionRoleE6A626CE",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
     },
     "CloudFrontUiApiDeployIsbFrontEndAwsCliLayerA79739D4": {
       "Properties": {
@@ -8540,7 +10308,7 @@ phases:
           "Name": "IsbComputeStackCloudFrontUiApiIsbCloudFrontResponseHeadersPolicy91EFE132",
           "SecurityHeadersConfig": {
             "ContentSecurityPolicy": {
-              "ContentSecurityPolicy": "upgrade-insecure-requests; default-src 'none'; object-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'none';",
+              "ContentSecurityPolicy": "upgrade-insecure-requests; default-src 'none'; object-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' https://api.github.com; manifest-src 'self'; frame-ancestors 'none'; base-uri 'none';",
               "Override": true,
             },
             "ContentTypeOptions": {
@@ -8962,6 +10730,30 @@ phases:
         "Description": "Lambda used as API GW method integration for configurations resources",
         "Environment": {
           "Variables": {
+            "ACCOUNT_POOL_CONFIG_PARAM_ARN": {
+              "Fn::Join": [
+                "",
+                [
+                  "arn:",
+                  {
+                    "Ref": "AWS::Partition",
+                  },
+                  ":ssm:",
+                  {
+                    "Ref": "AWS::Region",
+                  },
+                  ":",
+                  {
+                    "Ref": "OrgMgtAccountId",
+                  },
+                  ":parameter/InnovationSandbox_",
+                  {
+                    "Ref": "Namespace",
+                  },
+                  "_AccountPool_Configuration",
+                ],
+              ],
+            },
             "APP_CONFIG_APPLICATION_ID": {
               "Fn::GetAtt": [
                 "IsbSpokeConfigJsonParamResolverParseJsonConfigurationIsbCustomResource57F98B57",
@@ -9032,10 +10824,16 @@ phases:
               ],
             },
             "AWS_XRAY_CONTEXT_MISSING": "IGNORE_ERROR",
-            "ISB_MANAGED_REGIONS": {
-              "Fn::GetAtt": [
-                "IsbSpokeConfigJsonParamResolverParseJsonConfigurationIsbCustomResource57F98B57",
-                "isbManagedRegions",
+            "JWT_SECRET_NAME": {
+              "Fn::Join": [
+                "",
+                [
+                  "/InnovationSandbox/",
+                  {
+                    "Ref": "Namespace",
+                  },
+                  "/Auth/JwtSecret",
+                ],
               ],
             },
             "NODE_OPTIONS": "--enable-source-maps",
@@ -9056,7 +10854,7 @@ phases:
                 "reportingConfigConfigurationProfileId",
               ],
             },
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.1.8",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.0",
           },
         },
         "FunctionName": {
@@ -9278,6 +11076,59 @@ phases:
                 ],
               },
             },
+            {
+              "Action": "ssm:GetParameter",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition",
+                    },
+                    ":ssm:",
+                    {
+                      "Ref": "AWS::Region",
+                    },
+                    ":",
+                    {
+                      "Ref": "OrgMgtAccountId",
+                    },
+                    ":parameter/InnovationSandbox_",
+                    {
+                      "Ref": "Namespace",
+                    },
+                    "_AccountPool_Configuration",
+                  ],
+                ],
+              },
+            },
+            {
+              "Action": [
+                "secretsmanager:GetSecretValue",
+                "secretsmanager:DescribeSecret",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Ref": "JwtSecretB8834B39",
+              },
+            },
+            {
+              "Action": [
+                "kms:Decrypt",
+                "kms:Encrypt",
+                "kms:ReEncrypt*",
+                "kms:GenerateDataKey*",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "IsbKmsKeyIsbComputeStack45953B87",
+                  "Arn",
+                ],
+              },
+            },
           ],
           "Version": "2012-10-17",
         },
@@ -9380,7 +11231,7 @@ phases:
               ],
             },
             "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.1.8",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.0",
           },
         },
         "FunctionName": {
@@ -9988,7 +11839,7 @@ phases:
               ],
             },
             "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.1.8",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.0",
           },
         },
         "FunctionName": {
@@ -10306,6 +12157,7 @@ phases:
             "LeaseTerminated",
             "LeaseFrozen",
             "LeaseUnfrozen",
+            "LeaseProvisioningFailed",
             "AccountCleanupFailed",
             "AccountDriftDetected",
             "LeaseBudgetThresholdAlert",
@@ -10438,6 +12290,30 @@ phases:
               ],
             },
             "AWS_XRAY_CONTEXT_MISSING": "IGNORE_ERROR",
+            "IDC_CONFIG_PARAM_ARN": {
+              "Fn::Join": [
+                "",
+                [
+                  "arn:",
+                  {
+                    "Ref": "AWS::Partition",
+                  },
+                  ":ssm:",
+                  {
+                    "Ref": "AWS::Region",
+                  },
+                  ":",
+                  {
+                    "Ref": "IdcAccountId",
+                  },
+                  ":parameter/InnovationSandbox_",
+                  {
+                    "Ref": "Namespace",
+                  },
+                  "_Idc_Configuration",
+                ],
+              ],
+            },
             "IDC_ROLE_ARN": {
               "Fn::Join": [
                 "",
@@ -10482,7 +12358,7 @@ phases:
               ],
             },
             "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.1.8",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.0",
           },
         },
         "FunctionName": {
@@ -10840,7 +12716,7 @@ phases:
             "REPORT_BUCKET_NAME": {
               "Ref": "GroupCostReportingLambdaGroupCostReportingBucketF096C1FB",
             },
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.1.8",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.0",
           },
         },
         "FunctionName": {
@@ -11806,7 +13682,19 @@ phases:
                     },
                     {
                       "Fn::GetAtt": [
+                        "AccountCleanerInitializeCleanupLambdaFunctionRole59E22179",
+                        "Arn",
+                      ],
+                    },
+                    {
+                      "Fn::GetAtt": [
                         "AccountCleanerCodeBuildCleanupProjectRole3FF40319",
+                        "Arn",
+                      ],
+                    },
+                    {
+                      "Fn::GetAtt": [
+                        "BlueprintDeploymentDeploymentOrchestratorLambdaFunctionRole1ABC0710",
                         "Arn",
                       ],
                     },
@@ -11867,6 +13755,13 @@ phases:
                     ],
                   ],
                 },
+              },
+            },
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "cloudformation.amazonaws.com",
               },
             },
           ],
@@ -12343,6 +14238,209 @@ phases:
             {
               "Action": "kms:Decrypt",
               "Condition": {
+                "StringEquals": {
+                  "kms:ViaService": {
+                    "Fn::Join": [
+                      "",
+                      [
+                        "secretsmanager.",
+                        {
+                          "Ref": "AWS::Region",
+                        },
+                        ".amazonaws.com",
+                      ],
+                    ],
+                  },
+                },
+              },
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": {
+                  "Fn::GetAtt": [
+                    "AuthorizerLambdaFunctionFunctionRole354E8B0D",
+                    "Arn",
+                  ],
+                },
+              },
+              "Resource": "*",
+            },
+            {
+              "Action": "kms:Decrypt",
+              "Condition": {
+                "StringEquals": {
+                  "kms:ViaService": {
+                    "Fn::Join": [
+                      "",
+                      [
+                        "secretsmanager.",
+                        {
+                          "Ref": "AWS::Region",
+                        },
+                        ".amazonaws.com",
+                      ],
+                    ],
+                  },
+                },
+              },
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": {
+                  "Fn::GetAtt": [
+                    "SsoHandlerFunctionRoleA9C67752",
+                    "Arn",
+                  ],
+                },
+              },
+              "Resource": "*",
+            },
+            {
+              "Action": "kms:Decrypt",
+              "Condition": {
+                "StringEquals": {
+                  "kms:ViaService": {
+                    "Fn::Join": [
+                      "",
+                      [
+                        "secretsmanager.",
+                        {
+                          "Ref": "AWS::Region",
+                        },
+                        ".amazonaws.com",
+                      ],
+                    ],
+                  },
+                },
+              },
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": {
+                  "Fn::GetAtt": [
+                    "LeasesLambdaFunctionFunctionRole8C813149",
+                    "Arn",
+                  ],
+                },
+              },
+              "Resource": "*",
+            },
+            {
+              "Action": "kms:Decrypt",
+              "Condition": {
+                "StringEquals": {
+                  "kms:ViaService": {
+                    "Fn::Join": [
+                      "",
+                      [
+                        "secretsmanager.",
+                        {
+                          "Ref": "AWS::Region",
+                        },
+                        ".amazonaws.com",
+                      ],
+                    ],
+                  },
+                },
+              },
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": {
+                  "Fn::GetAtt": [
+                    "LeaseTemplatesLambdaFunctionFunctionRoleC7543D26",
+                    "Arn",
+                  ],
+                },
+              },
+              "Resource": "*",
+            },
+            {
+              "Action": "kms:Decrypt",
+              "Condition": {
+                "StringEquals": {
+                  "kms:ViaService": {
+                    "Fn::Join": [
+                      "",
+                      [
+                        "secretsmanager.",
+                        {
+                          "Ref": "AWS::Region",
+                        },
+                        ".amazonaws.com",
+                      ],
+                    ],
+                  },
+                },
+              },
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": {
+                  "Fn::GetAtt": [
+                    "AccountsLambdaFunctionFunctionRole3A22EFEC",
+                    "Arn",
+                  ],
+                },
+              },
+              "Resource": "*",
+            },
+            {
+              "Action": "kms:Decrypt",
+              "Condition": {
+                "StringEquals": {
+                  "kms:ViaService": {
+                    "Fn::Join": [
+                      "",
+                      [
+                        "secretsmanager.",
+                        {
+                          "Ref": "AWS::Region",
+                        },
+                        ".amazonaws.com",
+                      ],
+                    ],
+                  },
+                },
+              },
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": {
+                  "Fn::GetAtt": [
+                    "BlueprintsLambdaFunctionFunctionRoleE6A626CE",
+                    "Arn",
+                  ],
+                },
+              },
+              "Resource": "*",
+            },
+            {
+              "Action": "kms:Decrypt",
+              "Condition": {
+                "StringEquals": {
+                  "kms:ViaService": {
+                    "Fn::Join": [
+                      "",
+                      [
+                        "secretsmanager.",
+                        {
+                          "Ref": "AWS::Region",
+                        },
+                        ".amazonaws.com",
+                      ],
+                    ],
+                  },
+                },
+              },
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": {
+                  "Fn::GetAtt": [
+                    "ConfigurationsLambdaFunctionFunctionRole3EA8ADFC",
+                    "Arn",
+                  ],
+                },
+              },
+              "Resource": "*",
+            },
+            {
+              "Action": "kms:Decrypt",
+              "Condition": {
                 "ArnLike": {
                   "AWS:SourceArn": {
                     "Fn::Join": [
@@ -12521,7 +14619,7 @@ phases:
       "Type": "AWS::IAM::Role",
       "UpdateReplacePolicy": "Retain",
     },
-    "IsbRestApiDeployment120FC0536a62d8e8dde000197003cb9ff435a69f": {
+    "IsbRestApiDeployment120FC0535d19a79d318ac2087c393ccf48eaff60": {
       "DependsOn": [
         "IsbRestApiaccountsawsAccountIdejectPOST8D3E80E9",
         "IsbRestApiaccountsawsAccountIdeject6D451D8A",
@@ -12539,6 +14637,15 @@ phases:
         "IsbRestApiauthactionPOST28128E1C",
         "IsbRestApiauthaction909DADD2",
         "IsbRestApiauthE905B564",
+        "IsbRestApiblueprintsblueprintIdDELETE999AABA6",
+        "IsbRestApiblueprintsblueprintIdGETBD57AC27",
+        "IsbRestApiblueprintsblueprintIdPUT4E2B6458",
+        "IsbRestApiblueprintsblueprintId49293701",
+        "IsbRestApiblueprintsGET8E9D6FB5",
+        "IsbRestApiblueprintsPOSTA9016983",
+        "IsbRestApiblueprints5F702E36",
+        "IsbRestApiblueprintsstacksetsGETDEEB1121",
+        "IsbRestApiblueprintsstacksets500BFF02",
         "IsbRestApiconfigurationsGETCB095983",
         "IsbRestApiconfigurationsPOSTD70E362B",
         "IsbRestApiconfigurations6FE57EA4",
@@ -12597,7 +14704,7 @@ phases:
           "Format": "$context.identity.sourceIp $context.identity.caller $context.identity.user [$context.requestTime] "$context.httpMethod $context.resourcePath $context.protocol" $context.status $context.responseLength $context.requestId",
         },
         "DeploymentId": {
-          "Ref": "IsbRestApiDeployment120FC0536a62d8e8dde000197003cb9ff435a69f",
+          "Ref": "IsbRestApiDeployment120FC0535d19a79d318ac2087c393ccf48eaff60",
         },
         "MethodSettings": [
           {
@@ -12650,7 +14757,7 @@ phases:
       },
       "Type": "AWS::ApiGateway::Stage",
     },
-    "IsbRestApiIPSetBE387BC1": {
+    "IsbRestApiWafIPSet5A3AFEFA": {
       "Properties": {
         "Addresses": {
           "Ref": "AllowListedIPRanges",
@@ -12676,7 +14783,203 @@ phases:
       },
       "Type": "AWS::WAFv2::IPSet",
     },
-    "IsbRestApiWebAcl64B96E8A": {
+    "IsbRestApiWafWafBlockedRequestsAlarm78C2384C": {
+      "Properties": {
+        "AlarmDescription": "Alert when WAF blocks requests to the Innovation Sandbox API - may indicate misconfigured WAF rules blocking legitimate users",
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+        "Dimensions": [
+          {
+            "Name": "Region",
+            "Value": {
+              "Ref": "AWS::Region",
+            },
+          },
+          {
+            "Name": "Rule",
+            "Value": "ALL",
+          },
+          {
+            "Name": "WebACL",
+            "Value": {
+              "Fn::Select": [
+                0,
+                {
+                  "Fn::Split": [
+                    "|",
+                    {
+                      "Ref": "IsbRestApiWafWebAcl54DDDB1F",
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        ],
+        "EvaluationPeriods": 1,
+        "MetricName": "BlockedRequests",
+        "Namespace": "AWS/WAFV2",
+        "Period": 60,
+        "Statistic": "Sum",
+        "Tags": [
+          {
+            "Key": "aws-solutions:isb-id",
+            "Value": {
+              "Fn::Join": [
+                "",
+                [
+                  {
+                    "Ref": "Namespace",
+                  },
+                  "_isb",
+                ],
+              ],
+            },
+          },
+        ],
+        "Threshold": 1,
+        "TreatMissingData": "notBreaching",
+      },
+      "Type": "AWS::CloudWatch::Alarm",
+    },
+    "IsbRestApiWafWafLogGroup2DCE5310": {
+      "DeletionPolicy": "Retain",
+      "Metadata": {
+        "guard": {
+          "SuppressedRules": [
+            "CW_LOGGROUP_RETENTION_PERIOD_CHECK",
+          ],
+        },
+      },
+      "Properties": {
+        "KmsKeyId": {
+          "Fn::GetAtt": [
+            "IsbKmsKeyIsbComputeStack45953B87",
+            "Arn",
+          ],
+        },
+        "LogGroupName": {
+          "Fn::Join": [
+            "",
+            [
+              "aws-waf-logs-isb-",
+              {
+                "Ref": "Namespace",
+              },
+              "-blocked-requests",
+            ],
+          ],
+        },
+        "RetentionInDays": {
+          "Fn::FindInMap": [
+            "Mapping",
+            "context",
+            "cloudWatchLogRetentionInDays",
+            {
+              "DefaultValue": "",
+            },
+          ],
+        },
+        "Tags": [
+          {
+            "Key": "aws-solutions:isb-id",
+            "Value": {
+              "Fn::Join": [
+                "",
+                [
+                  {
+                    "Ref": "Namespace",
+                  },
+                  "_isb",
+                ],
+              ],
+            },
+          },
+        ],
+      },
+      "Type": "AWS::Logs::LogGroup",
+      "UpdateReplacePolicy": "Retain",
+    },
+    "IsbRestApiWafWafLogGroupPolicyResourcePolicy8B1646A9": {
+      "Properties": {
+        "PolicyDocument": {
+          "Fn::Join": [
+            "",
+            [
+              "{"Statement":[{"Action":["logs:CreateLogStream","logs:PutLogEvents"],"Effect":"Allow","Principal":{"Service":"wafv2.amazonaws.com"},"Resource":"",
+              {
+                "Fn::GetAtt": [
+                  "IsbRestApiWafWafLogGroup2DCE5310",
+                  "Arn",
+                ],
+              },
+              ""}],"Version":"2012-10-17"}",
+            ],
+          ],
+        },
+        "PolicyName": "IsbComputeStackIsbRestApiWafWafLogGroupPolicy60C928BA",
+      },
+      "Type": "AWS::Logs::ResourcePolicy",
+    },
+    "IsbRestApiWafWafLoggingConfiguration780FE8DA": {
+      "Properties": {
+        "LogDestinationConfigs": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":logs:",
+                {
+                  "Ref": "AWS::Region",
+                },
+                ":",
+                {
+                  "Ref": "AWS::AccountId",
+                },
+                ":log-group:",
+                {
+                  "Ref": "IsbRestApiWafWafLogGroup2DCE5310",
+                },
+              ],
+            ],
+          },
+        ],
+        "LoggingFilter": {
+          "DefaultBehavior": "DROP",
+          "Filters": [
+            {
+              "Behavior": "KEEP",
+              "Conditions": [
+                {
+                  "ActionCondition": {
+                    "Action": "BLOCK",
+                  },
+                },
+              ],
+              "Requirement": "MEETS_ANY",
+            },
+          ],
+        },
+        "RedactedFields": [
+          {
+            "SingleHeader": {
+              "Name": "Authorization",
+            },
+          },
+        ],
+        "ResourceArn": {
+          "Fn::GetAtt": [
+            "IsbRestApiWafWebAcl54DDDB1F",
+            "Arn",
+          ],
+        },
+      },
+      "Type": "AWS::WAFv2::LoggingConfiguration",
+    },
+    "IsbRestApiWafWebAcl54DDDB1F": {
       "Properties": {
         "CustomResponseBodies": {
           "TooManyRequests": {
@@ -12700,7 +15003,7 @@ phases:
                   "IPSetReferenceStatement": {
                     "Arn": {
                       "Fn::GetAtt": [
-                        "IsbRestApiIPSetBE387BC1",
+                        "IsbRestApiWafIPSet5A3AFEFA",
                         "Arn",
                       ],
                     },
@@ -12838,7 +15141,7 @@ phases:
       },
       "Type": "AWS::WAFv2::WebACL",
     },
-    "IsbRestApiWebAclAssociation67F677D7": {
+    "IsbRestApiWafWebAclAssociation2A0E86C5": {
       "Properties": {
         "ResourceArn": {
           "Fn::Join": [
@@ -12865,7 +15168,7 @@ phases:
         },
         "WebACLArn": {
           "Fn::GetAtt": [
-            "IsbRestApiWebAcl64B96E8A",
+            "IsbRestApiWafWebAcl54DDDB1F",
             "Arn",
           ],
         },
@@ -14069,6 +16372,771 @@ phases:
         },
       },
       "Type": "AWS::Lambda::Permission",
+    },
+    "IsbRestApiblueprints5F702E36": {
+      "Properties": {
+        "ParentId": {
+          "Fn::GetAtt": [
+            "IsbRestApi377E2CC6",
+            "RootResourceId",
+          ],
+        },
+        "PathPart": "blueprints",
+        "RestApiId": {
+          "Ref": "IsbRestApi377E2CC6",
+        },
+      },
+      "Type": "AWS::ApiGateway::Resource",
+    },
+    "IsbRestApiblueprintsGET8E9D6FB5": {
+      "Properties": {
+        "AuthorizationType": "CUSTOM",
+        "AuthorizerId": {
+          "Ref": "AuthorizerBD825682",
+        },
+        "HttpMethod": "GET",
+        "Integration": {
+          "IntegrationHttpMethod": "POST",
+          "Type": "AWS_PROXY",
+          "Uri": {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":apigateway:",
+                {
+                  "Ref": "AWS::Region",
+                },
+                ":lambda:path/2015-03-31/functions/",
+                {
+                  "Fn::GetAtt": [
+                    "BlueprintsLambdaFunction92CE4466",
+                    "Arn",
+                  ],
+                },
+                "/invocations",
+              ],
+            ],
+          },
+        },
+        "ResourceId": {
+          "Ref": "IsbRestApiblueprints5F702E36",
+        },
+        "RestApiId": {
+          "Ref": "IsbRestApi377E2CC6",
+        },
+      },
+      "Type": "AWS::ApiGateway::Method",
+    },
+    "IsbRestApiblueprintsGETApiPermissionIsbComputeStackIsbRestApiAC643E2AGETblueprints1AEC49F3": {
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "BlueprintsLambdaFunction92CE4466",
+            "Arn",
+          ],
+        },
+        "Principal": "apigateway.amazonaws.com",
+        "SourceArn": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:",
+              {
+                "Ref": "AWS::Partition",
+              },
+              ":execute-api:",
+              {
+                "Ref": "AWS::Region",
+              },
+              ":",
+              {
+                "Ref": "AWS::AccountId",
+              },
+              ":",
+              {
+                "Ref": "IsbRestApi377E2CC6",
+              },
+              "/",
+              {
+                "Ref": "IsbRestApiDeploymentStageprod7DDD9304",
+              },
+              "/GET/blueprints",
+            ],
+          ],
+        },
+      },
+      "Type": "AWS::Lambda::Permission",
+    },
+    "IsbRestApiblueprintsGETApiPermissionTestIsbComputeStackIsbRestApiAC643E2AGETblueprints165E6B57": {
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "BlueprintsLambdaFunction92CE4466",
+            "Arn",
+          ],
+        },
+        "Principal": "apigateway.amazonaws.com",
+        "SourceArn": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:",
+              {
+                "Ref": "AWS::Partition",
+              },
+              ":execute-api:",
+              {
+                "Ref": "AWS::Region",
+              },
+              ":",
+              {
+                "Ref": "AWS::AccountId",
+              },
+              ":",
+              {
+                "Ref": "IsbRestApi377E2CC6",
+              },
+              "/test-invoke-stage/GET/blueprints",
+            ],
+          ],
+        },
+      },
+      "Type": "AWS::Lambda::Permission",
+    },
+    "IsbRestApiblueprintsPOSTA9016983": {
+      "Properties": {
+        "AuthorizationType": "CUSTOM",
+        "AuthorizerId": {
+          "Ref": "AuthorizerBD825682",
+        },
+        "HttpMethod": "POST",
+        "Integration": {
+          "IntegrationHttpMethod": "POST",
+          "Type": "AWS_PROXY",
+          "Uri": {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":apigateway:",
+                {
+                  "Ref": "AWS::Region",
+                },
+                ":lambda:path/2015-03-31/functions/",
+                {
+                  "Fn::GetAtt": [
+                    "BlueprintsLambdaFunction92CE4466",
+                    "Arn",
+                  ],
+                },
+                "/invocations",
+              ],
+            ],
+          },
+        },
+        "ResourceId": {
+          "Ref": "IsbRestApiblueprints5F702E36",
+        },
+        "RestApiId": {
+          "Ref": "IsbRestApi377E2CC6",
+        },
+      },
+      "Type": "AWS::ApiGateway::Method",
+    },
+    "IsbRestApiblueprintsPOSTApiPermissionIsbComputeStackIsbRestApiAC643E2APOSTblueprints41A0E654": {
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "BlueprintsLambdaFunction92CE4466",
+            "Arn",
+          ],
+        },
+        "Principal": "apigateway.amazonaws.com",
+        "SourceArn": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:",
+              {
+                "Ref": "AWS::Partition",
+              },
+              ":execute-api:",
+              {
+                "Ref": "AWS::Region",
+              },
+              ":",
+              {
+                "Ref": "AWS::AccountId",
+              },
+              ":",
+              {
+                "Ref": "IsbRestApi377E2CC6",
+              },
+              "/",
+              {
+                "Ref": "IsbRestApiDeploymentStageprod7DDD9304",
+              },
+              "/POST/blueprints",
+            ],
+          ],
+        },
+      },
+      "Type": "AWS::Lambda::Permission",
+    },
+    "IsbRestApiblueprintsPOSTApiPermissionTestIsbComputeStackIsbRestApiAC643E2APOSTblueprints61B3D4A0": {
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "BlueprintsLambdaFunction92CE4466",
+            "Arn",
+          ],
+        },
+        "Principal": "apigateway.amazonaws.com",
+        "SourceArn": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:",
+              {
+                "Ref": "AWS::Partition",
+              },
+              ":execute-api:",
+              {
+                "Ref": "AWS::Region",
+              },
+              ":",
+              {
+                "Ref": "AWS::AccountId",
+              },
+              ":",
+              {
+                "Ref": "IsbRestApi377E2CC6",
+              },
+              "/test-invoke-stage/POST/blueprints",
+            ],
+          ],
+        },
+      },
+      "Type": "AWS::Lambda::Permission",
+    },
+    "IsbRestApiblueprintsblueprintId49293701": {
+      "Properties": {
+        "ParentId": {
+          "Ref": "IsbRestApiblueprints5F702E36",
+        },
+        "PathPart": "{blueprintId}",
+        "RestApiId": {
+          "Ref": "IsbRestApi377E2CC6",
+        },
+      },
+      "Type": "AWS::ApiGateway::Resource",
+    },
+    "IsbRestApiblueprintsblueprintIdDELETE999AABA6": {
+      "Properties": {
+        "AuthorizationType": "CUSTOM",
+        "AuthorizerId": {
+          "Ref": "AuthorizerBD825682",
+        },
+        "HttpMethod": "DELETE",
+        "Integration": {
+          "IntegrationHttpMethod": "POST",
+          "Type": "AWS_PROXY",
+          "Uri": {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":apigateway:",
+                {
+                  "Ref": "AWS::Region",
+                },
+                ":lambda:path/2015-03-31/functions/",
+                {
+                  "Fn::GetAtt": [
+                    "BlueprintsLambdaFunction92CE4466",
+                    "Arn",
+                  ],
+                },
+                "/invocations",
+              ],
+            ],
+          },
+        },
+        "ResourceId": {
+          "Ref": "IsbRestApiblueprintsblueprintId49293701",
+        },
+        "RestApiId": {
+          "Ref": "IsbRestApi377E2CC6",
+        },
+      },
+      "Type": "AWS::ApiGateway::Method",
+    },
+    "IsbRestApiblueprintsblueprintIdDELETEApiPermissionIsbComputeStackIsbRestApiAC643E2ADELETEblueprintsblueprintId9FC36DC6": {
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "BlueprintsLambdaFunction92CE4466",
+            "Arn",
+          ],
+        },
+        "Principal": "apigateway.amazonaws.com",
+        "SourceArn": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:",
+              {
+                "Ref": "AWS::Partition",
+              },
+              ":execute-api:",
+              {
+                "Ref": "AWS::Region",
+              },
+              ":",
+              {
+                "Ref": "AWS::AccountId",
+              },
+              ":",
+              {
+                "Ref": "IsbRestApi377E2CC6",
+              },
+              "/",
+              {
+                "Ref": "IsbRestApiDeploymentStageprod7DDD9304",
+              },
+              "/DELETE/blueprints/*",
+            ],
+          ],
+        },
+      },
+      "Type": "AWS::Lambda::Permission",
+    },
+    "IsbRestApiblueprintsblueprintIdDELETEApiPermissionTestIsbComputeStackIsbRestApiAC643E2ADELETEblueprintsblueprintId84214F0C": {
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "BlueprintsLambdaFunction92CE4466",
+            "Arn",
+          ],
+        },
+        "Principal": "apigateway.amazonaws.com",
+        "SourceArn": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:",
+              {
+                "Ref": "AWS::Partition",
+              },
+              ":execute-api:",
+              {
+                "Ref": "AWS::Region",
+              },
+              ":",
+              {
+                "Ref": "AWS::AccountId",
+              },
+              ":",
+              {
+                "Ref": "IsbRestApi377E2CC6",
+              },
+              "/test-invoke-stage/DELETE/blueprints/*",
+            ],
+          ],
+        },
+      },
+      "Type": "AWS::Lambda::Permission",
+    },
+    "IsbRestApiblueprintsblueprintIdGETApiPermissionIsbComputeStackIsbRestApiAC643E2AGETblueprintsblueprintIdEB2D44AC": {
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "BlueprintsLambdaFunction92CE4466",
+            "Arn",
+          ],
+        },
+        "Principal": "apigateway.amazonaws.com",
+        "SourceArn": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:",
+              {
+                "Ref": "AWS::Partition",
+              },
+              ":execute-api:",
+              {
+                "Ref": "AWS::Region",
+              },
+              ":",
+              {
+                "Ref": "AWS::AccountId",
+              },
+              ":",
+              {
+                "Ref": "IsbRestApi377E2CC6",
+              },
+              "/",
+              {
+                "Ref": "IsbRestApiDeploymentStageprod7DDD9304",
+              },
+              "/GET/blueprints/*",
+            ],
+          ],
+        },
+      },
+      "Type": "AWS::Lambda::Permission",
+    },
+    "IsbRestApiblueprintsblueprintIdGETApiPermissionTestIsbComputeStackIsbRestApiAC643E2AGETblueprintsblueprintId070D6222": {
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "BlueprintsLambdaFunction92CE4466",
+            "Arn",
+          ],
+        },
+        "Principal": "apigateway.amazonaws.com",
+        "SourceArn": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:",
+              {
+                "Ref": "AWS::Partition",
+              },
+              ":execute-api:",
+              {
+                "Ref": "AWS::Region",
+              },
+              ":",
+              {
+                "Ref": "AWS::AccountId",
+              },
+              ":",
+              {
+                "Ref": "IsbRestApi377E2CC6",
+              },
+              "/test-invoke-stage/GET/blueprints/*",
+            ],
+          ],
+        },
+      },
+      "Type": "AWS::Lambda::Permission",
+    },
+    "IsbRestApiblueprintsblueprintIdGETBD57AC27": {
+      "Properties": {
+        "AuthorizationType": "CUSTOM",
+        "AuthorizerId": {
+          "Ref": "AuthorizerBD825682",
+        },
+        "HttpMethod": "GET",
+        "Integration": {
+          "IntegrationHttpMethod": "POST",
+          "Type": "AWS_PROXY",
+          "Uri": {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":apigateway:",
+                {
+                  "Ref": "AWS::Region",
+                },
+                ":lambda:path/2015-03-31/functions/",
+                {
+                  "Fn::GetAtt": [
+                    "BlueprintsLambdaFunction92CE4466",
+                    "Arn",
+                  ],
+                },
+                "/invocations",
+              ],
+            ],
+          },
+        },
+        "ResourceId": {
+          "Ref": "IsbRestApiblueprintsblueprintId49293701",
+        },
+        "RestApiId": {
+          "Ref": "IsbRestApi377E2CC6",
+        },
+      },
+      "Type": "AWS::ApiGateway::Method",
+    },
+    "IsbRestApiblueprintsblueprintIdPUT4E2B6458": {
+      "Properties": {
+        "AuthorizationType": "CUSTOM",
+        "AuthorizerId": {
+          "Ref": "AuthorizerBD825682",
+        },
+        "HttpMethod": "PUT",
+        "Integration": {
+          "IntegrationHttpMethod": "POST",
+          "Type": "AWS_PROXY",
+          "Uri": {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":apigateway:",
+                {
+                  "Ref": "AWS::Region",
+                },
+                ":lambda:path/2015-03-31/functions/",
+                {
+                  "Fn::GetAtt": [
+                    "BlueprintsLambdaFunction92CE4466",
+                    "Arn",
+                  ],
+                },
+                "/invocations",
+              ],
+            ],
+          },
+        },
+        "ResourceId": {
+          "Ref": "IsbRestApiblueprintsblueprintId49293701",
+        },
+        "RestApiId": {
+          "Ref": "IsbRestApi377E2CC6",
+        },
+      },
+      "Type": "AWS::ApiGateway::Method",
+    },
+    "IsbRestApiblueprintsblueprintIdPUTApiPermissionIsbComputeStackIsbRestApiAC643E2APUTblueprintsblueprintId71867E11": {
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "BlueprintsLambdaFunction92CE4466",
+            "Arn",
+          ],
+        },
+        "Principal": "apigateway.amazonaws.com",
+        "SourceArn": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:",
+              {
+                "Ref": "AWS::Partition",
+              },
+              ":execute-api:",
+              {
+                "Ref": "AWS::Region",
+              },
+              ":",
+              {
+                "Ref": "AWS::AccountId",
+              },
+              ":",
+              {
+                "Ref": "IsbRestApi377E2CC6",
+              },
+              "/",
+              {
+                "Ref": "IsbRestApiDeploymentStageprod7DDD9304",
+              },
+              "/PUT/blueprints/*",
+            ],
+          ],
+        },
+      },
+      "Type": "AWS::Lambda::Permission",
+    },
+    "IsbRestApiblueprintsblueprintIdPUTApiPermissionTestIsbComputeStackIsbRestApiAC643E2APUTblueprintsblueprintIdCCC7E18F": {
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "BlueprintsLambdaFunction92CE4466",
+            "Arn",
+          ],
+        },
+        "Principal": "apigateway.amazonaws.com",
+        "SourceArn": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:",
+              {
+                "Ref": "AWS::Partition",
+              },
+              ":execute-api:",
+              {
+                "Ref": "AWS::Region",
+              },
+              ":",
+              {
+                "Ref": "AWS::AccountId",
+              },
+              ":",
+              {
+                "Ref": "IsbRestApi377E2CC6",
+              },
+              "/test-invoke-stage/PUT/blueprints/*",
+            ],
+          ],
+        },
+      },
+      "Type": "AWS::Lambda::Permission",
+    },
+    "IsbRestApiblueprintsstacksets500BFF02": {
+      "Properties": {
+        "ParentId": {
+          "Ref": "IsbRestApiblueprints5F702E36",
+        },
+        "PathPart": "stacksets",
+        "RestApiId": {
+          "Ref": "IsbRestApi377E2CC6",
+        },
+      },
+      "Type": "AWS::ApiGateway::Resource",
+    },
+    "IsbRestApiblueprintsstacksetsGETApiPermissionIsbComputeStackIsbRestApiAC643E2AGETblueprintsstacksets5B6B83B4": {
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "BlueprintsLambdaFunction92CE4466",
+            "Arn",
+          ],
+        },
+        "Principal": "apigateway.amazonaws.com",
+        "SourceArn": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:",
+              {
+                "Ref": "AWS::Partition",
+              },
+              ":execute-api:",
+              {
+                "Ref": "AWS::Region",
+              },
+              ":",
+              {
+                "Ref": "AWS::AccountId",
+              },
+              ":",
+              {
+                "Ref": "IsbRestApi377E2CC6",
+              },
+              "/",
+              {
+                "Ref": "IsbRestApiDeploymentStageprod7DDD9304",
+              },
+              "/GET/blueprints/stacksets",
+            ],
+          ],
+        },
+      },
+      "Type": "AWS::Lambda::Permission",
+    },
+    "IsbRestApiblueprintsstacksetsGETApiPermissionTestIsbComputeStackIsbRestApiAC643E2AGETblueprintsstacksetsCDDA87C6": {
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "BlueprintsLambdaFunction92CE4466",
+            "Arn",
+          ],
+        },
+        "Principal": "apigateway.amazonaws.com",
+        "SourceArn": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:",
+              {
+                "Ref": "AWS::Partition",
+              },
+              ":execute-api:",
+              {
+                "Ref": "AWS::Region",
+              },
+              ":",
+              {
+                "Ref": "AWS::AccountId",
+              },
+              ":",
+              {
+                "Ref": "IsbRestApi377E2CC6",
+              },
+              "/test-invoke-stage/GET/blueprints/stacksets",
+            ],
+          ],
+        },
+      },
+      "Type": "AWS::Lambda::Permission",
+    },
+    "IsbRestApiblueprintsstacksetsGETDEEB1121": {
+      "Properties": {
+        "AuthorizationType": "CUSTOM",
+        "AuthorizerId": {
+          "Ref": "AuthorizerBD825682",
+        },
+        "HttpMethod": "GET",
+        "Integration": {
+          "IntegrationHttpMethod": "POST",
+          "Type": "AWS_PROXY",
+          "Uri": {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":apigateway:",
+                {
+                  "Ref": "AWS::Region",
+                },
+                ":lambda:path/2015-03-31/functions/",
+                {
+                  "Fn::GetAtt": [
+                    "BlueprintsLambdaFunction92CE4466",
+                    "Arn",
+                  ],
+                },
+                "/invocations",
+              ],
+            ],
+          },
+        },
+        "ResourceId": {
+          "Ref": "IsbRestApiblueprintsstacksets500BFF02",
+        },
+        "RestApiId": {
+          "Ref": "IsbRestApi377E2CC6",
+        },
+      },
+      "Type": "AWS::ApiGateway::Method",
     },
     "IsbRestApiconfigurations6FE57EA4": {
       "Properties": {
@@ -16062,7 +19130,7 @@ phases:
               ],
             },
             "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.1.8",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.0",
           },
         },
         "FunctionName": {
@@ -16578,7 +19646,7 @@ phases:
               ],
             },
             "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.1.8",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.0",
           },
         },
         "FunctionName": {
@@ -16888,7 +19956,7 @@ phases:
               ],
             },
             "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.1.8",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.0",
           },
         },
         "FunctionName": {
@@ -17280,6 +20348,24 @@ phases:
               ],
             },
             "AWS_XRAY_CONTEXT_MISSING": "IGNORE_ERROR",
+            "BLUEPRINT_TABLE_NAME": {
+              "Fn::GetAtt": [
+                "IsbSpokeConfigJsonParamResolverParseJsonConfigurationIsbCustomResource57F98B57",
+                "blueprintTable",
+              ],
+            },
+            "JWT_SECRET_NAME": {
+              "Fn::Join": [
+                "",
+                [
+                  "/InnovationSandbox/",
+                  {
+                    "Ref": "Namespace",
+                  },
+                  "/Auth/JwtSecret",
+                ],
+              ],
+            },
             "LEASE_TEMPLATE_TABLE_NAME": {
               "Fn::GetAtt": [
                 "IsbSpokeConfigJsonParamResolverParseJsonConfigurationIsbCustomResource57F98B57",
@@ -17304,7 +20390,7 @@ phases:
                 "reportingConfigConfigurationProfileId",
               ],
             },
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.1.8",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.0",
           },
         },
         "FunctionName": {
@@ -17521,10 +20607,152 @@ phases:
                 },
               ],
             },
+            {
+              "Action": [
+                "secretsmanager:GetSecretValue",
+                "secretsmanager:DescribeSecret",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Ref": "JwtSecretB8834B39",
+              },
+            },
+            {
+              "Action": [
+                "kms:Decrypt",
+                "kms:Encrypt",
+                "kms:ReEncrypt*",
+                "kms:GenerateDataKey*",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "IsbKmsKeyIsbComputeStack45953B87",
+                  "Arn",
+                ],
+              },
+            },
           ],
           "Version": "2012-10-17",
         },
         "PolicyName": "LeaseTemplatesLambdaFunctionFunctionRoleDefaultPolicy67EAD3ED",
+        "Roles": [
+          {
+            "Ref": "LeaseTemplatesLambdaFunctionFunctionRoleC7543D26",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "LeaseTemplatesLambdaFunctionIsbDbTableReadOnly0A30EBFF": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "dynamodb:GetItem",
+                "dynamodb:Query",
+                "dynamodb:Scan",
+                "dynamodb:ConditionCheckItem",
+                "dynamodb:BatchGetItem",
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":dynamodb:",
+                      {
+                        "Ref": "AWS::Region",
+                      },
+                      ":",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":table/",
+                      {
+                        "Fn::GetAtt": [
+                          "IsbSpokeConfigJsonParamResolverParseJsonConfigurationIsbCustomResource57F98B57",
+                          "blueprintTable",
+                        ],
+                      },
+                    ],
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":dynamodb:",
+                      {
+                        "Ref": "AWS::Region",
+                      },
+                      ":",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":table/",
+                      {
+                        "Fn::GetAtt": [
+                          "IsbSpokeConfigJsonParamResolverParseJsonConfigurationIsbCustomResource57F98B57",
+                          "blueprintTable",
+                        ],
+                      },
+                      "/index/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": [
+                "kms:Decrypt",
+                "kms:DescribeKey",
+                "kms:Encrypt",
+                "kms:GenerateDataKey",
+                "kms:ReEncrypt*",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition",
+                    },
+                    ":kms:",
+                    {
+                      "Ref": "AWS::Region",
+                    },
+                    ":",
+                    {
+                      "Ref": "AWS::AccountId",
+                    },
+                    ":key/",
+                    {
+                      "Fn::GetAtt": [
+                        "IsbSpokeConfigJsonParamResolverParseJsonConfigurationIsbCustomResource57F98B57",
+                        "tableKmsKeyId",
+                      ],
+                    },
+                  ],
+                ],
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "DynamoDBReadOnlyAccess",
         "Roles": [
           {
             "Ref": "LeaseTemplatesLambdaFunctionFunctionRoleC7543D26",
@@ -17675,6 +20903,30 @@ phases:
         "Description": "Lambda used as API GW method integration for leases resources",
         "Environment": {
           "Variables": {
+            "ACCOUNT_POOL_CONFIG_PARAM_ARN": {
+              "Fn::Join": [
+                "",
+                [
+                  "arn:",
+                  {
+                    "Ref": "AWS::Partition",
+                  },
+                  ":ssm:",
+                  {
+                    "Ref": "AWS::Region",
+                  },
+                  ":",
+                  {
+                    "Ref": "OrgMgtAccountId",
+                  },
+                  ":parameter/InnovationSandbox_",
+                  {
+                    "Ref": "Namespace",
+                  },
+                  "_AccountPool_Configuration",
+                ],
+              ],
+            },
             "ACCOUNT_TABLE_NAME": {
               "Fn::GetAtt": [
                 "IsbSpokeConfigJsonParamResolverParseJsonConfigurationIsbCustomResource57F98B57",
@@ -17752,6 +21004,39 @@ phases:
               ],
             },
             "AWS_XRAY_CONTEXT_MISSING": "IGNORE_ERROR",
+            "BLUEPRINT_TABLE_NAME": {
+              "Fn::GetAtt": [
+                "IsbSpokeConfigJsonParamResolverParseJsonConfigurationIsbCustomResource57F98B57",
+                "blueprintTable",
+              ],
+            },
+            "HUB_ACCOUNT_ID": {
+              "Ref": "AWS::AccountId",
+            },
+            "IDC_CONFIG_PARAM_ARN": {
+              "Fn::Join": [
+                "",
+                [
+                  "arn:",
+                  {
+                    "Ref": "AWS::Partition",
+                  },
+                  ":ssm:",
+                  {
+                    "Ref": "AWS::Region",
+                  },
+                  ":",
+                  {
+                    "Ref": "IdcAccountId",
+                  },
+                  ":parameter/InnovationSandbox_",
+                  {
+                    "Ref": "Namespace",
+                  },
+                  "_Idc_Configuration",
+                ],
+              ],
+            },
             "IDC_ROLE_ARN": {
               "Fn::Join": [
                 "",
@@ -17784,6 +21069,18 @@ phases:
             "ISB_NAMESPACE": {
               "Ref": "Namespace",
             },
+            "JWT_SECRET_NAME": {
+              "Fn::Join": [
+                "",
+                [
+                  "/InnovationSandbox/",
+                  {
+                    "Ref": "Namespace",
+                  },
+                  "/Auth/JwtSecret",
+                ],
+              ],
+            },
             "LEASE_TABLE_NAME": {
               "Fn::GetAtt": [
                 "IsbSpokeConfigJsonParamResolverParseJsonConfigurationIsbCustomResource57F98B57",
@@ -17797,6 +21094,9 @@ phases:
               ],
             },
             "NODE_OPTIONS": "--enable-source-maps",
+            "ORG_MGT_ACCOUNT_ID": {
+              "Ref": "OrgMgtAccountId",
+            },
             "ORG_MGT_ROLE_ARN": {
               "Fn::Join": [
                 "",
@@ -17834,13 +21134,19 @@ phases:
                 "reportingConfigConfigurationProfileId",
               ],
             },
-            "SANDBOX_OU_ID": {
-              "Fn::GetAtt": [
-                "IsbSpokeConfigJsonParamResolverParseJsonConfigurationIsbCustomResource57F98B57",
-                "sandboxOuId",
+            "SANDBOX_ACCOUNT_ROLE_NAME": {
+              "Fn::Join": [
+                "",
+                [
+                  "InnovationSandbox-",
+                  {
+                    "Ref": "Namespace",
+                  },
+                  "-SandboxAccountRole",
+                ],
               ],
             },
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.1.8",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.0",
           },
         },
         "FunctionName": {
@@ -17997,6 +21303,34 @@ phases:
               },
             },
             {
+              "Action": "ssm:GetParameter",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition",
+                    },
+                    ":ssm:",
+                    {
+                      "Ref": "AWS::Region",
+                    },
+                    ":",
+                    {
+                      "Ref": "OrgMgtAccountId",
+                    },
+                    ":parameter/InnovationSandbox_",
+                    {
+                      "Ref": "Namespace",
+                    },
+                    "_AccountPool_Configuration",
+                  ],
+                ],
+              },
+            },
+            {
               "Action": [
                 "appconfig:StartConfigurationSession",
                 "appconfig:GetLatestConfiguration",
@@ -18099,6 +21433,148 @@ phases:
                   "Arn",
                 ],
               },
+            },
+            {
+              "Action": "cloudformation:DescribeStackSet",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition",
+                    },
+                    ":cloudformation:",
+                    {
+                      "Ref": "AWS::Region",
+                    },
+                    ":",
+                    {
+                      "Ref": "AWS::AccountId",
+                    },
+                    ":stackset/*:*",
+                  ],
+                ],
+              },
+            },
+            {
+              "Action": [
+                "secretsmanager:GetSecretValue",
+                "secretsmanager:DescribeSecret",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Ref": "JwtSecretB8834B39",
+              },
+            },
+            {
+              "Action": [
+                "kms:Decrypt",
+                "kms:Encrypt",
+                "kms:ReEncrypt*",
+                "kms:GenerateDataKey*",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "IsbKmsKeyIsbComputeStack45953B87",
+                  "Arn",
+                ],
+              },
+            },
+            {
+              "Action": [
+                "cloudformation:DescribeStackSet",
+                "cloudformation:ListStackInstances",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition",
+                    },
+                    ":cloudformation:",
+                    {
+                      "Ref": "AWS::Region",
+                    },
+                    ":",
+                    {
+                      "Ref": "AWS::AccountId",
+                    },
+                    ":stackset/*:*",
+                  ],
+                ],
+              },
+            },
+            {
+              "Action": "cloudformation:DeleteStackInstances",
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":cloudformation:",
+                      {
+                        "Ref": "AWS::Region",
+                      },
+                      ":",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":stackset/*:*",
+                    ],
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":cloudformation:",
+                      {
+                        "Ref": "AWS::Region",
+                      },
+                      ":",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":stackset-target/*",
+                    ],
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":cloudformation:",
+                      {
+                        "Ref": "AWS::Region",
+                      },
+                      ":",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":type/resource/*",
+                    ],
+                  ],
+                },
+              ],
             },
             {
               "Action": "sts:AssumeRole",
@@ -18335,6 +21811,75 @@ phases:
             },
             {
               "Action": [
+                "dynamodb:GetItem",
+                "dynamodb:PutItem",
+                "dynamodb:UpdateItem",
+                "dynamodb:DeleteItem",
+                "dynamodb:Query",
+                "dynamodb:Scan",
+                "dynamodb:ConditionCheckItem",
+                "dynamodb:BatchGetItem",
+                "dynamodb:BatchWriteItem",
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":dynamodb:",
+                      {
+                        "Ref": "AWS::Region",
+                      },
+                      ":",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":table/",
+                      {
+                        "Fn::GetAtt": [
+                          "IsbSpokeConfigJsonParamResolverParseJsonConfigurationIsbCustomResource57F98B57",
+                          "blueprintTable",
+                        ],
+                      },
+                    ],
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":dynamodb:",
+                      {
+                        "Ref": "AWS::Region",
+                      },
+                      ":",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":table/",
+                      {
+                        "Fn::GetAtt": [
+                          "IsbSpokeConfigJsonParamResolverParseJsonConfigurationIsbCustomResource57F98B57",
+                          "blueprintTable",
+                        ],
+                      },
+                      "/index/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": [
                 "kms:Decrypt",
                 "kms:DescribeKey",
                 "kms:Encrypt",
@@ -18426,7 +21971,7 @@ phases:
               ],
             },
             "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.1.8",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.0",
           },
         },
         "FunctionName": {
@@ -19143,6 +22688,30 @@ fields @timestamp, @message
         "Description": "responds to lease events and determines what further actions should be taken",
         "Environment": {
           "Variables": {
+            "ACCOUNT_POOL_CONFIG_PARAM_ARN": {
+              "Fn::Join": [
+                "",
+                [
+                  "arn:",
+                  {
+                    "Ref": "AWS::Partition",
+                  },
+                  ":ssm:",
+                  {
+                    "Ref": "AWS::Region",
+                  },
+                  ":",
+                  {
+                    "Ref": "OrgMgtAccountId",
+                  },
+                  ":parameter/InnovationSandbox_",
+                  {
+                    "Ref": "Namespace",
+                  },
+                  "_AccountPool_Configuration",
+                ],
+              ],
+            },
             "ACCOUNT_TABLE_NAME": {
               "Fn::GetAtt": [
                 "IsbSpokeConfigJsonParamResolverParseJsonConfigurationIsbCustomResource57F98B57",
@@ -19198,6 +22767,39 @@ fields @timestamp, @message
               ],
             },
             "AWS_XRAY_CONTEXT_MISSING": "IGNORE_ERROR",
+            "BLUEPRINT_TABLE_NAME": {
+              "Fn::GetAtt": [
+                "IsbSpokeConfigJsonParamResolverParseJsonConfigurationIsbCustomResource57F98B57",
+                "blueprintTable",
+              ],
+            },
+            "HUB_ACCOUNT_ID": {
+              "Ref": "AWS::AccountId",
+            },
+            "IDC_CONFIG_PARAM_ARN": {
+              "Fn::Join": [
+                "",
+                [
+                  "arn:",
+                  {
+                    "Ref": "AWS::Partition",
+                  },
+                  ":ssm:",
+                  {
+                    "Ref": "AWS::Region",
+                  },
+                  ":",
+                  {
+                    "Ref": "IdcAccountId",
+                  },
+                  ":parameter/InnovationSandbox_",
+                  {
+                    "Ref": "Namespace",
+                  },
+                  "_Idc_Configuration",
+                ],
+              ],
+            },
             "IDC_ROLE_ARN": {
               "Fn::Join": [
                 "",
@@ -19237,6 +22839,9 @@ fields @timestamp, @message
               ],
             },
             "NODE_OPTIONS": "--enable-source-maps",
+            "ORG_MGT_ACCOUNT_ID": {
+              "Ref": "OrgMgtAccountId",
+            },
             "ORG_MGT_ROLE_ARN": {
               "Fn::Join": [
                 "",
@@ -19268,13 +22873,19 @@ fields @timestamp, @message
               ],
             },
             "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
-            "SANDBOX_OU_ID": {
-              "Fn::GetAtt": [
-                "IsbSpokeConfigJsonParamResolverParseJsonConfigurationIsbCustomResource57F98B57",
-                "sandboxOuId",
+            "SANDBOX_ACCOUNT_ROLE_NAME": {
+              "Fn::Join": [
+                "",
+                [
+                  "InnovationSandbox-",
+                  {
+                    "Ref": "Namespace",
+                  },
+                  "-SandboxAccountRole",
+                ],
               ],
             },
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.1.8",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.0",
           },
         },
         "FunctionName": {
@@ -19432,6 +23043,34 @@ fields @timestamp, @message
               },
             },
             {
+              "Action": "ssm:GetParameter",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition",
+                    },
+                    ":ssm:",
+                    {
+                      "Ref": "AWS::Region",
+                    },
+                    ":",
+                    {
+                      "Ref": "OrgMgtAccountId",
+                    },
+                    ":parameter/InnovationSandbox_",
+                    {
+                      "Ref": "Namespace",
+                    },
+                    "_AccountPool_Configuration",
+                  ],
+                ],
+              },
+            },
+            {
               "Action": [
                 "appconfig:StartConfigurationSession",
                 "appconfig:GetLatestConfiguration",
@@ -19497,6 +23136,99 @@ fields @timestamp, @message
                   "Arn",
                 ],
               },
+            },
+            {
+              "Action": [
+                "cloudformation:DescribeStackSet",
+                "cloudformation:ListStackInstances",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition",
+                    },
+                    ":cloudformation:",
+                    {
+                      "Ref": "AWS::Region",
+                    },
+                    ":",
+                    {
+                      "Ref": "AWS::AccountId",
+                    },
+                    ":stackset/*:*",
+                  ],
+                ],
+              },
+            },
+            {
+              "Action": "cloudformation:DeleteStackInstances",
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":cloudformation:",
+                      {
+                        "Ref": "AWS::Region",
+                      },
+                      ":",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":stackset/*:*",
+                    ],
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":cloudformation:",
+                      {
+                        "Ref": "AWS::Region",
+                      },
+                      ":",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":stackset-target/*",
+                    ],
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":cloudformation:",
+                      {
+                        "Ref": "AWS::Region",
+                      },
+                      ":",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":type/resource/*",
+                    ],
+                  ],
+                },
+              ],
             },
             {
               "Action": [
@@ -19701,6 +23433,75 @@ fields @timestamp, @message
                         "Fn::GetAtt": [
                           "IsbSpokeConfigJsonParamResolverParseJsonConfigurationIsbCustomResource57F98B57",
                           "accountTable",
+                        ],
+                      },
+                      "/index/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": [
+                "dynamodb:GetItem",
+                "dynamodb:PutItem",
+                "dynamodb:UpdateItem",
+                "dynamodb:DeleteItem",
+                "dynamodb:Query",
+                "dynamodb:Scan",
+                "dynamodb:ConditionCheckItem",
+                "dynamodb:BatchGetItem",
+                "dynamodb:BatchWriteItem",
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":dynamodb:",
+                      {
+                        "Ref": "AWS::Region",
+                      },
+                      ":",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":table/",
+                      {
+                        "Fn::GetAtt": [
+                          "IsbSpokeConfigJsonParamResolverParseJsonConfigurationIsbCustomResource57F98B57",
+                          "blueprintTable",
+                        ],
+                      },
+                    ],
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":dynamodb:",
+                      {
+                        "Ref": "AWS::Region",
+                      },
+                      ":",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":table/",
+                      {
+                        "Fn::GetAtt": [
+                          "IsbSpokeConfigJsonParamResolverParseJsonConfigurationIsbCustomResource57F98B57",
+                          "blueprintTable",
                         ],
                       },
                       "/index/*",
@@ -19921,6 +23722,30 @@ fields @timestamp, @message
               ],
             },
             "AWS_XRAY_CONTEXT_MISSING": "IGNORE_ERROR",
+            "IDC_CONFIG_PARAM_ARN": {
+              "Fn::Join": [
+                "",
+                [
+                  "arn:",
+                  {
+                    "Ref": "AWS::Partition",
+                  },
+                  ":ssm:",
+                  {
+                    "Ref": "AWS::Region",
+                  },
+                  ":",
+                  {
+                    "Ref": "IdcAccountId",
+                  },
+                  ":parameter/InnovationSandbox_",
+                  {
+                    "Ref": "Namespace",
+                  },
+                  "_Idc_Configuration",
+                ],
+              ],
+            },
             "IDC_ROLE_ARN": {
               "Fn::Join": [
                 "",
@@ -19986,7 +23811,7 @@ fields @timestamp, @message
               ],
             },
             "POWERTOOLS_SERVICE_NAME": "SsoHandler",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.1.8",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.0",
           },
         },
         "FunctionName": {
@@ -20190,16 +24015,24 @@ fields @timestamp, @message
               },
             },
             {
-              "Action": "secretsmanager:GetSecretValue",
-              "Effect": "Allow",
-              "Resource": [
-                {
-                  "Ref": "JwtSecretB8834B39",
-                },
-                {
-                  "Ref": "IdpCertC53FAE82",
-                },
+              "Action": [
+                "secretsmanager:GetSecretValue",
+                "secretsmanager:DescribeSecret",
               ],
+              "Effect": "Allow",
+              "Resource": {
+                "Ref": "IdpCertC53FAE82",
+              },
+            },
+            {
+              "Action": [
+                "secretsmanager:GetSecretValue",
+                "secretsmanager:DescribeSecret",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Ref": "JwtSecretB8834B39",
+              },
             },
             {
               "Action": [
@@ -20283,12 +24116,12 @@ exports[`IsbDataStack Snapshot > matches the snapshot 1`] = `
         "deploymentMode": "prod",
         "logLevel": "INFO",
         "publicEcrRegistry": "public.ecr.aws/aws-solutions",
-        "publicEcrTag": "v1.1.8",
+        "publicEcrTag": "v1.2.0",
         "s3LogsArchiveRetentionInDays": 365,
         "s3LogsGlacierRetentionInDays": 2555,
         "solutionId": "SO0284",
         "solutionName": "innovation-sandbox-on-aws",
-        "version": "v1.1.8",
+        "version": "v1.2.0",
       },
     },
   },
@@ -20399,6 +24232,94 @@ exports[`IsbDataStack Snapshot > matches the snapshot 1`] = `
     },
   },
   "Resources": {
+    "BlueprintTableCDBC8C50": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "AttributeDefinitions": [
+          {
+            "AttributeName": "PK",
+            "AttributeType": "S",
+          },
+          {
+            "AttributeName": "SK",
+            "AttributeType": "S",
+          },
+          {
+            "AttributeName": "itemType",
+            "AttributeType": "S",
+          },
+          {
+            "AttributeName": "blueprintId",
+            "AttributeType": "S",
+          },
+        ],
+        "BillingMode": "PAY_PER_REQUEST",
+        "DeletionProtectionEnabled": true,
+        "GlobalSecondaryIndexes": [
+          {
+            "IndexName": "itemType-blueprintId-index",
+            "KeySchema": [
+              {
+                "AttributeName": "itemType",
+                "KeyType": "HASH",
+              },
+              {
+                "AttributeName": "blueprintId",
+                "KeyType": "RANGE",
+              },
+            ],
+            "Projection": {
+              "ProjectionType": "ALL",
+            },
+          },
+        ],
+        "KeySchema": [
+          {
+            "AttributeName": "PK",
+            "KeyType": "HASH",
+          },
+          {
+            "AttributeName": "SK",
+            "KeyType": "RANGE",
+          },
+        ],
+        "PointInTimeRecoverySpecification": {
+          "PointInTimeRecoveryEnabled": true,
+        },
+        "SSESpecification": {
+          "KMSMasterKeyId": {
+            "Fn::GetAtt": [
+              "IsbKmsKeyIsbDataStackFBC2D6AE",
+              "Arn",
+            ],
+          },
+          "SSEEnabled": true,
+          "SSEType": "KMS",
+        },
+        "Tags": [
+          {
+            "Key": "aws-solutions:isb-id",
+            "Value": {
+              "Fn::Join": [
+                "",
+                [
+                  {
+                    "Ref": "Namespace",
+                  },
+                  "_isb",
+                ],
+              ],
+            },
+          },
+        ],
+        "TimeToLiveSpecification": {
+          "AttributeName": "ttl",
+          "Enabled": true,
+        },
+      },
+      "Type": "AWS::DynamoDB::Table",
+      "UpdateReplacePolicy": "Retain",
+    },
     "ConfigApplication1A42FDD2": {
       "Properties": {
         "Description": {
@@ -21107,6 +25028,10 @@ requireCostReportGroup: false
               {
                 "Ref": "LeaseTable473C6DF2",
               },
+              "","blueprintTable":"",
+              {
+                "Ref": "BlueprintTableCDBC8C50",
+              },
               "","tableKmsKeyId":"",
               {
                 "Ref": "IsbKmsKeyIsbDataStackFBC2D6AE",
@@ -21301,9 +25226,27 @@ requireCostReportGroup: false
             "AttributeName": "uuid",
             "AttributeType": "S",
           },
+          {
+            "AttributeName": "blueprintId",
+            "AttributeType": "S",
+          },
         ],
         "BillingMode": "PAY_PER_REQUEST",
         "DeletionProtectionEnabled": true,
+        "GlobalSecondaryIndexes": [
+          {
+            "IndexName": "blueprintId-index",
+            "KeySchema": [
+              {
+                "AttributeName": "blueprintId",
+                "KeyType": "HASH",
+              },
+            ],
+            "Projection": {
+              "ProjectionType": "KEYS_ONLY",
+            },
+          },
+        ],
         "KeySchema": [
           {
             "AttributeName": "uuid",

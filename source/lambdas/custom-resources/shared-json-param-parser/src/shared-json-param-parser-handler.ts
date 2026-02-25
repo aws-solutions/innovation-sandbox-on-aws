@@ -10,68 +10,17 @@ import type {
   CloudFormationCustomResourceUpdateEvent,
   Context,
 } from "aws-lambda";
-import { z } from "zod";
 
+import { IsbServices } from "@amzn/innovation-sandbox-commons/isb-services/index.js";
 import {
   SharedJsonParamEnvironment,
   SharedJsonParamEnvironmentSchema,
 } from "@amzn/innovation-sandbox-commons/lambda/environments/shared-json-param-parser-environment.js";
 import baseMiddlewareBundle from "@amzn/innovation-sandbox-commons/lambda/middleware/base-middleware-bundle.js";
 import { ValidatedEnvironment } from "@amzn/innovation-sandbox-commons/lambda/middleware/environment-validator.js";
-import { IsbClients } from "@amzn/innovation-sandbox-commons/sdk-clients/index.js";
-
-const IdcConfigSchema = z.object({
-  identityStoreId: z.string(),
-  ssoInstanceArn: z.string(),
-  adminGroupId: z.string(),
-  managerGroupId: z.string(),
-  userGroupId: z.string(),
-  adminPermissionSetArn: z.string(),
-  managerPermissionSetArn: z.string(),
-  userPermissionSetArn: z.string(),
-  solutionVersion: z.string(),
-  supportedSchemas: z.string(),
-});
-
-export type IdcConfig = z.infer<typeof IdcConfigSchema>;
-
-const AccountPoolConfigSchema = z.object({
-  sandboxOuId: z.string(),
-  solutionVersion: z.string(),
-  supportedSchemas: z.string(),
-  isbManagedRegions: z
-    .string()
-    .transform((value) => value.split(","))
-    .transform((value) => value.map((v) => v.trim()))
-    .transform((value) => value.toString()),
-});
-export type AccountPoolConfig = z.infer<typeof AccountPoolConfigSchema>;
-
-const DataConfigSchema = z.object({
-  configApplicationId: z.string(),
-  configEnvironmentId: z.string(),
-  globalConfigConfigurationProfileId: z.string(),
-  nukeConfigConfigurationProfileId: z.string(),
-  reportingConfigConfigurationProfileId: z.string(),
-  accountTable: z.string(),
-  leaseTemplateTable: z.string(),
-  leaseTable: z.string(),
-  tableKmsKeyId: z.string(),
-  solutionVersion: z.string(),
-  supportedSchemas: z.string(),
-});
-export type DataConfig = z.infer<typeof DataConfigSchema>;
-
-type SourceStack = "Idc" | "AccountPool" | "Data";
 
 type SharedJsonParamContext = Context &
   ValidatedEnvironment<SharedJsonParamEnvironment>;
-
-const schemaMap: Record<SourceStack, z.ZodObject<any>> = {
-  Idc: IdcConfigSchema,
-  AccountPool: AccountPoolConfigSchema,
-  Data: DataConfigSchema,
-};
 
 export interface SharedJsonParamArns {
   idcConfigParamArn: string;
@@ -81,22 +30,6 @@ export interface SharedJsonParamArns {
 
 const tracer = new Tracer();
 const logger = new Logger();
-
-function parseConfig(sourceStack: SourceStack, paramValue: string) {
-  const configJSON = JSON.parse(paramValue);
-  const parsedConfig = schemaMap[sourceStack].strict().safeParse(configJSON);
-  if (!parsedConfig.success) {
-    const errorMessage = `Invalid configuration from ${sourceStack} stack provided`;
-    logger.critical(`${errorMessage}: ${parsedConfig.error}`);
-    throw new Error(errorMessage);
-  }
-  const validatedConfig = parsedConfig.data;
-  logger.info({
-    ...validatedConfig,
-    message: `Validated ${sourceStack} Configuration`,
-  });
-  return validatedConfig;
-}
 
 const onCreateOrUpdate = async (
   event:
@@ -113,20 +46,36 @@ const onCreateOrUpdate = async (
     accountPoolConfigParamArn,
     dataConfigParamArn,
   });
-  const ssmClient = IsbClients.ssm(context.env);
-  const idcConfigString = await ssmClient.getIsbParameter(idcConfigParamArn);
-  const validatedIdcConfig = parseConfig("Idc", idcConfigString);
 
-  const accountPoolConfigString = await ssmClient.getIsbParameter(
-    accountPoolConfigParamArn,
-  );
-  const validatedAccountPoolConfig = parseConfig(
-    "AccountPool",
-    accountPoolConfigString,
-  );
+  const idcConfigStore = IsbServices.idcStackConfigStore({
+    IDC_CONFIG_PARAM_ARN: idcConfigParamArn,
+    USER_AGENT_EXTRA: context.env.USER_AGENT_EXTRA,
+  });
+  const validatedIdcConfig = await idcConfigStore.get();
+  logger.info({
+    ...validatedIdcConfig,
+    message: "Validated Idc Configuration",
+  });
 
-  const dataConfigString = await ssmClient.getIsbParameter(dataConfigParamArn);
-  const validatedDataConfig = parseConfig("Data", dataConfigString);
+  const accountPoolConfigStore = IsbServices.accountPoolStackConfigStore({
+    ACCOUNT_POOL_CONFIG_PARAM_ARN: accountPoolConfigParamArn,
+    USER_AGENT_EXTRA: context.env.USER_AGENT_EXTRA,
+  });
+  const validatedAccountPoolConfig = await accountPoolConfigStore.get();
+  logger.info({
+    ...validatedAccountPoolConfig,
+    message: "Validated AccountPool Configuration",
+  });
+
+  const dataConfigStore = IsbServices.dataStackConfigStore({
+    DATA_CONFIG_PARAM_ARN: dataConfigParamArn,
+    USER_AGENT_EXTRA: context.env.USER_AGENT_EXTRA,
+  });
+  const validatedDataConfig = await dataConfigStore.get();
+  logger.info({
+    ...validatedDataConfig,
+    message: "Validated Data Configuration",
+  });
 
   return {
     Data: {
@@ -143,6 +92,13 @@ const onCreateOrUpdate = async (
       idcSupportedSchemas: validatedIdcConfig.supportedSchemas,
       //AccountPool
       sandboxOuId: validatedAccountPoolConfig.sandboxOuId,
+      availableOuId: validatedAccountPoolConfig.availableOuId,
+      activeOuId: validatedAccountPoolConfig.activeOuId,
+      frozenOuId: validatedAccountPoolConfig.frozenOuId,
+      cleanupOuId: validatedAccountPoolConfig.cleanupOuId,
+      quarantineOuId: validatedAccountPoolConfig.quarantineOuId,
+      entryOuId: validatedAccountPoolConfig.entryOuId,
+      exitOuId: validatedAccountPoolConfig.exitOuId,
       accountPoolSolutionVersion: validatedAccountPoolConfig.solutionVersion,
       accountPoolSupportedSchemas: validatedAccountPoolConfig.supportedSchemas,
       isbManagedRegions: validatedAccountPoolConfig.isbManagedRegions,
@@ -158,6 +114,7 @@ const onCreateOrUpdate = async (
       accountTable: validatedDataConfig.accountTable,
       leaseTemplateTable: validatedDataConfig.leaseTemplateTable,
       leaseTable: validatedDataConfig.leaseTable,
+      blueprintTable: validatedDataConfig.blueprintTable,
       tableKmsKeyId: validatedDataConfig.tableKmsKeyId,
       dataSolutionVersion: validatedDataConfig.solutionVersion,
       dataSupportedSchemas: validatedDataConfig.supportedSchemas,

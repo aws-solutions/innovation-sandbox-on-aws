@@ -69,4 +69,16 @@ export const authorizationMap: AuthorizationMapType = {
   "/accounts/unregistered": {
     GET: ["Admin"],
   },
+  "/blueprints": {
+    GET: ["Manager", "Admin"], // Managers can view for template selection
+    POST: ["Admin"], // Only admins can create
+  },
+  "/blueprints/stacksets": {
+    GET: ["Manager", "Admin"], // Managers need this for template creation
+  },
+  "/blueprints/{param}": {
+    GET: ["Manager", "Admin"], // Managers can view for template selection
+    PUT: ["Admin"], // Only admins can update
+    DELETE: ["Admin"], // Only admins can delete
+  },
 };

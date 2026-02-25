@@ -12,6 +12,7 @@ import type {
 } from "aws-lambda";
 import pThrottle from "p-throttle";
 
+import { IdcConfig } from "@amzn/innovation-sandbox-commons/data/idc-stack-config/idc-stack-config.js";
 import {
   IdcConfigurerLambdaEnvironment,
   IdcConfigurerLambdaEnvironmentSchema,
@@ -19,7 +20,6 @@ import {
 import baseMiddlewareBundle from "@amzn/innovation-sandbox-commons/lambda/middleware/base-middleware-bundle.js";
 import { ValidatedEnvironment } from "@amzn/innovation-sandbox-commons/lambda/middleware/environment-validator.js";
 import { IsbClients } from "@amzn/innovation-sandbox-commons/sdk-clients/index.js";
-import { IdcConfig } from "@amzn/innovation-sandbox-shared-json-param-parser/src/shared-json-param-parser-handler.js";
 import {
   CreateGroupCommand,
   GetGroupIdCommand,

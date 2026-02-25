@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { Box, Popover, StatusIndicator } from "@cloudscape-design/components";
-import moment from "moment";
+import { DateTime, Duration } from "luxon";
 
 interface DurationStatusProps {
   date?: Date | string;
@@ -16,17 +16,21 @@ export const DurationStatus = ({
   expired,
 }: DurationStatusProps) => {
   if (date) {
+    const dateTime =
+      typeof date === "string"
+        ? DateTime.fromISO(date)
+        : DateTime.fromJSDate(date);
     const isLessThanOneHourFromNow =
-      moment(date).diff(moment(), "hours") < 1 && !expired;
+      dateTime.diff(DateTime.now(), "hours").hours < 1 && !expired;
 
     return (
       <Popover
         position="top"
         size="large"
         dismissButton={false}
-        content={`This lease ${moment(date).isBefore(moment()) ? "expired" : "will expire"} on ${moment(date).format("lll")}`}
+        content={`This lease ${dateTime < DateTime.now() ? "expired" : "will expire"} on ${dateTime.toLocaleString(DateTime.DATETIME_MED)}`}
       >
-        {isLessThanOneHourFromNow ? "expiring soon" : moment(date).fromNow()}
+        {isLessThanOneHourFromNow ? "expiring soon" : dateTime.toRelative()}
       </Popover>
     );
   }
@@ -34,7 +38,7 @@ export const DurationStatus = ({
   if (durationInHours) {
     return (
       <Box>
-        <Box>{moment.duration(durationInHours, "hours").humanize()}</Box>
+        <Box>{Duration.fromObject({ hours: durationInHours }).toHuman()}</Box>
         <Box>
           <small data-muted>after approval</small>
         </Box>

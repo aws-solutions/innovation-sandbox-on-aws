@@ -58,14 +58,14 @@ describe("log-subscription-handler", () => {
     };
   };
 
-  it("should process LeaseApproved log and send metric", async () => {
+  it("should process LeasePublished log and send metric", async () => {
     const mockResponse = new Response(JSON.stringify({ success: true }), {
       status: 200,
     });
     vi.mocked(fetch).mockResolvedValue(mockResponse);
 
     const logMessage = JSON.stringify({
-      logDetailType: "LeaseApproved",
+      logDetailType: "LeasePublished",
       leaseId: "lease-123",
       leaseTemplateId: "template-456",
       accountId: "123456789012",
@@ -73,6 +73,7 @@ describe("log-subscription-handler", () => {
       maxDurationHours: 24,
       autoApproved: true,
       creationMethod: "REQUESTED",
+      hasBlueprint: false,
     });
 
     const event = createCloudWatchLogsEvent([{ message: logMessage }]);
@@ -84,7 +85,7 @@ describe("log-subscription-handler", () => {
       headers: {
         "Content-Type": "application/json",
       },
-      body: expect.stringContaining('"event_name":"LeaseApproved"'),
+      body: expect.stringContaining('"event_name":"LeasePublished"'),
     });
 
     // Verify the body contains expected data
@@ -95,13 +96,14 @@ describe("log-subscription-handler", () => {
       hub_account_id: testEnv.HUB_ACCOUNT_ID,
       solution: testEnv.SOLUTION_ID,
       version: testEnv.SOLUTION_VERSION,
-      event_name: "LeaseApproved",
-      context_version: 2,
+      event_name: "LeasePublished",
+      context_version: 3,
       context: {
         maxBudget: 100,
         maxDurationHours: 24,
         autoApproved: true,
         creationMethod: "REQUESTED",
+        hasBlueprint: false,
       },
     });
     expect(bodyData.timestamp).toMatch(
@@ -237,6 +239,35 @@ describe("log-subscription-handler", () => {
     );
   });
 
+  it("should process LeaseReset log and send metric", async () => {
+    const mockResponse = new Response(JSON.stringify({ success: true }), {
+      status: 200,
+    });
+    vi.mocked(fetch).mockResolvedValue(mockResponse);
+
+    const logMessage = JSON.stringify({
+      logDetailType: "LeaseReset",
+      leaseId: "lease-123",
+      leaseTemplateId: "template-456",
+      accountId: "123456789012",
+      blueprintId: "bp-456",
+      blueprintName: "Test-Blueprint",
+      reasonForReset: "ProvisioningFailed",
+    });
+
+    const event = createCloudWatchLogsEvent([{ message: logMessage }]);
+
+    await handler(event, mockContext(testEnv));
+
+    expect(fetch).toHaveBeenCalledWith(
+      testEnv.METRICS_URL,
+      expect.objectContaining({
+        method: "POST",
+        body: expect.stringContaining('"event_name":"LeaseReset"'),
+      }),
+    );
+  });
+
   it("should process DeploymentSummary log and send metric", async () => {
     const mockResponse = new Response(JSON.stringify({ success: true }), {
       status: 200,
@@ -246,6 +277,9 @@ describe("log-subscription-handler", () => {
     const logMessage = JSON.stringify({
       logDetailType: "DeploymentSummary",
       numLeaseTemplates: 5,
+      numLeaseTemplatesWithBlueprint: 3,
+      numBlueprints: 2,
+      blueprintServiceCount: { S3: 1 },
       config: {
         numCostReportGroups: 2,
         requireMaxBudget: true,
@@ -324,6 +358,7 @@ describe("log-subscription-handler", () => {
       stateMachineExecutionArn:
         "arn:aws:states:us-east-1:123456789012:execution:test",
       stateMachineExecutionURL: "https://console.aws.amazon.com/states/home",
+      reason: "ACCOUNT_REGISTRATION",
     });
 
     const event = createCloudWatchLogsEvent([{ message: logMessage }]);
@@ -352,6 +387,7 @@ describe("log-subscription-handler", () => {
       stateMachineExecutionArn:
         "arn:aws:states:us-east-1:123456789012:execution:test",
       stateMachineExecutionURL: "https://console.aws.amazon.com/states/home",
+      reason: "LEASE_TERMINATION",
     });
 
     const event = createCloudWatchLogsEvent([{ message: logMessage }]);

@@ -5,6 +5,7 @@ import {
   DynamoDBDocumentClient,
   GetCommand,
   PutCommand,
+  QueryCommand,
   ScanCommand,
 } from "@aws-sdk/lib-dynamodb";
 
@@ -31,6 +32,7 @@ import {
 import {
   parseResults,
   parseSingleItemResult,
+  removeNullFieldsForDynamoDB,
   validateItem,
   withMetadata,
 } from "@amzn/innovation-sandbox-commons/data/utils.js";
@@ -56,7 +58,7 @@ export class DynamoLeaseTemplateStore extends LeaseTemplateStore {
       await this.ddbClient.send(
         new PutCommand({
           TableName: this.tableName,
-          Item: leaseTemplate,
+          Item: removeNullFieldsForDynamoDB(leaseTemplate),
           ReturnValues: "ALL_OLD",
           ConditionExpression: "attribute_not_exists(#uid)", //PK -- ensures item does not exist
           ExpressionAttributeNames: {
@@ -84,7 +86,7 @@ export class DynamoLeaseTemplateStore extends LeaseTemplateStore {
         const result = await this.ddbClient.send(
           new PutCommand({
             TableName: this.tableName,
-            Item: leaseTemplate,
+            Item: removeNullFieldsForDynamoDB(leaseTemplate),
             ReturnValues: "ALL_OLD",
             ConditionExpression: `attribute_exists(#uid) and meta.lastEditTime = :expectedTime`,
             ExpressionAttributeValues: {
@@ -112,7 +114,7 @@ export class DynamoLeaseTemplateStore extends LeaseTemplateStore {
         const result = await this.ddbClient.send(
           new PutCommand({
             TableName: this.tableName,
-            Item: leaseTemplate,
+            Item: removeNullFieldsForDynamoDB(leaseTemplate),
             ReturnValues: "ALL_OLD",
             ConditionExpression: "attribute_exists(#uid)", //PK -- ensures item exists
             ExpressionAttributeNames: {
@@ -200,5 +202,32 @@ export class DynamoLeaseTemplateStore extends LeaseTemplateStore {
     );
 
     return parseSingleItemResult(result.Item, LeaseTemplateSchema);
+  }
+
+  /**
+   * Finds lease templates that reference a specific blueprint.
+   *
+   * Returns only key fields (uuid, blueprintId) because the blueprintId-index GSI
+   * is configured with KEYS_ONLY projection. No schema validation is performed
+   * since partial items would fail validation against LeaseTemplateSchema.
+   */
+  public async findByBlueprintId(
+    blueprintId: string,
+  ): Promise<{ uuid: string; blueprintId: string }[]> {
+    const result = await this.ddbClient.send(
+      new QueryCommand({
+        TableName: this.tableName,
+        IndexName: "blueprintId-index",
+        KeyConditionExpression: "blueprintId = :blueprintId",
+        ExpressionAttributeValues: {
+          ":blueprintId": blueprintId,
+        },
+      }),
+    );
+
+    return (result.Items || []).map((item) => ({
+      uuid: item.uuid as string,
+      blueprintId: item.blueprintId as string,
+    }));
   }
 }

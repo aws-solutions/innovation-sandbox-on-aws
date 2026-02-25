@@ -82,7 +82,7 @@ export const useUpdateLease = () => {
   });
 };
 
-export const useReviewLease = () => {
+export const useReviewLease = (options?: { skipInvalidation?: boolean }) => {
   const client = useQueryClient();
   return useMutation({
     mutationFn: async ({
@@ -95,47 +95,71 @@ export const useReviewLease = () => {
       await new LeaseService().reviewLease(leaseId, approve);
     },
     onSuccess: () => {
-      client.invalidateQueries({ queryKey: ["leases"], refetchType: "all" });
-      client.invalidateQueries({ queryKey: ["accounts"], refetchType: "all" });
+      // Only invalidate if skipInvalidation is not set
+      if (!options?.skipInvalidation) {
+        client.invalidateQueries({ queryKey: ["leases"], refetchType: "all" });
+        client.invalidateQueries({
+          queryKey: ["accounts"],
+          refetchType: "all",
+        });
+      }
     },
   });
 };
 
-export const useTerminateLease = () => {
+export const useTerminateLease = (options?: { skipInvalidation?: boolean }) => {
   const client = useQueryClient();
   return useMutation({
     mutationFn: async (leaseId: string) => {
       await new LeaseService().terminateLease(leaseId);
     },
     onSuccess: () => {
-      client.invalidateQueries({ queryKey: ["leases"], refetchType: "all" });
-      client.invalidateQueries({ queryKey: ["accounts"], refetchType: "all" });
+      // Only invalidate if skipInvalidation is not set
+      if (!options?.skipInvalidation) {
+        client.invalidateQueries({ queryKey: ["leases"], refetchType: "all" });
+        client.invalidateQueries({
+          queryKey: ["accounts"],
+          refetchType: "all",
+        });
+      }
     },
   });
 };
 
-export const useFreezeLease = () => {
+export const useFreezeLease = (options?: { skipInvalidation?: boolean }) => {
   const client = useQueryClient();
   return useMutation({
     mutationFn: async (leaseId: string) => {
       await new LeaseService().freezeLease(leaseId);
     },
     onSuccess: () => {
-      client.invalidateQueries({ queryKey: ["leases"], refetchType: "all" });
-      client.invalidateQueries({ queryKey: ["accounts"], refetchType: "all" });
+      // Only invalidate if skipInvalidation is not set
+      if (!options?.skipInvalidation) {
+        client.invalidateQueries({ queryKey: ["leases"], refetchType: "all" });
+        client.invalidateQueries({
+          queryKey: ["accounts"],
+          refetchType: "all",
+        });
+      }
     },
   });
 };
 
-export const useUnfreezeLease = () => {
+export const useUnfreezeLease = (options?: { skipInvalidation?: boolean }) => {
   const client = useQueryClient();
   return useMutation({
     mutationFn: async (leaseId: string) => {
       await new LeaseService().unfreezeLease(leaseId);
     },
     onSuccess: () => {
-      client.invalidateQueries({ queryKey: ["leases"], refetchType: "all" });
-      client.invalidateQueries({ queryKey: ["accounts"], refetchType: "all" });
+      // Only invalidate if skipInvalidation is not set
+      if (!options?.skipInvalidation) {
+        client.invalidateQueries({ queryKey: ["leases"], refetchType: "all" });
+        client.invalidateQueries({
+          queryKey: ["accounts"],
+          refetchType: "all",
+        });
+      }
     },
   });
 };

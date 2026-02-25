@@ -1,19 +1,21 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+import { BaseApiLambdaEnvironment } from "@amzn/innovation-sandbox-commons/lambda/environments/base-api-lambda-environment.js";
 import { IsbApiContext } from "@amzn/innovation-sandbox-commons/lambda/middleware/api-middleware-bundle.js";
 import { MiddlewareFn } from "@aws-lambda-powertools/commons/types";
 import { injectLambdaContext } from "@aws-lambda-powertools/logger/middleware";
 import { MiddlewareObj } from "@middy/core";
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from "aws-lambda";
-import { Schema } from "zod";
 
 /**
  * Combined middleware that sanitizes API Gateway events before logging and injects Lambda context.
  * This is a convenience wrapper around AWS Lambda Powertools' injectLambdaContext that ensures
  * sensitive authorization headers are redacted from logs.
  */
-export function injectSanitizedLambdaContext<T extends Schema>(
+export function injectSanitizedLambdaContext<
+  T extends BaseApiLambdaEnvironment,
+>(
   logger: any,
   options?: { logEvent?: boolean; resetKeys?: boolean },
 ): MiddlewareObj<
@@ -102,7 +104,9 @@ function sanitizeHeaders(
  * Middy middleware that sanitizes API Gateway events before logging and restores them afterward.
  * This prevents sensitive authorization headers from being logged by AWS Lambda Powertools.
  */
-export function eventLoggingSanitizer<T extends Schema>(): MiddlewareObj<
+export function eventLoggingSanitizer<
+  T extends BaseApiLambdaEnvironment,
+>(): MiddlewareObj<
   APIGatewayProxyEvent,
   APIGatewayProxyResult,
   Error,

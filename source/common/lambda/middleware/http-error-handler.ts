@@ -25,6 +25,35 @@ const errorMappings: Record<string, { statusCode: number; message: string }> = {
     message:
       "Could not move account due to too many requests. Please try again momentarily.",
   },
+  // AWS Service Throttling Exceptions
+  ThrottlingException: {
+    statusCode: 429,
+    message: "Too many requests. Please try again later.",
+  },
+  ProvisionedThroughputExceededException: {
+    statusCode: 429,
+    message: "Request rate limit exceeded. Please try again later.",
+  },
+  LimitExceededException: {
+    statusCode: 429,
+    message: "Rate limit exceeded. Please try again later.",
+  },
+  RequestLimitExceeded: {
+    statusCode: 429,
+    message: "Too many requests. Please try again later.",
+  },
+  BlueprintInUseError: {
+    statusCode: 409,
+    message: "Cannot delete blueprint - currently in use by lease templates.",
+  },
+  StackSetNotFoundError: {
+    statusCode: 404,
+    message: "StackSet not found.",
+  },
+  UnsupportedPermissionModelError: {
+    statusCode: 400,
+    message: "StackSet uses unsupported permission model.",
+  },
   ZodError: {
     statusCode: 400,
     message: "Invalid Request.",
@@ -100,3 +129,4 @@ export function createHttpJSendValidationError(zodErrors: ZodError) {
     },
   });
 }
+

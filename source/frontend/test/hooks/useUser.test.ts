@@ -26,9 +26,8 @@ describe("useUser", () => {
       roles: ["Admin" as IsbRole],
     };
 
-    const { AuthService } = await import(
-      "@amzn/innovation-sandbox-frontend/helpers/AuthService"
-    );
+    const { AuthService } =
+      await import("@amzn/innovation-sandbox-frontend/helpers/AuthService");
     vi.mocked(AuthService.getCurrentUser).mockResolvedValue(mockUser);
 
     const { result } = renderHook(() => useUser(), {
@@ -51,9 +50,8 @@ describe("useUser", () => {
       roles: ["Manager" as IsbRole],
     };
 
-    const { AuthService } = await import(
-      "@amzn/innovation-sandbox-frontend/helpers/AuthService"
-    );
+    const { AuthService } =
+      await import("@amzn/innovation-sandbox-frontend/helpers/AuthService");
     vi.mocked(AuthService.getCurrentUser).mockResolvedValue(mockUser);
 
     const { result } = renderHook(() => useUser(), {
@@ -75,9 +73,8 @@ describe("useUser", () => {
       roles: ["User" as IsbRole],
     };
 
-    const { AuthService } = await import(
-      "@amzn/innovation-sandbox-frontend/helpers/AuthService"
-    );
+    const { AuthService } =
+      await import("@amzn/innovation-sandbox-frontend/helpers/AuthService");
     vi.mocked(AuthService.getCurrentUser).mockResolvedValue(mockUser);
 
     const { result } = renderHook(() => useUser(), {
@@ -99,9 +96,8 @@ describe("useUser", () => {
       roles: undefined,
     };
 
-    const { AuthService } = await import(
-      "@amzn/innovation-sandbox-frontend/helpers/AuthService"
-    );
+    const { AuthService } =
+      await import("@amzn/innovation-sandbox-frontend/helpers/AuthService");
     vi.mocked(AuthService.getCurrentUser).mockResolvedValue(mockUser);
 
     const { result } = renderHook(() => useUser(), {
@@ -118,9 +114,8 @@ describe("useUser", () => {
   });
 
   it("handles loading and error states", async () => {
-    const { AuthService } = await import(
-      "@amzn/innovation-sandbox-frontend/helpers/AuthService"
-    );
+    const { AuthService } =
+      await import("@amzn/innovation-sandbox-frontend/helpers/AuthService");
     vi.mocked(AuthService.getCurrentUser).mockImplementation(
       () => new Promise(() => {}),
     ); // Never resolves

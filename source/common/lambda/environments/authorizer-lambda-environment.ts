@@ -2,11 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 import { z } from "zod";
 
-import { BaseLambdaEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/base-lambda-environment.js";
+import { BaseApiLambdaEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/base-api-lambda-environment.js";
 
 export const AuthorizerLambdaEnvironmentSchema =
-  BaseLambdaEnvironmentSchema.extend({
-    JWT_SECRET_NAME: z.string(),
+  BaseApiLambdaEnvironmentSchema.extend({
     APP_CONFIG_APPLICATION_ID: z.string(),
     APP_CONFIG_PROFILE_ID: z.string(),
     APP_CONFIG_ENVIRONMENT_ID: z.string(),

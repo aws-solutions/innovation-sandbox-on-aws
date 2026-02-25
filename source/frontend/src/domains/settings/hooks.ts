@@ -9,5 +9,6 @@ export const useGetConfigurations = () => {
   return useQuery({
     queryKey: ["configurations"],
     queryFn: async () => await new SettingService().getConfigurations(),
+    staleTime: 5 * 60 * 1000, // 5 minutes (matches backend SSM cache)
   });
 };

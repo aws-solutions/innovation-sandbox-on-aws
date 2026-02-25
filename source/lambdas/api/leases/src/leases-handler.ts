@@ -75,6 +75,7 @@ import {
   fromTemporaryIsbIdcCredentials,
   fromTemporaryIsbOrgManagementCredentials,
 } from "@amzn/innovation-sandbox-commons/utils/cross-account-roles.js";
+import { enumErrorMap } from "@amzn/innovation-sandbox-commons/utils/zod.js";
 
 const tracer = new Tracer();
 const logger = new Logger({ serviceName: "Leases" });
@@ -275,6 +276,10 @@ async function postLeaseHandler(
     ),
     isbEventBridgeClient: IsbServices.isbEventBridge(context.env),
     globalConfig: context.globalConfig,
+    blueprintStore: IsbServices.blueprintStore(context.env),
+    blueprintDeploymentService: IsbServices.blueprintDeploymentService(
+      context.env,
+    ),
   };
   const InputLeaseSchema = PendingLeaseSchema.pick({
     comments: true,
@@ -412,7 +417,7 @@ async function resolveTargetUser(
       data: {
         errors: [
           {
-            message: `User not found in Identity Center: ${userEmail}`,
+            message: "User not found in Identity Center",
           },
         ],
       },
@@ -639,11 +644,18 @@ async function reviewLeaseHandler(
     ),
     isbEventBridgeClient: IsbServices.isbEventBridge(context.env),
     globalConfig: context.globalConfig,
+    blueprintStore: IsbServices.blueprintStore(context.env),
+    blueprintDeploymentService: IsbServices.blueprintDeploymentService(
+      context.env,
+    ),
+    leaseTemplateStore: IsbServices.leaseTemplateStore(context.env),
   };
 
   const ReviewLeaseBodySchema = z
     .object({
-      action: z.enum(["Approve", "Deny"]),
+      action: z.enum(["Approve", "Deny"], {
+        errorMap: enumErrorMap,
+      }),
     })
     .strict();
   const parsedReviewLeaseBody = ReviewLeaseBodySchema.safeParse(event.body);
@@ -848,6 +860,10 @@ async function terminateLeaseHandler(
     ),
     eventBridgeClient: IsbServices.isbEventBridge(context.env),
     globalConfig: context.globalConfig,
+    blueprintStore: IsbServices.blueprintStore(context.env),
+    blueprintDeploymentService: IsbServices.blueprintDeploymentService(
+      context.env,
+    ),
   };
   const leaseCompositeKey = parseLeaseCompositeKeyFromPathParameters(
     event.pathParameters,

@@ -14,6 +14,8 @@ export const InitializeCleanupLambdaEnvironmentSchema =
     IDC_ACCOUNT_ID: z.string(),
     HUB_ACCOUNT_ID: z.string(),
     AWS_APPCONFIG_EXTENSION_PREFETCH_LIST: z.string(),
+    CLEANUP_SPOKE_ROLE_NAME: z.string(),
+    INTERMEDIATE_ROLE_ARN: z.string(),
   });
 
 export type InitializeCleanupLambdaEnvironment = z.infer<

@@ -297,9 +297,8 @@ describe("CostExplorerService", () => {
     });
 
     it("returns costs for accounts all within time period, with batchSize of 1", async () => {
-      const { COST_EXPLORER_CONFIG, CostExplorerService } = await import(
-        "@amzn/innovation-sandbox-commons/isb-services/cost-explorer-service.js"
-      );
+      const { COST_EXPLORER_CONFIG, CostExplorerService } =
+        await import("@amzn/innovation-sandbox-commons/isb-services/cost-explorer-service.js");
       vi.spyOn(
         COST_EXPLORER_CONFIG,
         "MAX_ACCOUNTS_IN_FILTER",

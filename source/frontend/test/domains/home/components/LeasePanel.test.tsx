@@ -16,7 +16,7 @@ import {
   createPendingLease,
 } from "@amzn/innovation-sandbox-frontend/mocks/factories/leaseFactory";
 import { renderWithQueryClient } from "@amzn/innovation-sandbox-frontend/setupTests";
-import moment from "moment";
+import { DateTime } from "luxon";
 
 // Mock the AccountLoginLink component
 vi.mock(
@@ -109,12 +109,10 @@ describe("LeasePanel", () => {
   test("displays expiration date correctly", () => {
     const futureDate = new Date();
     futureDate.setDate(futureDate.getDate() + 7);
+    futureDate.setMinutes(futureDate.getMinutes() + 1);
     const leaseWithFutureExpiry = createActiveLease({
       expirationDate: futureDate.toISOString(),
     });
-
-    const pastDate = new Date();
-    pastDate.setDate(pastDate.getDate() - 7);
 
     renderComponent(leaseWithFutureExpiry);
     expect(screen.getByText(/in 7 days/)).toBeInTheDocument();
@@ -133,7 +131,7 @@ describe("LeasePanel", () => {
     });
     renderComponent(leaseWithoutExpiry);
 
-    expect(screen.getByText(/a day/)).toBeInTheDocument();
+    expect(screen.getByText(/24 hours/)).toBeInTheDocument();
     expect(screen.getByText("after approval")).toBeInTheDocument();
   });
 
@@ -148,17 +146,17 @@ describe("LeasePanel", () => {
   });
 
   test.each([
-    { amount: 1, unit: "hours", expected: "an hour ago" },
+    { amount: 1, unit: "hours", expected: "1 hour ago" },
     { amount: 3, unit: "hours", expected: "3 hours ago" },
-    { amount: 1, unit: "days", expected: "a day ago" },
+    { amount: 1, unit: "days", expected: "1 day ago" },
     { amount: 3, unit: "days", expected: "3 days ago" },
-    { amount: 1, unit: "months", expected: "a month ago" },
+    { amount: 1, unit: "months", expected: "1 month ago" },
   ])(
     "displays proper expiry date for expired lease - $expected",
     ({ amount, unit, expected }) => {
-      const expirationDate = moment()
-        .subtract(amount, unit as any)
-        .toISOString();
+      const expirationDate = DateTime.now()
+        .minus({ [unit]: amount })
+        .toISO();
       const expiredLease = createExpiredLease({
         endDate: expirationDate,
       });

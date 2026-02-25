@@ -12,6 +12,7 @@ import {
   ReportingConfig,
   ReportingConfigSchema,
 } from "@amzn/innovation-sandbox-commons/data/reporting-config/reporting-config.js";
+import { BaseApiLambdaEnvironment } from "@amzn/innovation-sandbox-commons/lambda/environments/base-api-lambda-environment.js";
 import { IsbApiContext } from "@amzn/innovation-sandbox-commons/lambda/middleware/api-middleware-bundle.js";
 import { ValidatedEnvironment } from "@amzn/innovation-sandbox-commons/lambda/middleware/environment-validator.js";
 import {
@@ -146,7 +147,7 @@ export function mockContext<T>(
   };
 }
 
-export function mockAuthorizedContext<T>(
+export function mockAuthorizedContext<T extends BaseApiLambdaEnvironment>(
   env: T,
   globalConfig?: GlobalConfig,
   reportingConfig?: ReportingConfig,

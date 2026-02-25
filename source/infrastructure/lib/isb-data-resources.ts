@@ -4,18 +4,19 @@ import { RemovalPolicy, aws_ssm } from "aws-cdk-lib";
 import {
   AttributeType,
   BillingMode,
+  ProjectionType,
   Table,
   TableEncryption,
 } from "aws-cdk-lib/aws-dynamodb";
 import { Key } from "aws-cdk-lib/aws-kms";
 import { Construct } from "constructs";
 
+import { DataConfig } from "@amzn/innovation-sandbox-commons/data/data-stack-config/data-stack-config.js";
 import { sharedDataSsmParamName } from "@amzn/innovation-sandbox-commons/types/isb-types.js";
 import { Config } from "@amzn/innovation-sandbox-infrastructure/components/config/config";
 import { IsbKmsKeys } from "@amzn/innovation-sandbox-infrastructure/components/kms";
 import { getContextFromMapping } from "@amzn/innovation-sandbox-infrastructure/helpers/cdk-context";
 import { isDevMode } from "@amzn/innovation-sandbox-infrastructure/helpers/deployment-mode";
-import { DataConfig } from "@amzn/innovation-sandbox-shared-json-param-parser/src/shared-json-param-parser-handler.js";
 
 const supportedSchemas = ["1"];
 
@@ -28,6 +29,7 @@ export class IsbDataResources {
   sandboxAccountTable: Table;
   leaseTemplateTable: Table;
   leaseTable: Table;
+  blueprintTable: Table;
 
   constructor(scope: Construct, props: IsbDataResourcesProps) {
     this.tableKmsKey = IsbKmsKeys.get(scope, props.namespace);
@@ -60,6 +62,12 @@ export class IsbDataResources {
       encryption: TableEncryption.CUSTOMER_MANAGED,
     });
 
+    this.leaseTemplateTable.addGlobalSecondaryIndex({
+      indexName: "blueprintId-index",
+      partitionKey: { name: "blueprintId", type: AttributeType.STRING },
+      projectionType: ProjectionType.KEYS_ONLY,
+    });
+
     this.leaseTable = new Table(scope, "LeaseTable", {
       partitionKey: { name: "userEmail", type: AttributeType.STRING },
       sortKey: { name: "uuid", type: AttributeType.STRING },
@@ -83,6 +91,25 @@ export class IsbDataResources {
       },
     });
 
+    this.blueprintTable = new Table(scope, "BlueprintTable", {
+      partitionKey: { name: "PK", type: AttributeType.STRING }, // "bp#{blueprintId}"
+      sortKey: { name: "SK", type: AttributeType.STRING }, // "blueprint" | "stackset#{stackSetId}" | "deployment#{timestamp}#{operationId}"
+      billingMode: BillingMode.PAY_PER_REQUEST,
+      pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },
+      encryption: TableEncryption.CUSTOMER_MANAGED,
+      encryptionKey: this.tableKmsKey,
+      deletionProtection: !devMode,
+      removalPolicy: tableRemovalPolicy,
+      timeToLiveAttribute: "ttl", // For deployment history cleanup (90 days)
+    });
+
+    this.blueprintTable.addGlobalSecondaryIndex({
+      indexName: "itemType-blueprintId-index",
+      partitionKey: { name: "itemType", type: AttributeType.STRING }, // "BLUEPRINT"
+      sortKey: { name: "blueprintId", type: AttributeType.STRING },
+      projectionType: ProjectionType.ALL,
+    });
+
     new aws_ssm.StringParameter(scope, "DataConfiguration", {
       parameterName: sharedDataSsmParamName(props.namespace),
       description: "The configuration of the data stack of Innovation Sandbox",
@@ -98,6 +125,7 @@ export class IsbDataResources {
         accountTable: this.sandboxAccountTable.tableName,
         leaseTemplateTable: this.leaseTemplateTable.tableName,
         leaseTable: this.leaseTable.tableName,
+        blueprintTable: this.blueprintTable.tableName,
         tableKmsKeyId: this.tableKmsKey.keyId,
         solutionVersion: getContextFromMapping(scope, "version"),
         supportedSchemas: JSON.stringify(supportedSchemas),

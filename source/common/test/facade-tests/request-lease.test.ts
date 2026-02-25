@@ -1,10 +1,14 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+import { BlueprintWithStackSets } from "@amzn/innovation-sandbox-commons/data/blueprint/blueprint.js";
 import { PaginatedQueryResult } from "@amzn/innovation-sandbox-commons/data/common-types.js";
 import { GlobalConfigSchema } from "@amzn/innovation-sandbox-commons/data/global-config/global-config.js";
 import { LeaseTemplateSchema } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template.js";
-import { MonitoredLease } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
+import {
+  MonitoredLease,
+  MonitoredLeaseSchema,
+} from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
 import {
   SandboxAccount,
   SandboxAccountSchema,
@@ -16,8 +20,11 @@ import { IsbEventBridgeClient } from "@amzn/innovation-sandbox-commons/sdk-clien
 import { generateSchemaData } from "@amzn/innovation-sandbox-commons/test/generate-schema-data.js";
 import {
   mockedAccountStore,
+  mockedBlueprintDeploymentService,
+  mockedBlueprintStore,
   mockedIdcService,
   mockedLeaseStore,
+  mockedLeaseTemplateStore,
   mockedOrgsService,
 } from "@amzn/innovation-sandbox-commons/test/mocking/common-mocks.js";
 import { createMockOf } from "@amzn/innovation-sandbox-commons/test/mocking/mock-utils.js";
@@ -36,6 +43,9 @@ function createMockContext() {
     idcService: mockedIdcService(),
     leaseStore: mockedLeaseStore(),
     sandboxAccountStore: mockedAccountStore(),
+    blueprintStore: mockedBlueprintStore(),
+    blueprintDeploymentService: mockedBlueprintDeploymentService(),
+    leaseTemplateStore: mockedLeaseTemplateStore(),
     globalConfig: generateSchemaData(GlobalConfigSchema),
     logger: new Logger(),
     tracer: new Tracer(),
@@ -62,6 +72,54 @@ describe("InnovationSandbox.requestLease()", () => {
           throw new Error("Invalid ISB User.");
         }
       },
+    );
+
+    mockContext.blueprintDeploymentService.validateBlueprintForDeployment.mockResolvedValue(
+      {
+        blueprint: {
+          PK: "bp#b1c2d3e4-5678-90ab-cdef-blueprintabc",
+          SK: "blueprint",
+          itemType: "BLUEPRINT",
+          blueprintId: "b1c2d3e4-5678-90ab-cdef-blueprintabc",
+          name: "TestBlueprint",
+          regionConcurrencyType: "SEQUENTIAL",
+          deploymentTimeoutMinutes: 60,
+          tags: {},
+          createdBy: "test@example.com",
+          totalHealthMetrics: {
+            totalDeploymentCount: 0,
+            totalSuccessfulCount: 0,
+          },
+          meta: {
+            schemaVersion: 1,
+            createdTime: "2024-01-01T00:00:00Z",
+            lastEditTime: "2024-01-01T00:00:00Z",
+          },
+        },
+        stackSets: [
+          {
+            PK: "bp#b1c2d3e4-5678-90ab-cdef-blueprintabc",
+            SK: "stackset#a1b2c3d4-5678-90ab-cdef-123456789abc",
+            itemType: "STACKSET",
+            blueprintId: "b1c2d3e4-5678-90ab-cdef-blueprintabc",
+            stackSetId: "a1b2c3d4-5678-90ab-cdef-123456789abc",
+            administrationRoleArn: "arn:aws:iam::123456789012:role/admin",
+            executionRoleName: "execution-role",
+            regions: ["us-east-1"],
+            deploymentOrder: 1,
+            healthMetrics: {
+              deploymentCount: 0,
+              successfulDeploymentCount: 0,
+              consecutiveFailures: 0,
+            },
+            meta: {
+              schemaVersion: 1,
+              createdTime: "2024-01-01T00:00:00Z",
+              lastEditTime: "2024-01-01T00:00:00Z",
+            },
+          },
+        ],
+      } as BlueprintWithStackSets,
     );
 
     vi.useFakeTimers();
@@ -112,6 +170,7 @@ describe("InnovationSandbox.requestLease()", () => {
       {
         leaseTemplate: generateSchemaData(LeaseTemplateSchema, {
           requiresApproval: false,
+          blueprintId: null,
         }),
         targetUser: mockUser,
       },
@@ -127,6 +186,30 @@ describe("InnovationSandbox.requestLease()", () => {
         approvedBy: "AUTO_APPROVED",
       }),
     );
+  });
+
+  test("should reject lease request when user has a lease in Provisioning status", async () => {
+    const provisioningLease = generateSchemaData(MonitoredLeaseSchema, {
+      userEmail: mockUser.email,
+      status: "Provisioning",
+    });
+
+    mockContext.leaseStore.findByUserEmail.mockResolvedValueOnce({
+      result: [provisioningLease],
+      nextPageIdentifier: null,
+    });
+
+    await expect(
+      InnovationSandbox.requestLease(
+        {
+          leaseTemplate: generateSchemaData(LeaseTemplateSchema, {
+            requiresApproval: true,
+          }),
+          targetUser: mockUser,
+        },
+        mockContext,
+      ),
+    ).rejects.toThrow("maximum number of active/pending leases");
   });
 
   // Lease Assignment Tests
@@ -146,6 +229,7 @@ describe("InnovationSandbox.requestLease()", () => {
         {
           leaseTemplate: generateSchemaData(LeaseTemplateSchema, {
             requiresApproval: true, // Should be auto-approved for assignments
+            blueprintId: null,
           }),
           targetUser: mockUser,
           createdBy: managerEmail,

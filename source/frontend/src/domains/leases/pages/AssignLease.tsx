@@ -1,34 +1,38 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+import { zodResolver } from "@hookform/resolvers/zod";
 import { useEffect, useState } from "react";
+import { FormProvider, useForm } from "react-hook-form";
 import { useNavigate } from "react-router-dom";
 
 import {
   Container,
-  ContentLayout,
-  FormField,
   Header,
   SpaceBetween,
-  Textarea,
   Wizard,
+  WizardProps,
 } from "@cloudscape-design/components";
 
+import { useAppLayoutContext } from "@amzn/innovation-sandbox-frontend/components/AppLayout/AppLayoutContext";
+import { ContentLayout } from "@amzn/innovation-sandbox-frontend/components/ContentLayout";
+import TextareaField from "@amzn/innovation-sandbox-frontend/components/FormFields/TextareaField";
 import { Markdown } from "@amzn/innovation-sandbox-frontend/components/Markdown";
 import {
   showErrorToast,
   showSuccessToast,
 } from "@amzn/innovation-sandbox-frontend/components/Toast";
-import {
-  ReviewStep,
-  TemplateSelectionStep,
-  TermsOfServiceStep,
-  UserSelectionStep,
-} from "@amzn/innovation-sandbox-frontend/domains/leases/components/wizard-steps";
+import { ReviewForm } from "@amzn/innovation-sandbox-frontend/domains/leases/components/ReviewForm";
+import { TemplateSelectionForm } from "@amzn/innovation-sandbox-frontend/domains/leases/components/TemplateSelectionForm";
+import { TermsOfServiceForm } from "@amzn/innovation-sandbox-frontend/domains/leases/components/TermsOfServiceForm";
+import { UserSelectionForm } from "@amzn/innovation-sandbox-frontend/domains/leases/components/UserSelectionForm";
 import { useRequestNewLease } from "@amzn/innovation-sandbox-frontend/domains/leases/hooks";
 import { NewLeaseRequest } from "@amzn/innovation-sandbox-frontend/domains/leases/types";
+import {
+  AssignLeaseFormValues,
+  AssignLeaseValidationSchema,
+} from "@amzn/innovation-sandbox-frontend/domains/leases/validation";
 import { useBreadcrumb } from "@amzn/innovation-sandbox-frontend/hooks/useBreadcrumb";
-import { useAppLayoutContext } from "@aws-northstar/ui/components/AppLayout";
 
 export const AssignLease = () => {
   const navigate = useNavigate();
@@ -38,63 +42,89 @@ export const AssignLease = () => {
   const { mutateAsync: requestNewLease, isPending: isSubmitting } =
     useRequestNewLease();
 
-  // Form state
   const [activeStepIndex, setActiveStepIndex] = useState(0);
-  const [leaseTemplateUuid, setLeaseTemplateUuid] = useState<string>("");
-  const [userEmail, setUserEmail] = useState<string>("");
-  const [acceptTerms, setAcceptTerms] = useState<boolean>(false);
-  const [comments, setComments] = useState<string>("");
 
-  // Validation state
-  const [isTemplateValid, setIsTemplateValid] = useState<boolean>(false);
-  const [isEmailValid, setIsEmailValid] = useState<boolean>(false);
-  const [isTermsValid, setIsTermsValid] = useState<boolean>(false);
-  const [showValidationErrors, setShowValidationErrors] =
-    useState<boolean>(false);
+  // Initialize form with React Hook Form
+  const methods = useForm<AssignLeaseFormValues>({
+    resolver: zodResolver(AssignLeaseValidationSchema),
+    mode: "all",
+    defaultValues: {
+      leaseTemplateUuid: "",
+      userEmail: "",
+      acceptTerms: false,
+      comments: "",
+    },
+  });
+
+  const { trigger, getFieldState, getValues, clearErrors, watch } = methods;
+
+  // Reset acceptTerms when template changes
+  const leaseTemplateUuid = watch("leaseTemplateUuid");
+  useEffect(() => {
+    methods.resetField("acceptTerms");
+  }, [leaseTemplateUuid, methods]);
 
   useEffect(() => {
     setBreadcrumb([
       { text: "Home", href: "/" },
       { text: "Assign lease", href: "/assign" },
     ]);
-    setTools(<Markdown file="assign" />);
+    setTools(<Markdown file="assign-lease" />);
   }, []);
 
-  const validateStep = (stepIndex: number): boolean => {
-    const isValid = (() => {
-      switch (stepIndex) {
-        case 0: // Template selection
-          return isTemplateValid;
-        case 1: // User selection
-          return isEmailValid;
-        case 2: // Terms
-          return isTermsValid;
-        default:
-          return true;
-      }
-    })();
+  const handleNavigate = async ({
+    detail,
+  }: {
+    detail: WizardProps.NavigateDetail;
+  }) => {
+    await trigger(); // Validate all fields
 
-    // If validation fails, show errors to help user understand what's wrong
-    if (!isValid) {
-      setShowValidationErrors(true);
+    const { requestedStepIndex } = detail;
+
+    // Only validate when moving forward
+    if (requestedStepIndex > activeStepIndex) {
+      const stepFields: Array<Array<keyof AssignLeaseFormValues>> = [
+        ["leaseTemplateUuid"], // Step 0: Template selection
+        ["userEmail"], // Step 1: User selection
+        ["acceptTerms"], // Step 2: Terms of service
+        [], // Step 3: Review (no validation needed)
+      ];
+
+      const currentStepFields = stepFields[activeStepIndex];
+      const currentStepHasErrors = currentStepFields.some(
+        (field) => getFieldState(field).error !== undefined,
+      );
+
+      if (currentStepHasErrors) {
+        return; // Block navigation
+      }
     }
 
-    return isValid;
+    clearErrors(); // clear errors so that the page being navigated to is fresh
+    setActiveStepIndex(requestedStepIndex);
   };
 
   const handleSubmit = async () => {
-    if (!validateStep(activeStepIndex)) return;
+    const isValid = await trigger();
+    if (!isValid) {
+      // Navigate to ToS step — the only validation that can fail at submit time
+      // (template selection and email have inline validation that blocks forward navigation)
+      setActiveStepIndex(2);
+      showErrorToast("Please correct validation errors", "Validation Failed");
+      return;
+    }
 
+    const values = getValues();
     const request: NewLeaseRequest = {
-      leaseTemplateUuid,
-      comments,
-      userEmail,
+      leaseTemplateUuid: values.leaseTemplateUuid,
+      comments: values.comments,
+      userEmail: values.userEmail,
     };
 
     try {
       await requestNewLease(request);
       navigate("/");
-      showSuccessToast(`Lease has been assigned to ${userEmail}.`);
+      showSuccessToast(`Lease has been assigned to ${values.userEmail}.`);
     } catch (error) {
       if (error instanceof Error) {
         showErrorToast(`Failed to submit lease assignment: ${error.message}`);
@@ -110,123 +140,85 @@ export const AssignLease = () => {
     {
       title: "Select lease template",
       content: (
-        <TemplateSelectionStep
-          value={leaseTemplateUuid}
-          onChange={(templateId: string) => {
-            setLeaseTemplateUuid(templateId);
-            if (showValidationErrors) {
-              setShowValidationErrors(false);
-            }
-          }}
-          onValidationChange={setIsTemplateValid}
-          showValidationErrors={showValidationErrors}
-          label="What lease template would you like to use for this assignment?"
-        />
+        <TemplateSelectionForm label="What lease template would you like to use for this assignment?" />
       ),
     },
     {
       title: "Select user",
-      content: (
-        <UserSelectionStep
-          value={userEmail}
-          onChange={(email: string) => {
-            setUserEmail(email);
-            if (showValidationErrors) {
-              setShowValidationErrors(false);
-            }
-          }}
-          onValidationChange={setIsEmailValid}
-          showValidationErrors={showValidationErrors}
-        />
-      ),
+      content: <UserSelectionForm />,
     },
     {
       title: "Terms of Service",
       content: (
-        <TermsOfServiceStep
-          acceptTerms={acceptTerms}
-          onAcceptTermsChange={(accepted: boolean) => {
-            setAcceptTerms(accepted);
-            // Clear validation errors when user accepts terms
-            if (showValidationErrors) {
-              setShowValidationErrors(false);
-            }
-          }}
-          onValidationChange={setIsTermsValid}
-          showValidationErrors={showValidationErrors}
-          checkboxText="I accept the above terms of service on behalf of the assigned user."
-        />
+        <TermsOfServiceForm checkboxText="I accept the above terms of service on behalf of the assigned user." />
       ),
     },
     {
-      title: "Review & Assign",
+      title: "Review & Submit",
       content: (
-        <Container>
-          <SpaceBetween direction="vertical" size="l">
-            <Header variant="h3">Review assignment details</Header>
-            <ReviewStep
-              data={{
-                leaseTemplateUuid,
-                userEmail,
+        <SpaceBetween direction="vertical" size="l">
+          <ReviewForm
+            data={{
+              leaseTemplateUuid: methods.watch("leaseTemplateUuid"),
+              userEmail: methods.watch("userEmail"),
+            }}
+          />
+          <Container>
+            <TextareaField
+              controllerProps={{
+                control: methods.control,
+                name: "comments",
+              }}
+              formFieldProps={{
+                label: "Comments",
+                description:
+                  "Optional - add additional comments about this assignment",
+              }}
+              textareaProps={{
+                placeholder: "Enter any additional comments...",
+                rows: 3,
               }}
             />
-            <FormField
-              label="Comments"
-              description="Optional - add additional comments about this assignment"
-            >
-              <Textarea
-                value={comments}
-                onChange={({ detail }) => setComments(detail.value)}
-                placeholder="Enter any additional comments..."
-                rows={3}
-              />
-            </FormField>
-          </SpaceBetween>
-        </Container>
+          </Container>
+        </SpaceBetween>
       ),
     },
   ];
 
   return (
-    <ContentLayout
-      header={
-        <Header
-          variant="h1"
-          description="Create a lease assignment for another user."
-        >
-          Assign lease
-        </Header>
-      }
-    >
-      <Wizard
-        steps={steps}
-        activeStepIndex={activeStepIndex}
-        onNavigate={({ detail }) => {
-          // Only allow navigation if current step is valid or going backwards
-          if (
-            detail.requestedStepIndex < activeStepIndex ||
-            validateStep(activeStepIndex)
-          ) {
-            setActiveStepIndex(detail.requestedStepIndex);
-          }
-        }}
-        onCancel={onCancel}
-        onSubmit={handleSubmit}
-        isLoadingNextStep={isSubmitting}
-        allowSkipTo
-        i18nStrings={{
-          stepNumberLabel: (stepNumber) => `Step ${stepNumber}`,
-          collapsedStepsLabel: (stepNumber, stepsCount) =>
-            `Step ${stepNumber} of ${stepsCount}`,
-          skipToButtonLabel: (step) => `Skip to ${step.title}`,
-          navigationAriaLabel: "Steps",
-          cancelButton: "Cancel",
-          previousButton: "Previous",
-          nextButton: "Next",
-          submitButton: "Assign lease",
-          optional: "optional",
-        }}
-      />
-    </ContentLayout>
+    <FormProvider {...methods}>
+      <ContentLayout
+        header={
+          <Header
+            variant="h1"
+            description="Create a lease assignment for another user."
+          >
+            Assign lease
+          </Header>
+        }
+      >
+        <Wizard
+          steps={steps}
+          activeStepIndex={activeStepIndex}
+          onNavigate={handleNavigate}
+          onCancel={onCancel}
+          onSubmit={handleSubmit}
+          isLoadingNextStep={isSubmitting}
+          allowSkipTo
+          i18nStrings={{
+            stepNumberLabel: (stepNumber) => `Step ${stepNumber}`,
+            collapsedStepsLabel: (stepNumber, stepsCount) =>
+              `Step ${stepNumber} of ${stepsCount}`,
+            skipToButtonLabel: (step) => `Skip to ${step.title}`,
+            navigationAriaLabel: "Steps",
+            cancelButton: "Cancel",
+            previousButton: "Previous",
+            nextButton: "Next",
+            submitButton: "Assign lease",
+            optional: "optional",
+          }}
+        />
+      </ContentLayout>
+    </FormProvider>
   );
 };

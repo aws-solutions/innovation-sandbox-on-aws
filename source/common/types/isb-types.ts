@@ -1,8 +1,11 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
+import { enumErrorMap } from "@amzn/innovation-sandbox-commons/utils/zod.js";
 import { z } from "zod";
 
-export const IsbRoleSchema = z.enum(["Admin", "Manager", "User"]);
+export const IsbRoleSchema = z.enum(["Admin", "Manager", "User"], {
+  errorMap: enumErrorMap,
+});
 export const IsbUserSchema = z.object({
   email: z.string().email(),
   displayName: z.string().optional(),

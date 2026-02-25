@@ -17,7 +17,7 @@ import {
 import { mockLeaseApi } from "@amzn/innovation-sandbox-frontend/mocks/mockApi";
 import { server } from "@amzn/innovation-sandbox-frontend/mocks/server";
 import { renderWithQueryClient } from "@amzn/innovation-sandbox-frontend/setupTests";
-import moment from "moment";
+import { DateTime } from "luxon";
 
 const mockNavigate = vi.fn();
 
@@ -91,15 +91,23 @@ describe("MyLeases", () => {
   });
 
   test("renders leases with correct count and content", async () => {
-    const mockLease1 = createActiveLease({ userEmail: "test@example.com" });
+    const mockLease1 = createActiveLease({
+      userEmail: "test@example.com",
+      originalLeaseTemplateName: "Template A",
+    });
     const mockLease2 = createActiveLease({
       userEmail: "test@example.com",
       status: "Frozen",
+      originalLeaseTemplateName: "Template B",
     });
     const mockLease3 = createPendingLease({
       userEmail: "test@example.com",
+      originalLeaseTemplateName: "Template C",
     });
-    const mockLease4 = createActiveLease({ userEmail: "other@example.com" }); // This should not be included
+    const mockLease4 = createActiveLease({
+      userEmail: "other@example.com",
+      originalLeaseTemplateName: "Template D",
+    }); // This should not be included
     mockLeaseApi.returns([mockLease1, mockLease2, mockLease3, mockLease4]);
     server.use(mockLeaseApi.getHandler());
 
@@ -126,11 +134,11 @@ describe("MyLeases", () => {
   test("filters out leases that expired over 7 days ago", async () => {
     const mockLease1 = createExpiredLease({
       userEmail: "test@example.com",
-      endDate: moment().subtract(6, "days").toISOString(),
+      endDate: DateTime.now().minus({ days: 6 }).toISO(),
     });
     const mockLease2 = createExpiredLease({
       userEmail: "test@example.com",
-      endDate: moment().subtract(8, "days").toISOString(),
+      endDate: DateTime.now().minus({ days: 8 }).toISO(),
     });
     mockLeaseApi.returns([mockLease1, mockLease2]);
     server.use(mockLeaseApi.getHandler());

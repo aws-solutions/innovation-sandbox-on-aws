@@ -20,4 +20,4 @@ export type LeaseTemplateFormData = LeaseTemplate & {
   };
 };
 
-export type NewLeaseTemplate = Omit<LeaseTemplate, "uuid">;
+export type NewLeaseTemplate = Omit<LeaseTemplate, "uuid" | "createdBy">;

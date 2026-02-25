@@ -18,8 +18,6 @@ export function validateCostReportGroup(
     costReportGroup &&
     !reportingConfig.costReportGroups.includes(costReportGroup)
   ) {
-    throw new ValidationException(
-      `Cost report group: ${costReportGroup} is not valid`,
-    );
+    throw new ValidationException("Invalid cost report group");
   }
 }

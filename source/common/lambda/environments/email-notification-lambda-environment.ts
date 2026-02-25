@@ -14,6 +14,7 @@ export const EmailNotificationEnvironmentSchema =
     INTERMEDIATE_ROLE_ARN: z.string(),
     IDC_ROLE_ARN: z.string(),
     AWS_APPCONFIG_EXTENSION_PREFETCH_LIST: z.string(),
+    IDC_CONFIG_PARAM_ARN: z.string(),
   });
 
 export type EmailNotificationEnvironment = z.infer<
