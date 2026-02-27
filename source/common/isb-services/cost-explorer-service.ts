@@ -108,15 +108,6 @@ export class CostExplorerService {
               },
             },
             {
-              Not: {
-                Dimensions: {
-                  Key: "RECORD_TYPE",
-                  Values: ["Credit", "Refund"],
-                  MatchOptions: ["EQUALS"],
-                },
-              },
-            },
-            {
               Tags: {
                 Key: tag.tagName,
                 MatchOptions: ["EQUALS"],
@@ -141,23 +132,10 @@ export class CostExplorerService {
         Granularity: granularity,
         Metrics: ["UnblendedCost"],
         Filter: {
-          And: [
-            {
-              Dimensions: {
-                Key: "LINKED_ACCOUNT",
-                Values: accounts,
-              },
-            },
-            {
-              Not: {
-                Dimensions: {
-                  Key: "RECORD_TYPE",
-                  Values: ["Credit", "Refund"],
-                  MatchOptions: ["EQUALS"],
-                },
-              },
-            },
-          ],
+          Dimensions: {
+            Key: "LINKED_ACCOUNT",
+            Values: accounts,
+          },
         },
         GroupBy: [
           {
