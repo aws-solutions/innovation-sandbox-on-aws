@@ -148,6 +148,7 @@ react-router under the MIT license.
 @aws-sdk/core under the Apache-2.0 license.
 @aws-sdk/xml-builder under the Apache-2.0 license.
 fast-xml-parser under the MIT license.
+fast-xml-builder under the MIT license.
 strnum under the MIT license.
 @smithy/core under the Apache-2.0 license.
 @smithy/middleware-serde under the Apache-2.0 license.
@@ -1168,6 +1169,7 @@ minimist under the MIT license.
 strip-bom under the MIT license.
 vitest-mock-extended under the MIT license.
 ts-essentials under the MIT license.
+concat-map under the MIT license.
 
 ********************
 OPEN SOURCE LICENSES
