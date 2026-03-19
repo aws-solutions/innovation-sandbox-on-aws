@@ -26,9 +26,7 @@ let handler: typeof import("@amzn/innovation-sandbox-log-subscriber/log-subscrip
 beforeAll(async () => {
   bulkStubEnv(testEnv);
   handler = (
-    await import(
-      "@amzn/innovation-sandbox-log-subscriber/log-subscription-handler.js"
-    )
+    await import("@amzn/innovation-sandbox-log-subscriber/log-subscription-handler.js")
   ).handler;
 });
 

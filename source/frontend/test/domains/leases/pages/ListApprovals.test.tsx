@@ -207,9 +207,8 @@ describe("ListApprovals", () => {
 
   test("successfully approves lease requests", async () => {
     const { http, HttpResponse } = await import("msw");
-    const { config } = await import(
-      "@amzn/innovation-sandbox-frontend/helpers/config"
-    );
+    const { config } =
+      await import("@amzn/innovation-sandbox-frontend/helpers/config");
 
     server.use(
       http.post(`${config.ApiUrl}/leases/:leaseId/review`, () => {
@@ -259,9 +258,8 @@ describe("ListApprovals", () => {
 
   test("successfully denies lease requests", async () => {
     const { http, HttpResponse } = await import("msw");
-    const { config } = await import(
-      "@amzn/innovation-sandbox-frontend/helpers/config"
-    );
+    const { config } =
+      await import("@amzn/innovation-sandbox-frontend/helpers/config");
 
     server.use(
       http.post(`${config.ApiUrl}/leases/:leaseId/review`, () => {
@@ -311,9 +309,8 @@ describe("ListApprovals", () => {
 
   test("handles approval failure and shows error", async () => {
     const { http, HttpResponse } = await import("msw");
-    const { config } = await import(
-      "@amzn/innovation-sandbox-frontend/helpers/config"
-    );
+    const { config } =
+      await import("@amzn/innovation-sandbox-frontend/helpers/config");
 
     server.use(
       http.post(`${config.ApiUrl}/leases/:leaseId/review`, () => {

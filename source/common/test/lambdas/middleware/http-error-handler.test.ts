@@ -92,7 +92,9 @@ describe("httpErrorHandler - Error Mappings", () => {
       });
 
       const parsed = JSON.parse((request.error as any).message);
-      expect(parsed.data.errors[0].message).toContain("Request rate limit exceeded");
+      expect(parsed.data.errors[0].message).toContain(
+        "Request rate limit exceeded",
+      );
     });
 
     it("should map LimitExceededException to 429", async () => {
@@ -170,7 +172,9 @@ describe("httpErrorHandler - Error Mappings", () => {
       });
 
       const parsed = JSON.parse((request.error as any).message);
-      expect(parsed.data.errors[0].message).toContain("account could not be found");
+      expect(parsed.data.errors[0].message).toContain(
+        "account could not be found",
+      );
     });
 
     it("should map ConcurrentModificationException to 409", async () => {
@@ -189,7 +193,9 @@ describe("httpErrorHandler - Error Mappings", () => {
       });
 
       const parsed = JSON.parse((request.error as any).message);
-      expect(parsed.data.errors[0].message).toContain("concurrent modification");
+      expect(parsed.data.errors[0].message).toContain(
+        "concurrent modification",
+      );
     });
 
     it("should map BlueprintInUseError to 409", async () => {
@@ -208,7 +214,9 @@ describe("httpErrorHandler - Error Mappings", () => {
       });
 
       const parsed = JSON.parse((request.error as any).message);
-      expect(parsed.data.errors[0].message).toContain("Cannot delete blueprint");
+      expect(parsed.data.errors[0].message).toContain(
+        "Cannot delete blueprint",
+      );
     });
   });
 
@@ -250,7 +258,9 @@ describe("httpErrorHandler - Error Mappings", () => {
       });
 
       const parsed = JSON.parse((request.error as any).message);
-      expect(parsed.data.errors[0].message).toContain("unsupported permission model");
+      expect(parsed.data.errors[0].message).toContain(
+        "unsupported permission model",
+      );
     });
 
     it("should map ZodError to 400", async () => {
@@ -316,4 +326,3 @@ describe("httpErrorHandler - Error Mappings", () => {
     });
   });
 });
-

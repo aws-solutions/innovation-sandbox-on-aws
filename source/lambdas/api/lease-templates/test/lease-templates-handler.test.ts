@@ -74,9 +74,7 @@ beforeAll(async () => {
   bulkStubEnv(testEnv);
 
   handler = (
-    await import(
-      "@amzn/innovation-sandbox-lease-templates/lease-templates-handler.js"
-    )
+    await import("@amzn/innovation-sandbox-lease-templates/lease-templates-handler.js")
   ).handler;
 });
 
