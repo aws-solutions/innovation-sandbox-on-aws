@@ -1,6 +1,6 @@
 {
   "name": "@amzn/innovation-sandbox-on-aws",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "description": "Innovation Sandbox on AWS (SO0284)",
   "scripts": {
     "preinstall": "npm run generate-local-package-lock --workspaces --if-present",
@@ -16,7 +16,7 @@
     "docker:login": "source .env && aws ecr get-login-password --region $PRIVATE_ECR_REPO_REGION | docker login --username AWS --password-stdin $HUB_ACCOUNT_ID.dkr.ecr.$PRIVATE_ECR_REPO_REGION.amazonaws.com",
     "docker:push": "source .env && docker push $HUB_ACCOUNT_ID.dkr.ecr.$PRIVATE_ECR_REPO_REGION.amazonaws.com/$PRIVATE_ECR_REPO:latest",
     "docker:build-and-push": "npm run docker:build && npm run docker:login && npm run docker:push",
-    "deploy:all": "source .env && npm run deploy:account-pool && npm run deploy:idc && npm run deploy:data && npm run deploy:compute",
+    "deploy:all": "./scripts/deploy-all-with-confirmation.sh",
     "deploy:account-pool": "source .env && npm run --workspace @amzn/innovation-sandbox-infrastructure cdk synth && npm run --workspace @amzn/innovation-sandbox-infrastructure cdk deploy -- InnovationSandbox-AccountPool --require-approval=never --parameters ParentOuId=$PARENT_OU_ID --parameters HubAccountId=$HUB_ACCOUNT_ID --context deploymentMode=$DEPLOYMENT_MODE  --parameters IsbManagedRegions=$AWS_REGIONS",
     "deploy:idc": "source .env && npm run --workspace @amzn/innovation-sandbox-infrastructure cdk deploy -- InnovationSandbox-IDC --require-approval=never --parameters IdentityStoreId=$IDENTITY_STORE_ID --parameters SsoInstanceArn=$SSO_INSTANCE_ARN --parameters OrgMgtAccountId=$ORG_MGT_ACCOUNT_ID --parameters HubAccountId=$HUB_ACCOUNT_ID --parameters AdminGroupName=$ADMIN_GROUP_NAME --parameters ManagerGroupName=$MANAGER_GROUP_NAME --parameters UserGroupName=$USER_GROUP_NAME",
     "deploy:data": "source .env && npm run --workspace @amzn/innovation-sandbox-infrastructure cdk deploy -- InnovationSandbox-Data --require-approval=never --context deploymentMode=$DEPLOYMENT_MODE --context nukeConfigFilePath=$NUKE_CONFIG_FILE_PATH",

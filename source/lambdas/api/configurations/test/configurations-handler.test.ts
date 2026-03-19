@@ -51,9 +51,7 @@ beforeAll(async () => {
   bulkStubEnv(testEnv);
 
   handler = (
-    await import(
-      "@amzn/innovation-sandbox-configurations/configurations-handler.js"
-    )
+    await import("@amzn/innovation-sandbox-configurations/configurations-handler.js")
   ).handler;
 });
 
@@ -109,9 +107,8 @@ describe("Configurations Handler", async () => {
       };
 
       // Mock the SsmAccountPoolStackConfigStore to return the account pool config
-      const { SsmAccountPoolStackConfigStore } = await import(
-        "@amzn/innovation-sandbox-commons/data/account-pool-stack-config/ssm-account-pool-stack-config-store.js"
-      );
+      const { SsmAccountPoolStackConfigStore } =
+        await import("@amzn/innovation-sandbox-commons/data/account-pool-stack-config/ssm-account-pool-stack-config-store.js");
       vi.spyOn(
         SsmAccountPoolStackConfigStore.prototype,
         "get",

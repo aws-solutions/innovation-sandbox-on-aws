@@ -75,9 +75,8 @@ beforeAll(async () => {
   }));
 
   // Import handler after mocking dependencies
-  const module = await import(
-    "@amzn/innovation-sandbox-deployment-summary-heartbeat/deployment-summary-handler.js"
-  );
+  const module =
+    await import("@amzn/innovation-sandbox-deployment-summary-heartbeat/deployment-summary-handler.js");
   handler = module.handler;
 });
 

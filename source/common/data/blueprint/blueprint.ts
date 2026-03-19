@@ -75,9 +75,10 @@ export const BlueprintItemSchema = z
     createdBy: z.string().email(),
     deploymentTimeoutMinutes: z.number().min(5).max(480).default(30),
 
-    regionConcurrencyType: z.enum(["SEQUENTIAL", "PARALLEL"], {
-      errorMap: enumErrorMap,
-    })
+    regionConcurrencyType: z
+      .enum(["SEQUENTIAL", "PARALLEL"], {
+        errorMap: enumErrorMap,
+      })
       .default("SEQUENTIAL"),
 
     // Aggregated Health Metrics (computed from all StackSets)
