@@ -310,7 +310,11 @@ describe("CardsField", () => {
         extractedValue = watch("selectedId");
 
         return (
-          <CardsField<TestItem, any, "selectedId">
+          <CardsField<
+            TestItem,
+            z.infer<typeof SingleSelectionSchema>,
+            "selectedId"
+          >
             controllerProps={{ control, name: "selectedId" }}
             formFieldProps={{ label: "Select an item" }}
             cardsProps={{
@@ -346,14 +350,14 @@ describe("CardsField", () => {
       let selectedValue: string | undefined;
 
       function TestCustomHandler() {
-        const { control, watch } = useForm({
+        const { control, watch } = useForm<{ selectedItem: string }>({
           defaultValues: { selectedItem: "" },
         });
 
         selectedValue = watch("selectedItem");
 
         return (
-          <CardsField<TestItem, any, "selectedItem">
+          <CardsField<TestItem, { selectedItem: string }, "selectedItem">
             controllerProps={{ control, name: "selectedItem" }}
             formFieldProps={{ label: "Select an item" }}
             cardsProps={{

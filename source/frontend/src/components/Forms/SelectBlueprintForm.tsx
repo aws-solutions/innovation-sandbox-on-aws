@@ -198,7 +198,7 @@ export const SelectBlueprintForm = () => {
               No blueprints match your search term. Try a different search.
             </Alert>
           ) : (
-            <CardsField<Blueprint, any, "blueprintId">
+            <CardsField<Blueprint, BlueprintSelectionFormValues, "blueprintId">
               controllerProps={{
                 control,
                 name: "blueprintId",

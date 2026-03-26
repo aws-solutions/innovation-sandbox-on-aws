@@ -65,7 +65,6 @@ micromark-util-subtokenize under the MIT license.
 micromark-util-symbol under the MIT license.
 micromark-util-types under the MIT license.
 property-information under the MIT license.
-react-is under the MIT license.
 react-markdown under the MIT license.
 @types/react under the MIT license.
 @types/prop-types under the MIT license.
@@ -75,6 +74,7 @@ loose-envify under the MIT license.
 js-tokens under the MIT license.
 comma-separated-tokens under the MIT license.
 prop-types under the MIT license.
+react-is under the MIT license.
 object-assign under the MIT license.
 space-separated-tokens under the MIT license.
 remark-parse under the MIT license.
@@ -124,7 +124,6 @@ decimal.js under the MIT license.
 @formatjs/icu-messageformat-parser under the MIT license.
 @formatjs/icu-skeleton-parser under the MIT license.
 mnth under the MIT license.
-react-keyed-flatten-children under the MIT license.
 @tanstack/react-query under the MIT license.
 @tanstack/query-core under the MIT license.
 @types/react-dom under the MIT license.
@@ -149,6 +148,7 @@ react-router under the MIT license.
 @aws-sdk/xml-builder under the Apache-2.0 license.
 fast-xml-parser under the MIT license.
 fast-xml-builder under the MIT license.
+path-expression-matcher under the MIT license.
 strnum under the MIT license.
 @smithy/core under the Apache-2.0 license.
 @smithy/middleware-serde under the Apache-2.0 license.
@@ -204,7 +204,6 @@ bowser under the MIT license.
 @smithy/credential-provider-imds under the Apache-2.0 license.
 @aws-sdk/credential-provider-process under the Apache-2.0 license.
 @aws-sdk/credential-provider-sso under the Apache-2.0 license.
-@aws-sdk/client-sso under the Apache-2.0 license.
 @aws-sdk/token-providers under the Apache-2.0 license.
 @aws-sdk/credential-provider-web-identity under the Apache-2.0 license.
 @aws-sdk/client-cognito-identity-provider under the Apache-2.0 license.
@@ -346,9 +345,6 @@ has-flag under the MIT license.
 @types/node under the MIT license.
 undici-types under the MIT license.
 merge-stream under the MIT license.
-serialize-javascript under the BSD-3-Clause license.
-randombytes under the MIT license.
-safe-buffer under the MIT license.
 terser under the BSD-2-Clause license.
 @jridgewell/source-map under the MIT license.
 @jridgewell/gen-mapping under the MIT license.
@@ -415,8 +411,12 @@ min-indent under the MIT license.
 @typescript-eslint/eslint-plugin under the MIT license.
 @typescript-eslint/parser under the MIT license.
 eslint under the MIT license.
+balanced-match under the MIT license.
+brace-expansion under the MIT license.
+concat-map under the MIT license.
 globals under the MIT license.
 ignore under the MIT license.
+minimatch under the BlueOak-1.0.0 license.
 type-fest under the MIT license.
 @eslint-community/eslint-utils under the MIT license.
 eslint-visitor-keys under the Apache-2.0 license.
@@ -428,9 +428,6 @@ import-fresh under the MIT license.
 parent-module under the MIT license.
 callsites under the MIT license.
 resolve-from under the MIT license.
-minimatch under the BlueOak-1.0.0 license.
-brace-expansion under the MIT license.
-balanced-match under the MIT license.
 strip-json-comments under the MIT license.
 @eslint/js under the MIT license.
 @humanwhocodes/config-array under the Apache-2.0 license.
@@ -1047,6 +1044,7 @@ accepts under the MIT license.
 negotiator under the MIT license.
 array-flatten under the MIT license.
 content-disposition under the MIT license.
+safe-buffer under the MIT license.
 encodeurl under the MIT license.
 etag under the MIT license.
 finalhandler under the MIT license.
@@ -1149,7 +1147,6 @@ type-detect under the MIT license.
 @sinonjs/fake-timers under the BSD-3-Clause license.
 @sinonjs/samsam under the BSD-3-Clause license.
 nise under the BSD-3-Clause license.
-@sinonjs/text-encoding under the Apache-2.0 license.
 just-extend under the MIT license.
 object-hash under the MIT license.
 prettier-plugin-organize-imports under the MIT license.
@@ -1169,7 +1166,6 @@ minimist under the MIT license.
 strip-bom under the MIT license.
 vitest-mock-extended under the MIT license.
 ts-essentials under the MIT license.
-concat-map under the MIT license.
 
 ********************
 OPEN SOURCE LICENSES
