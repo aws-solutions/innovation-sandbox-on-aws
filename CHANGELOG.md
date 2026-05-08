@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.8] - 2026-05-08
+
+### Fixed
+
+- Allow lease termination and freeze when user is deleted from IDC
+
+### Security
+
+- Updated amazonlinux base image digest to mitigate:
+  - [CVE-2026-4046](https://nvd.nist.gov/vuln/detail/CVE-2026-4046) (glibc, glibc-common, glibc-minimal-langpack)
+  - [CVE-2026-4786](https://nvd.nist.gov/vuln/detail/CVE-2026-4786) (python3, python3-libs, python-unversioned-command)
+  - [CVE-2026-6100](https://nvd.nist.gov/vuln/detail/CVE-2026-6100) (python3, python3-libs, python-unversioned-command)
+
 ## [1.2.7] - 2026-04-27
 
 ### Security
