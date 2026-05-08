@@ -11,7 +11,6 @@ import { LeaseFrozenEvent } from "@amzn/innovation-sandbox-commons/events/lease-
 import {
   AccountNotInActiveError,
   CouldNotFindAccountError,
-  CouldNotRetrieveUserError,
   InnovationSandbox,
 } from "@amzn/innovation-sandbox-commons/innovation-sandbox.js";
 import { generateSchemaData } from "@amzn/innovation-sandbox-commons/test/generate-schema-data.js";
@@ -176,20 +175,31 @@ describe("InnovationSandbox.freezeLease()", async () => {
     ).rejects.toThrow(CouldNotFindAccountError);
   });
 
-  test("Fails when user information cannot be recovered", async () => {
+  test("Succeeds when user is not found in IDC (deleted user)", async () => {
     mockContext.idcService.getUserFromEmail.mockResolvedValue(undefined);
 
-    await expect(
-      InnovationSandbox.freezeLease(
-        {
-          lease: mockLease,
-          reason: {
-            type: "ManuallyFrozen",
-            comment: "test suite freeze action",
-          },
+    await InnovationSandbox.freezeLease(
+      {
+        lease: mockLease,
+        reason: {
+          type: "ManuallyFrozen",
+          comment: "test suite freeze action",
         },
-        mockContext,
-      ),
-    ).rejects.toThrow(CouldNotRetrieveUserError);
+      },
+      mockContext,
+    );
+
+    expect(mockContext.logger.warn).toHaveBeenCalledWith(
+      `User (${mockLease.userEmail}) not found in IDC. Proceeding with freeze operation.`,
+    );
+
+    expect(mockContext.idcService.revokeAllUserAccess).toHaveBeenCalledWith(
+      mockLeaseAccount.awsAccountId,
+    );
+
+    expect(mockContext.leaseStore.update).toHaveBeenCalledWith({
+      ...mockLease,
+      status: "Frozen",
+    });
   });
 });

@@ -236,4 +236,38 @@ describe("InnovationSandbox.terminateLease()", () => {
       },
     );
   });
+
+  test("Succeeds when user is not found in IDC (deleted user)", async () => {
+    const lease = generateSchemaData(MonitoredLeaseSchema, {
+      status: "Active",
+      awsAccountId: mockLeaseAccount.awsAccountId,
+      userEmail: "deleted-user@example.com",
+    });
+
+    mockContext.idcService.getUserFromEmail.mockResolvedValue(undefined);
+
+    await InnovationSandbox.terminateLease(
+      {
+        lease,
+        expiredStatus: "ManuallyTerminated",
+      },
+      mockContext,
+    );
+
+    expect(mockContext.logger.warn).toHaveBeenCalledWith(
+      "User (deleted-user@example.com) not found in IDC. Proceeding with lease termination.",
+    );
+
+    expect(mockContext.idcService.revokeAllUserAccess).toHaveBeenCalledWith(
+      lease.awsAccountId,
+    );
+
+    expect(mockContext.leaseStore.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: "ManuallyTerminated",
+      }),
+    );
+
+    expect(mockContext.eventBridgeClient.sendIsbEvents).toHaveBeenCalled();
+  });
 });

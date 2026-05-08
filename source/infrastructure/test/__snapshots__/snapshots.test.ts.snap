@@ -131,9 +131,9 @@ exports[`IdcStack Snapshot > matches the snapshot 1`] = `
       "context": {
         "solutionName": "innovation-sandbox-on-aws",
         "solutionId": "SO0284",
-        "version": "v1.2.7",
+        "version": "v1.2.8",
         "publicEcrRegistry": "public.ecr.aws/aws-solutions",
-        "publicEcrTag": "v1.2.7",
+        "publicEcrTag": "v1.2.8",
         "logLevel": "INFO",
         "deploymentMode": "prod",
         "cloudWatchLogRetentionInDays": 90,
@@ -362,7 +362,7 @@ exports[`IdcStack Snapshot > matches the snapshot 1`] = `
         "Environment": {
           "Variables": {
             "NODE_OPTIONS": "--enable-source-maps",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.7",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.8",
             "POWERTOOLS_LOG_LEVEL": {
               "Fn::FindInMap": [
                 "Mapping",
@@ -3177,7 +3177,7 @@ exports[`IsbAccountPoolStack Snapshot > matches the snapshot 1`] = `
         "Environment": {
           "Variables": {
             "NODE_OPTIONS": "--enable-source-maps",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.7",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.8",
             "POWERTOOLS_LOG_LEVEL": {
               "Fn::FindInMap": [
                 "Mapping",
@@ -3602,9 +3602,9 @@ exports[`IsbAccountPoolStack Snapshot > matches the snapshot 1`] = `
       "context": {
         "solutionName": "innovation-sandbox-on-aws",
         "solutionId": "SO0284",
-        "version": "v1.2.7",
+        "version": "v1.2.8",
         "publicEcrRegistry": "public.ecr.aws/aws-solutions",
-        "publicEcrTag": "v1.2.7",
+        "publicEcrTag": "v1.2.8",
         "logLevel": "INFO",
         "deploymentMode": "prod",
         "cloudWatchLogRetentionInDays": 90,
@@ -3815,7 +3815,7 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
         "Environment": {
           "Variables": {
             "NODE_OPTIONS": "--enable-source-maps",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.7",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.8",
             "POWERTOOLS_LOG_LEVEL": {
               "Fn::FindInMap": [
                 "Mapping",
@@ -5052,7 +5052,7 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
         "Environment": {
           "Variables": {
             "NODE_OPTIONS": "--enable-source-maps",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.7",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.8",
             "POWERTOOLS_LOG_LEVEL": {
               "Fn::FindInMap": [
                 "Mapping",
@@ -5821,7 +5821,7 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
         "Environment": {
           "Variables": {
             "NODE_OPTIONS": "--enable-source-maps",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.7",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.8",
             "POWERTOOLS_LOG_LEVEL": {
               "Fn::FindInMap": [
                 "Mapping",
@@ -6492,7 +6492,7 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
         "Environment": {
           "Variables": {
             "NODE_OPTIONS": "--enable-source-maps",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.7",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.8",
             "POWERTOOLS_LOG_LEVEL": {
               "Fn::FindInMap": [
                 "Mapping",
@@ -7374,7 +7374,7 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
         "Environment": {
           "Variables": {
             "NODE_OPTIONS": "--enable-source-maps",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.7",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.8",
             "POWERTOOLS_LOG_LEVEL": {
               "Fn::FindInMap": [
                 "Mapping",
@@ -7922,7 +7922,7 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
         "Environment": {
           "Variables": {
             "NODE_OPTIONS": "--enable-source-maps",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.7",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.8",
             "POWERTOOLS_LOG_LEVEL": {
               "Fn::FindInMap": [
                 "Mapping",
@@ -8415,7 +8415,7 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
         "Environment": {
           "Variables": {
             "NODE_OPTIONS": "--enable-source-maps",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.7",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.8",
             "POWERTOOLS_LOG_LEVEL": {
               "Fn::FindInMap": [
                 "Mapping",
@@ -9972,7 +9972,7 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
         "Environment": {
           "Variables": {
             "NODE_OPTIONS": "--enable-source-maps",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.7",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.8",
             "POWERTOOLS_LOG_LEVEL": {
               "Fn::FindInMap": [
                 "Mapping",
@@ -10707,7 +10707,7 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
         "Environment": {
           "Variables": {
             "NODE_OPTIONS": "--enable-source-maps",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.7",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.8",
             "POWERTOOLS_LOG_LEVEL": {
               "Fn::FindInMap": [
                 "Mapping",
@@ -10958,7 +10958,7 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
         "Environment": {
           "Variables": {
             "NODE_OPTIONS": "--enable-source-maps",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.7",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.8",
             "POWERTOOLS_LOG_LEVEL": {
               "Fn::FindInMap": [
                 "Mapping",
@@ -15995,7 +15995,7 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
         "Environment": {
           "Variables": {
             "NODE_OPTIONS": "--enable-source-maps",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.7",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.8",
             "POWERTOOLS_LOG_LEVEL": {
               "Fn::FindInMap": [
                 "Mapping",
@@ -16606,7 +16606,7 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
         "Environment": {
           "Variables": {
             "NODE_OPTIONS": "--enable-source-maps",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.7",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.8",
             "POWERTOOLS_LOG_LEVEL": {
               "Fn::FindInMap": [
                 "Mapping",
@@ -17452,7 +17452,7 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
         "Environment": {
           "Variables": {
             "NODE_OPTIONS": "--enable-source-maps",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.7",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.8",
             "POWERTOOLS_LOG_LEVEL": {
               "Fn::FindInMap": [
                 "Mapping",
@@ -18204,7 +18204,7 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
         "Environment": {
           "Variables": {
             "NODE_OPTIONS": "--enable-source-maps",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.7",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.8",
             "POWERTOOLS_LOG_LEVEL": {
               "Fn::FindInMap": [
                 "Mapping",
@@ -18937,7 +18937,7 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
         "Environment": {
           "Variables": {
             "NODE_OPTIONS": "--enable-source-maps",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.7",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.8",
             "POWERTOOLS_LOG_LEVEL": {
               "Fn::FindInMap": [
                 "Mapping",
@@ -19547,7 +19547,7 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
         "Environment": {
           "Variables": {
             "NODE_OPTIONS": "--enable-source-maps",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.7",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.8",
             "POWERTOOLS_LOG_LEVEL": {
               "Fn::FindInMap": [
                 "Mapping",
@@ -20167,7 +20167,23 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
           "Comment": "IsbPathRewriteCloudFrontFunction",
           "Runtime": "cloudfront-js-2.0"
         },
-        "Name": "IsbPathRewriteCloudFrontFunction"
+        "Name": "IsbPathRewriteCloudFrontFunction",
+        "Tags": [
+          {
+            "Key": "aws-solutions:isb-id",
+            "Value": {
+              "Fn::Join": [
+                "",
+                [
+                  {
+                    "Ref": "Namespace"
+                  },
+                  "_isb"
+                ]
+              ]
+            }
+          }
+        ]
       }
     },
     "CloudFrontUiApiIsbS3OriginPathRedirectCloudFrontFunctionDB601A75": {
@@ -20179,7 +20195,23 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
           "Comment": "IsbS3OriginPathRedirectCloudFrontFunction",
           "Runtime": "cloudfront-js-2.0"
         },
-        "Name": "IsbS3OriginPathRedirectCloudFrontFunction"
+        "Name": "IsbS3OriginPathRedirectCloudFrontFunction",
+        "Tags": [
+          {
+            "Key": "aws-solutions:isb-id",
+            "Value": {
+              "Fn::Join": [
+                "",
+                [
+                  {
+                    "Ref": "Namespace"
+                  },
+                  "_isb"
+                ]
+              ]
+            }
+          }
+        ]
       }
     },
     "CloudFrontUiApiIsbCloudFrontDistributionA7327667": {
@@ -20927,7 +20959,7 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
         "Environment": {
           "Variables": {
             "NODE_OPTIONS": "--enable-source-maps",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.7",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.8",
             "POWERTOOLS_LOG_LEVEL": {
               "Fn::FindInMap": [
                 "Mapping",
@@ -21636,7 +21668,7 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
         "Environment": {
           "Variables": {
             "NODE_OPTIONS": "--enable-source-maps",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.7",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.8",
             "POWERTOOLS_LOG_LEVEL": {
               "Fn::FindInMap": [
                 "Mapping",
@@ -21878,7 +21910,7 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
         "Environment": {
           "Variables": {
             "NODE_OPTIONS": "--enable-source-maps",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.7",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.8",
             "POWERTOOLS_LOG_LEVEL": {
               "Fn::FindInMap": [
                 "Mapping",
@@ -22550,7 +22582,7 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
         "Environment": {
           "Variables": {
             "NODE_OPTIONS": "--enable-source-maps",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.7",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.8",
             "POWERTOOLS_LOG_LEVEL": {
               "Fn::FindInMap": [
                 "Mapping",
@@ -23348,7 +23380,7 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
         "Environment": {
           "Variables": {
             "NODE_OPTIONS": "--enable-source-maps",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.7",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.2.8",
             "POWERTOOLS_LOG_LEVEL": {
               "Fn::FindInMap": [
                 "Mapping",
@@ -23659,9 +23691,9 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
       "context": {
         "solutionName": "innovation-sandbox-on-aws",
         "solutionId": "SO0284",
-        "version": "v1.2.7",
+        "version": "v1.2.8",
         "publicEcrRegistry": "public.ecr.aws/aws-solutions",
-        "publicEcrTag": "v1.2.7",
+        "publicEcrTag": "v1.2.8",
         "logLevel": "INFO",
         "deploymentMode": "prod",
         "cloudWatchLogRetentionInDays": 90,
@@ -24956,9 +24988,9 @@ exports[`IsbDataStack Snapshot > matches the snapshot 1`] = `
       "context": {
         "solutionName": "innovation-sandbox-on-aws",
         "solutionId": "SO0284",
-        "version": "v1.2.7",
+        "version": "v1.2.8",
         "publicEcrRegistry": "public.ecr.aws/aws-solutions",
-        "publicEcrTag": "v1.2.7",
+        "publicEcrTag": "v1.2.8",
         "logLevel": "INFO",
         "deploymentMode": "prod",
         "cloudWatchLogRetentionInDays": 90,

@@ -308,8 +308,8 @@ export class InnovationSandbox {
 
     const user = await idcService.getUserFromEmail(lease.userEmail);
     if (!user) {
-      throw new CouldNotRetrieveUserError(
-        "Unable to retrieve user information.",
+      logger.warn(
+        `User (${lease.userEmail}) not found in IDC. Proceeding with freeze operation.`,
       );
     }
 
@@ -324,7 +324,7 @@ export class InnovationSandbox {
     ).complete();
 
     logger.info(
-      `Lease of type (${lease.originalLeaseTemplateName}) for (${user.email}) frozen. Account (${account.awsAccountId}) Frozen: ${reason.type}`,
+      `Lease of type (${lease.originalLeaseTemplateName}) for (${user?.email ?? lease.userEmail}) frozen. Account (${account.awsAccountId}) Frozen: ${reason.type}`,
     );
     await eventBridgeClient.sendIsbEvent(
       tracer,
@@ -391,8 +391,8 @@ export class InnovationSandbox {
 
     const user = await idcService.getUserFromEmail(lease.userEmail);
     if (!user) {
-      throw new CouldNotRetrieveUserError(
-        "Unable to retrieve user information.",
+      logger.warn(
+        `User (${lease.userEmail}) not found in IDC. Proceeding with lease termination.`,
       );
     }
 
@@ -438,7 +438,7 @@ export class InnovationSandbox {
     );
 
     logger.info(
-      `Lease of type (${lease.originalLeaseTemplateName}) for (${user.email}) terminated. Reason: ${expiredStatus}. ${autoCleanup && `SandboxAccount (${account.awsAccountId}) sent for cleanup.`}`, //NOSONAR
+      `Lease of type (${lease.originalLeaseTemplateName}) for (${user?.email ?? lease.userEmail}) terminated. Reason: ${expiredStatus}. ${autoCleanup && `SandboxAccount (${account.awsAccountId}) sent for cleanup.`}`, //NOSONAR
       {
         ...searchableAccountProperties(account),
         ...searchableLeaseProperties(lease),
