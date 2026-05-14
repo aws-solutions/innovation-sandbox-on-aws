@@ -1,6 +1,6 @@
 {
   "name": "@amzn/innovation-sandbox-authorizer",
-  "version": "1.2.8",
+  "version": "1.2.9",
   "description": "API Authorizer - Lambda - Innovation Sandbox on AWS (SO0284)",
   "main": "index.js",
   "scripts": {
@@ -8,5 +8,8 @@
     "test": "vitest run"
   },
   "type": "module",
-  "license": "Apache-2.0"
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "@smithy/util-stream": "^4.6.2"
+  }
 }
