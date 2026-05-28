@@ -1,6 +1,6 @@
 {
   "name": "@amzn/innovation-sandbox-authorizer",
-  "version": "1.2.9",
+  "version": "1.2.10",
   "description": "API Authorizer - Lambda - Innovation Sandbox on AWS (SO0284)",
   "main": "index.js",
   "scripts": {
