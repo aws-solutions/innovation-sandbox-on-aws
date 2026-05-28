@@ -2,7 +2,7 @@
   "name": "@amzn/innovation-sandbox-frontend",
   "description": "Frontend - Innovation Sandbox on AWS (SO0284)",
   "private": true,
-  "version": "1.2.9",
+  "version": "1.2.10",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -59,7 +59,9 @@
     "vite": "^7.3.2"
   },
   "overrides": {
-    "@tanstack/react-query": "^5.74.4"
+    "@tanstack/react-query": "^5.74.4",
+    "js-cookie": "^3.0.7",
+    "uuid": "^11.1.1"
   },
   "license": "Apache-2.0"
 }

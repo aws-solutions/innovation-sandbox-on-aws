@@ -22,6 +22,7 @@ tmp/
 temp/
 .temp_*/
 .test-reports
+.patch-artifacts/
 scratch/
 
 # Kiro

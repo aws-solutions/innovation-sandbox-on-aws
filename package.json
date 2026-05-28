@@ -1,6 +1,6 @@
 {
   "name": "@amzn/innovation-sandbox-on-aws",
-  "version": "1.2.9",
+  "version": "1.2.10",
   "description": "Innovation Sandbox on AWS (SO0284)",
   "scripts": {
     "preinstall": "npm run generate-local-package-lock --workspaces --if-present",
@@ -88,6 +88,8 @@
   },
   "overrides": {
     "@tanstack/react-query": "^5.74.4",
-    "fast-uri": "^3.1.2"
+    "fast-uri": "^3.1.2",
+    "js-cookie": "^3.0.7",
+    "uuid": "^11.1.1"
   }
 }
