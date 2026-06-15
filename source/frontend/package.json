@@ -56,7 +56,7 @@
     "stylelint": "^16.8.2",
     "stylelint-config-standard-scss": "^13.1.0",
     "typescript": "^5.5.4",
-    "vite": "^7.3.2"
+    "vite": "^7.3.5"
   },
   "overrides": {
     "@tanstack/react-query": "^5.74.4",
