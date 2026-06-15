@@ -50,10 +50,9 @@ describe("LeasePanel", () => {
       screen.getByText(`Login to account ${activeLease.awsAccountId}`),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(`$${activeLease.maxSpend!.toString()}`),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(`$${activeLease.totalCostAccrued.toString()}`),
+      screen.getByText(
+        `$${activeLease.totalCostAccrued.toString()} of $${activeLease.maxSpend!.toString()}`,
+      ),
     ).toBeInTheDocument();
   });
 
@@ -83,10 +82,9 @@ describe("LeasePanel", () => {
     ).toBeInTheDocument();
     expect(screen.getByText(leaseWithBudget.awsAccountId)).toBeInTheDocument();
     expect(
-      screen.getByText(`$${leaseWithBudget.maxSpend!.toString()}`),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(`$${leaseWithBudget.totalCostAccrued.toString()}`),
+      screen.getByText(
+        `$${leaseWithBudget.totalCostAccrued.toString()} of $${leaseWithBudget.maxSpend!.toString()}`,
+      ),
     ).toBeInTheDocument();
   });
 

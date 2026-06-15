@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.11] - 2026-06-15
+
+### Fixed
+
+- BudgetProgressBar rendered an incorrect fill width; replaced the custom progress bar with the Cloudscape `ProgressBar` component ([#147](https://github.com/aws-solutions/innovation-sandbox-on-aws/issues/147))
+
+### Security
+
+- Upgraded `react-router` and `react-router-dom` to mitigate [CVE-2026-40181](https://nvd.nist.gov/vuln/detail/CVE-2026-40181)
+- Updated amazonlinux base image digest to mitigate:
+  - `jq`:
+    - [CVE-2026-32316](https://nvd.nist.gov/vuln/detail/CVE-2026-32316)
+    - [CVE-2026-33947](https://nvd.nist.gov/vuln/detail/CVE-2026-33947)
+    - [CVE-2026-33948](https://nvd.nist.gov/vuln/detail/CVE-2026-33948)
+    - [CVE-2026-39956](https://nvd.nist.gov/vuln/detail/CVE-2026-39956)
+    - [CVE-2026-39979](https://nvd.nist.gov/vuln/detail/CVE-2026-39979)
+    - [CVE-2026-40164](https://nvd.nist.gov/vuln/detail/CVE-2026-40164)
+    - [CVE-2026-43894](https://nvd.nist.gov/vuln/detail/CVE-2026-43894)
+    - [CVE-2026-43896](https://nvd.nist.gov/vuln/detail/CVE-2026-43896)
+  - `libsolv`:
+    - [CVE-2026-48863](https://nvd.nist.gov/vuln/detail/CVE-2026-48863)
+    - [CVE-2026-48864](https://nvd.nist.gov/vuln/detail/CVE-2026-48864)
+    - [CVE-2026-9149](https://nvd.nist.gov/vuln/detail/CVE-2026-9149)
+    - [CVE-2026-9150](https://nvd.nist.gov/vuln/detail/CVE-2026-9150)
+  - `perl-HTTP-Tiny`: [CVE-2026-7010](https://nvd.nist.gov/vuln/detail/CVE-2026-7010)
+  - `perl` (and related modules): [CVE-2026-8376](https://nvd.nist.gov/vuln/detail/CVE-2026-8376)
+  - `python3`, `python3-libs`, `python-unversioned-command`: [CVE-2026-6019](https://nvd.nist.gov/vuln/detail/CVE-2026-6019)
+
 ## [1.2.10] - 2026-05-28
 
 ### Security
