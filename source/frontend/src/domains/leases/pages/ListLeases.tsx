@@ -323,6 +323,7 @@ const createColumnDefinitions = (includeLinks: boolean) =>
       id: "budget",
       header: "Budget",
       sortingField: "totalCostAccrued",
+      minWidth: 150,
       cell: (lease: Lease) => <BudgetCell lease={lease} />, // NOSONAR typescript:S6478 - the way the table component works requires defining component during render
     },
     {
