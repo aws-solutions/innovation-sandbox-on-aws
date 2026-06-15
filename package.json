@@ -58,7 +58,7 @@
     "@vitest/coverage-v8": "^4.0.10",
     "aws-sdk-client-mock": "^4.0.2",
     "fs-extra": "^11.2.0",
-    "js-yaml": "^4.1.0",
+    "js-yaml": "^4.2.0",
     "object-hash": "^3.0.0",
     "prettier": "^3.3.3",
     "prettier-plugin-organize-imports": "^4.1.0",
