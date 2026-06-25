@@ -36,3 +36,6 @@ scratch/
 .DS_Store
 
 .idea
+
+# Claude
+*.local.*
