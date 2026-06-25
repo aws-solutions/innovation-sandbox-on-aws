@@ -49,6 +49,8 @@ import {
   CouldNotFindAccountError,
   CouldNotRetrieveUserError,
   InnovationSandbox,
+  LeaseExtensionAlreadyPendingError,
+  LeaseExtensionDateNotInFutureError,
   LeaseExtensionExceedsMaxDurationError,
   NoAccountsAvailableError,
 } from "@amzn/innovation-sandbox-commons/innovation-sandbox.js";
@@ -3493,6 +3495,166 @@ describe("Leases Handler", async () => {
         statusCode: 404,
         body: createFailureResponseBody({
           message: "Lease not found.",
+        }),
+        headers: responseHeaders,
+      });
+    });
+
+    it("should return 409 when a pending extension request already exists", async () => {
+      const mockedLease = generateSchemaData(MonitoredLeaseSchema);
+      mockedLease.status = "Active";
+      mockedLease.userEmail = isbAuthorizedUser.user.email;
+      mockedLease.pendingExtensionRequest = {
+        requestedExpirationDate: now().plus({ hours: 24 }).toISO() as string,
+        requestedAt: now().toISO() as string,
+        requestedBy: mockedLease.userEmail,
+      };
+      const mockedLeaseId = base64EncodeCompositeKey({
+        userEmail: mockedLease.userEmail,
+        uuid: mockedLease.uuid,
+      });
+      const requestedExpirationDate = now()
+        .plus({ hours: 48 })
+        .toISO() as string;
+      const event = createAPIGatewayProxyEvent({
+        httpMethod: "POST",
+        path: `/leases/${mockedLeaseId}/extend`,
+        body: JSON.stringify({
+          requestedExpirationDate,
+        }),
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${isbAuthorizedUser.token}`,
+        },
+      });
+
+      vi.spyOn(DynamoLeaseStore.prototype, "get").mockResolvedValue({
+        result: mockedLease,
+      });
+
+      vi.spyOn(InnovationSandbox, "requestLeaseExtension").mockRejectedValue(
+        new LeaseExtensionAlreadyPendingError(
+          "A lease extension request is already pending. Please wait for it to be reviewed before submitting a new one.",
+        ),
+      );
+
+      expect(
+        await handler(
+          event,
+          mockAuthorizedContext(
+            testEnv,
+            mockedGlobalConfig,
+            mockedReportingConfig,
+          ),
+        ),
+      ).toEqual({
+        statusCode: 409,
+        body: createFailureResponseBody({
+          message:
+            "A lease extension request is already pending. Please wait for it to be reviewed before submitting a new one.",
+        }),
+        headers: responseHeaders,
+      });
+    });
+
+    it("should return 400 when requested date is in the past", async () => {
+      const mockedLease = generateSchemaData(MonitoredLeaseSchema);
+      mockedLease.status = "Active";
+      mockedLease.userEmail = isbAuthorizedUser.user.email;
+      const mockedLeaseId = base64EncodeCompositeKey({
+        userEmail: mockedLease.userEmail,
+        uuid: mockedLease.uuid,
+      });
+      const requestedExpirationDate = now()
+        .minus({ hours: 1 })
+        .toISO() as string;
+      const event = createAPIGatewayProxyEvent({
+        httpMethod: "POST",
+        path: `/leases/${mockedLeaseId}/extend`,
+        body: JSON.stringify({
+          requestedExpirationDate,
+        }),
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${isbAuthorizedUser.token}`,
+        },
+      });
+
+      vi.spyOn(DynamoLeaseStore.prototype, "get").mockResolvedValue({
+        result: mockedLease,
+      });
+
+      vi.spyOn(InnovationSandbox, "requestLeaseExtension").mockRejectedValue(
+        new LeaseExtensionDateNotInFutureError(
+          "Requested expiration date must be in the future.",
+        ),
+      );
+
+      expect(
+        await handler(
+          event,
+          mockAuthorizedContext(
+            testEnv,
+            mockedGlobalConfig,
+            mockedReportingConfig,
+          ),
+        ),
+      ).toEqual({
+        statusCode: 400,
+        body: createFailureResponseBody({
+          message: "Requested expiration date must be in the future.",
+        }),
+        headers: responseHeaders,
+      });
+    });
+
+    it("should return 400 when requested date is before current expiration", async () => {
+      const mockedLease = generateSchemaData(MonitoredLeaseSchema);
+      mockedLease.status = "Active";
+      mockedLease.userEmail = isbAuthorizedUser.user.email;
+      const mockedLeaseId = base64EncodeCompositeKey({
+        userEmail: mockedLease.userEmail,
+        uuid: mockedLease.uuid,
+      });
+      const requestedExpirationDate = now()
+        .plus({ hours: 1 })
+        .toISO() as string;
+      const event = createAPIGatewayProxyEvent({
+        httpMethod: "POST",
+        path: `/leases/${mockedLeaseId}/extend`,
+        body: JSON.stringify({
+          requestedExpirationDate,
+        }),
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${isbAuthorizedUser.token}`,
+        },
+      });
+
+      vi.spyOn(DynamoLeaseStore.prototype, "get").mockResolvedValue({
+        result: mockedLease,
+      });
+
+      vi.spyOn(InnovationSandbox, "requestLeaseExtension").mockRejectedValue(
+        new LeaseExtensionDateNotInFutureError(
+          "Requested expiration date must be after the current lease expiration date.",
+        ),
+      );
+
+      expect(
+        await handler(
+          event,
+          mockAuthorizedContext(
+            testEnv,
+            mockedGlobalConfig,
+            mockedReportingConfig,
+          ),
+        ),
+      ).toEqual({
+        statusCode: 400,
+        body: createFailureResponseBody({
+          message:
+            "Requested expiration date must be after the current lease expiration date.",
         }),
         headers: responseHeaders,
       });

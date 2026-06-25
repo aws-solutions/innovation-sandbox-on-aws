@@ -46,7 +46,7 @@ export const RequestExtensionModal = ({
     return z
       .object({
         requestedExpirationDate: z.string().datetime().optional(),
-        comments: z.string().max(500).optional(),
+        comments: z.string().max(1000).optional(),
       })
       .superRefine((data, ctx) => {
         if (!data.requestedExpirationDate) {

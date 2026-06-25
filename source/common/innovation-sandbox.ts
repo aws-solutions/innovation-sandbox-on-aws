@@ -84,6 +84,8 @@ export class AccountNotInFrozenError extends InnovationSandboxError {}
 export class CouldNotFindAccountError extends InnovationSandboxError {}
 export class CouldNotRetrieveUserError extends InnovationSandboxError {}
 export class LeaseExtensionExceedsMaxDurationError extends InnovationSandboxError {}
+export class LeaseExtensionAlreadyPendingError extends InnovationSandboxError {}
+export class LeaseExtensionDateNotInFutureError extends InnovationSandboxError {}
 
 export type IsbContext<T extends { [key: string]: any }> = T & {
   logger: Logger;
@@ -1010,9 +1012,33 @@ export class InnovationSandbox {
 
     addCorrelationContext(logger, searchableLeaseProperties(lease));
 
+    // Guard: reject if there is already a pending extension request
+    if (lease.pendingExtensionRequest) {
+      throw new LeaseExtensionAlreadyPendingError(
+        "A lease extension request is already pending. Please wait for it to be reviewed before submitting a new one.",
+      );
+    }
+
+    // Validate that requested expiration is in the future
+    const requestedExpiration = parseDatetime(requestedExpirationDate);
+    if (requestedExpiration <= now()) {
+      throw new LeaseExtensionDateNotInFutureError(
+        "Requested expiration date must be in the future.",
+      );
+    }
+
+    // Validate that requested expiration is after the current expiration date
+    if (lease.expirationDate) {
+      const currentExpiration = parseDatetime(lease.expirationDate);
+      if (requestedExpiration <= currentExpiration) {
+        throw new LeaseExtensionDateNotInFutureError(
+          "Requested expiration date must be after the current lease expiration date.",
+        );
+      }
+    }
+
     // Validate that requested expiration does not exceed maxDurationHours from startDate
     const startDate = parseDatetime(lease.startDate);
-    const requestedExpiration = parseDatetime(requestedExpirationDate);
     const durationInHours = requestedExpiration.diff(startDate, "hours").hours;
 
     if (durationInHours > globalConfig.leases.maxDurationHours) {

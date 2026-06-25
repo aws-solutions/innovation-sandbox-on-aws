@@ -39,6 +39,8 @@ import {
   CouldNotRetrieveUserError,
   InnovationSandbox,
   IsbContext,
+  LeaseExtensionAlreadyPendingError,
+  LeaseExtensionDateNotInFutureError,
   LeaseExtensionExceedsMaxDurationError,
   MaxNumberOfLeasesExceededError,
   NoAccountsAvailableError,
@@ -1141,6 +1143,28 @@ async function requestLeaseExtensionHandler(
     };
   } catch (error) {
     if (error instanceof LeaseExtensionExceedsMaxDurationError) {
+      throw createHttpJSendError({
+        statusCode: 400,
+        data: {
+          errors: [
+            {
+              message: error.message,
+            },
+          ],
+        },
+      });
+    } else if (error instanceof LeaseExtensionAlreadyPendingError) {
+      throw createHttpJSendError({
+        statusCode: 409,
+        data: {
+          errors: [
+            {
+              message: error.message,
+            },
+          ],
+        },
+      });
+    } else if (error instanceof LeaseExtensionDateNotInFutureError) {
       throw createHttpJSendError({
         statusCode: 400,
         data: {
