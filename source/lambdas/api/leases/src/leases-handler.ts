@@ -15,7 +15,10 @@ import {
   base64DecodeCompositeKey,
   base64EncodeCompositeKey,
 } from "@amzn/innovation-sandbox-commons/data/encoding.js";
-import { UnknownItem } from "@amzn/innovation-sandbox-commons/data/errors.js";
+import {
+  ConcurrentDataModificationException,
+  UnknownItem,
+} from "@amzn/innovation-sandbox-commons/data/errors.js";
 import {
   validateLeaseCompliesWithGlobalConfig,
   ValidationException,
@@ -1160,6 +1163,18 @@ async function requestLeaseExtensionHandler(
           errors: [
             {
               message: error.message,
+            },
+          ],
+        },
+      });
+    } else if (error instanceof ConcurrentDataModificationException) {
+      throw createHttpJSendError({
+        statusCode: 409,
+        data: {
+          errors: [
+            {
+              message:
+                "The lease was modified concurrently. Please try again.",
             },
           ],
         },

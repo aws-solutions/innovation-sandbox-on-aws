@@ -1047,16 +1047,19 @@ export class InnovationSandbox {
       );
     }
 
-    // Store pending extension request on the lease
-    await leaseStore.update({
-      ...lease,
-      pendingExtensionRequest: {
-        requestedExpirationDate,
-        comments,
-        requestedAt: nowAsIsoDatetimeString(),
-        requestedBy: user.email,
+    // Store pending extension request on the lease with optimistic concurrency
+    await leaseStore.update(
+      {
+        ...lease,
+        pendingExtensionRequest: {
+          requestedExpirationDate,
+          comments,
+          requestedAt: nowAsIsoDatetimeString(),
+          requestedBy: user.email,
+        },
       },
-    });
+      lease,
+    );
 
     await isbEventBridgeClient.sendIsbEvent(
       tracer,

@@ -75,11 +75,18 @@ export const ReviewExtensionConfirmation = ({
               </>
             }
             description="Provide a reason for denying the extension request"
+            constraintText={`Maximum 1000 characters. ${comments.length}/1000`}
+            errorText={
+              comments.length > 1000
+                ? "Comments must be 1000 characters or fewer"
+                : undefined
+            }
           >
             <Textarea
               value={comments}
-              onChange={({ detail }) => setComments(detail.value)}
+              onChange={({ detail }) => setComments(detail.value.slice(0, 1000))}
               placeholder="Reason for denial"
+              ariaLabel="Denial comments"
             />
           </FormField>
         )}
