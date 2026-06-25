@@ -2,7 +2,7 @@
   "id": "FEAT-003",
   "type": "feat",
   "description": "Frontend: Add lease extension request UI for users and extension approval/denial UI for administrators. Implements the user-facing request button on lease details and the admin approval flow.",
-  "status": "in_progress",
+  "status": "completed",
   "steps": [
     "Step 1 - Add frontend service methods in source/frontend/src/domains/leases/service.ts: (a) `requestExtension(leaseId: string, request: {requestedExpirationDate: string, comments?: string})` calling POST /leases/{leaseId}/extend; (b) `reviewExtension(leaseId: string, action: 'Approve'|'Deny', comments?: string)` calling POST /leases/{leaseId}/extend/review",
     "Step 2 - Add frontend types in source/frontend/src/domains/leases/types.ts: `LeaseExtensionRequest` type with requestedExpirationDate and optional comments",
@@ -29,5 +29,5 @@
     "npm test"
   ],
   "blocked_reason": null,
-  "findings": ""
+  "findings": "All 10 steps completed. Build passes cleanly. All 1419 tests pass (139 test files). Fixed pre-existing test issue in leases-handler.test.ts where the approveLeaseExtension mock return value did not properly clear pendingExtensionRequest (set to undefined) causing JSON serialization mismatch. Added useModal mock to LeaseDetails test since the component now uses the modal hook for the extension request flow. Used Tabs component from Cloudscape to separate Lease Requests and Extension Requests in ListApprovals page."
 }
