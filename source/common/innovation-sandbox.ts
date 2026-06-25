@@ -34,6 +34,9 @@ import { BlueprintDeploymentRequest } from "@amzn/innovation-sandbox-commons/eve
 import { CleanAccountRequest } from "@amzn/innovation-sandbox-commons/events/clean-account-request.js";
 import { LeaseApprovedEvent } from "@amzn/innovation-sandbox-commons/events/lease-approved-event.js";
 import { LeaseDeniedEvent } from "@amzn/innovation-sandbox-commons/events/lease-denied-event.js";
+import { LeaseExtensionApprovedEvent } from "@amzn/innovation-sandbox-commons/events/lease-extension-approved-event.js";
+import { LeaseExtensionDeniedEvent } from "@amzn/innovation-sandbox-commons/events/lease-extension-denied-event.js";
+import { LeaseExtensionRequestedEvent } from "@amzn/innovation-sandbox-commons/events/lease-extension-requested-event.js";
 import {
   LeaseFrozenEvent,
   LeaseFrozenReason,
@@ -80,6 +83,7 @@ export class AccountNotInActiveError extends InnovationSandboxError {}
 export class AccountNotInFrozenError extends InnovationSandboxError {}
 export class CouldNotFindAccountError extends InnovationSandboxError {}
 export class CouldNotRetrieveUserError extends InnovationSandboxError {}
+export class LeaseExtensionExceedsMaxDurationError extends InnovationSandboxError {}
 
 export type IsbContext<T extends { [key: string]: any }> = T & {
   logger: Logger;
@@ -983,6 +987,150 @@ export class InnovationSandbox {
         userEmail: lease.userEmail,
         deniedBy: denier.email,
       }),
+    );
+  }
+
+  @logErrors
+  public static async requestLeaseExtension(
+    props: {
+      lease: MonitoredLease;
+      requestedExpirationDate: string;
+      comments?: string;
+      user: IsbUser;
+    },
+    context: IsbContext<{
+      leaseStore: LeaseStore;
+      isbEventBridgeClient: IsbEventBridgeClient;
+      globalConfig: GlobalConfig;
+    }>,
+  ) {
+    const { lease, requestedExpirationDate, comments, user } = props;
+    const { logger, tracer, leaseStore, isbEventBridgeClient, globalConfig } =
+      context;
+
+    addCorrelationContext(logger, searchableLeaseProperties(lease));
+
+    // Validate that requested expiration does not exceed maxDurationHours from startDate
+    const startDate = parseDatetime(lease.startDate);
+    const requestedExpiration = parseDatetime(requestedExpirationDate);
+    const durationInHours = requestedExpiration.diff(startDate, "hours").hours;
+
+    if (durationInHours > globalConfig.leases.maxDurationHours) {
+      throw new LeaseExtensionExceedsMaxDurationError(
+        `Requested extension exceeds the maximum allowed duration of ${globalConfig.leases.maxDurationHours} hours from the lease start date.`,
+      );
+    }
+
+    // Store pending extension request on the lease
+    await leaseStore.update({
+      ...lease,
+      pendingExtensionRequest: {
+        requestedExpirationDate,
+        comments,
+        requestedAt: nowAsIsoDatetimeString(),
+        requestedBy: user.email,
+      },
+    });
+
+    await isbEventBridgeClient.sendIsbEvent(
+      tracer,
+      new LeaseExtensionRequestedEvent({
+        leaseId: {
+          userEmail: lease.userEmail,
+          uuid: lease.uuid,
+        },
+        userEmail: lease.userEmail,
+        requestedExpirationDate,
+        comments,
+      }),
+    );
+
+    logger.info(
+      `Lease extension requested for (${lease.userEmail}) lease (${lease.uuid}). Requested expiration: ${requestedExpirationDate}`,
+    );
+  }
+
+  @logErrors
+  public static async approveLeaseExtension(
+    props: {
+      lease: MonitoredLease;
+      approver: string;
+      requestedExpirationDate: string;
+    },
+    context: IsbContext<{
+      leaseStore: LeaseStore;
+      isbEventBridgeClient: IsbEventBridgeClient;
+    }>,
+  ) {
+    const { lease, approver, requestedExpirationDate } = props;
+    const { logger, tracer, leaseStore, isbEventBridgeClient } = context;
+
+    addCorrelationContext(logger, searchableLeaseProperties(lease));
+
+    const updatedLease = await leaseStore.update({
+      ...lease,
+      expirationDate: requestedExpirationDate,
+      pendingExtensionRequest: undefined,
+    });
+
+    await isbEventBridgeClient.sendIsbEvent(
+      tracer,
+      new LeaseExtensionApprovedEvent({
+        leaseId: {
+          userEmail: lease.userEmail,
+          uuid: lease.uuid,
+        },
+        userEmail: lease.userEmail,
+        approvedBy: approver,
+        newExpirationDate: requestedExpirationDate,
+      }),
+    );
+
+    logger.info(
+      `Lease extension approved for (${lease.userEmail}) lease (${lease.uuid}) by (${approver}). New expiration: ${requestedExpirationDate}`,
+    );
+
+    return updatedLease;
+  }
+
+  @logErrors
+  public static async denyLeaseExtension(
+    props: {
+      lease: MonitoredLease;
+      denier: IsbUser;
+      comments?: string;
+    },
+    context: IsbContext<{
+      leaseStore: LeaseStore;
+      isbEventBridgeClient: IsbEventBridgeClient;
+    }>,
+  ) {
+    const { lease, denier, comments } = props;
+    const { logger, tracer, leaseStore, isbEventBridgeClient } = context;
+
+    addCorrelationContext(logger, searchableLeaseProperties(lease));
+
+    // Clear pending extension request
+    await leaseStore.update({
+      ...lease,
+      pendingExtensionRequest: undefined,
+    });
+
+    await isbEventBridgeClient.sendIsbEvent(
+      tracer,
+      new LeaseExtensionDeniedEvent({
+        leaseId: {
+          userEmail: lease.userEmail,
+          uuid: lease.uuid,
+        },
+        userEmail: lease.userEmail,
+        deniedBy: denier.email,
+        comments,
+      }),
+    );
+
+    logger.info(
+      `Lease extension denied for (${lease.userEmail}) lease (${lease.uuid}) by (${denier.email})`,
     );
   }
 

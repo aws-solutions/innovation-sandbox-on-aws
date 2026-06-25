@@ -56,12 +56,12 @@ test("Lease Schema Version", () => {
     objectHash.sha1(ApprovalDeniedLeaseSchema.shape),
   ).toMatchInlineSnapshot(`"4771510cfadbbc8d2b2be4e58edba02a7d8091cf"`);
   expect(objectHash.sha1(MonitoredLeaseSchema.shape)).toMatchInlineSnapshot(
-    `"15c4120d6254a56ebba1cf8c2d49200911ce61ed"`,
+    `"398e4cb52216b129e16ffb56eeb0d7c81e5efc15"`,
   );
   expect(objectHash.sha1(ExpiredLeaseSchema.shape)).toMatchInlineSnapshot(
-    `"d6c97629462bb477448d644f94e6cac7eceb6778"`,
+    `"db85d77456411a756392c428c78e72397fb3f663"`,
   );
-  expect(LeaseSchemaVersion).toEqual(3);
+  expect(LeaseSchemaVersion).toEqual(4);
 });
 
 test("SandboxAccount Schema Version", () => {

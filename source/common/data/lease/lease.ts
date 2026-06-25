@@ -14,7 +14,7 @@ import {
 } from "@amzn/innovation-sandbox-commons/utils/zod.js";
 
 // IMPORTANT -- this value must be updated whenever the schema changes.
-export const LeaseSchemaVersion = 3; //v1.2.0 - Added Provisioning and ProvisioningFailed statuses
+export const LeaseSchemaVersion = 4; //v1.2.0 - Added pendingExtensionRequest to MonitoredLeaseSchema
 
 // Define supported version range for backwards compatibility
 const LeaseSupportedVersionsSchema = createVersionRangeSchema(
@@ -111,6 +111,13 @@ export const ApprovedBySchema = z.union([
   z.literal("AUTO_APPROVED"),
 ]);
 
+export const PendingExtensionRequestSchema = z.object({
+  requestedExpirationDate: z.string().datetime(),
+  comments: z.string().optional(),
+  requestedAt: z.string().datetime(),
+  requestedBy: z.string().email(),
+});
+
 export const MonitoredLeaseSchema = PendingLeaseSchema.extend({
   //overrides
   status: MonitoredLeaseStatusSchema,
@@ -121,6 +128,7 @@ export const MonitoredLeaseSchema = PendingLeaseSchema.extend({
   expirationDate: z.string().datetime().optional(), // ISO 8601 -- https://zod.dev/?id=datetimes
   lastCheckedDate: z.string().datetime(), // ISO 8601 -- https://zod.dev/?id=datetimes
   totalCostAccrued: z.number(),
+  pendingExtensionRequest: PendingExtensionRequestSchema.optional(),
 });
 
 export const ExpiredLeaseSchema = MonitoredLeaseSchema.extend({
@@ -150,6 +158,9 @@ export type Lease = z.infer<typeof LeaseSchema>;
 export type PendingLease = z.infer<typeof PendingLeaseSchema>;
 export type ApprovalDeniedLease = z.infer<typeof ApprovalDeniedLeaseSchema>;
 export type MonitoredLease = z.infer<typeof MonitoredLeaseSchema>;
+export type PendingExtensionRequest = z.infer<
+  typeof PendingExtensionRequestSchema
+>;
 export type ExpiredLease = z.infer<typeof ExpiredLeaseSchema>;
 export type LeaseWithLeaseId = Lease & { leaseId: string };
 

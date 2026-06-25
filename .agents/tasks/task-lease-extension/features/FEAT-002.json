@@ -2,7 +2,7 @@
   "id": "FEAT-002",
   "type": "feat",
   "description": "Backend: Add lease extension request, approval, and denial domain logic with events and notifications. This is the core feature implementing the full lease extension workflow in the commons layer and API handler.",
-  "status": "pending",
+  "status": "in_progress",
   "steps": [
     "Step 1 - Add 'LeaseExtensionRequested' and 'LeaseExtensionApproved' and 'LeaseExtensionDenied' to EventDetailTypes in source/common/events/index.ts",
     "Step 2 - Create source/common/events/lease-extension-requested-event.ts following the pattern in lease-requested-event.ts. Include fields: leaseId (LeaseKeySchema), userEmail, requestedExpirationDate (ISO datetime string), comments (optional FreeTextSchema)",
