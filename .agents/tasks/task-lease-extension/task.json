@@ -1,0 +1,7 @@
+{
+  "task_id": "task-lease-extension",
+  "task_description": "Implement lease extension feature: users can request extending their active/frozen lease, the system validates against max duration, admins/managers are notified and can approve/deny, and users are notified of the outcome.",
+  "status": "in_progress",
+  "feature_order": ["FEAT-001", "FEAT-002", "FEAT-003"],
+  "blocked_reason": null
+}
