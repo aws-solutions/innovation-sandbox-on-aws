@@ -81,4 +81,22 @@ export class LeaseService {
   async unfreezeLease(leaseId: string): Promise<void> {
     await this.api.post(`/leases/${leaseId}/unfreeze`);
   }
+
+  async requestExtension(
+    leaseId: string,
+    request: { requestedExpirationDate: string; comments?: string },
+  ): Promise<void> {
+    await this.api.post(`/leases/${leaseId}/extend`, request);
+  }
+
+  async reviewExtension(
+    leaseId: string,
+    action: "Approve" | "Deny",
+    comments?: string,
+  ): Promise<void> {
+    await this.api.post(`/leases/${leaseId}/extend/review`, {
+      action,
+      comments,
+    });
+  }
 }

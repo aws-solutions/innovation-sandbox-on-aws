@@ -2,7 +2,7 @@
   "id": "FEAT-003",
   "type": "feat",
   "description": "Frontend: Add lease extension request UI for users and extension approval/denial UI for administrators. Implements the user-facing request button on lease details and the admin approval flow.",
-  "status": "pending",
+  "status": "in_progress",
   "steps": [
     "Step 1 - Add frontend service methods in source/frontend/src/domains/leases/service.ts: (a) `requestExtension(leaseId: string, request: {requestedExpirationDate: string, comments?: string})` calling POST /leases/{leaseId}/extend; (b) `reviewExtension(leaseId: string, action: 'Approve'|'Deny', comments?: string)` calling POST /leases/{leaseId}/extend/review",
     "Step 2 - Add frontend types in source/frontend/src/domains/leases/types.ts: `LeaseExtensionRequest` type with requestedExpirationDate and optional comments",

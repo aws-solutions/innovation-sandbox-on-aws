@@ -3533,7 +3533,7 @@ describe("Leases Handler", async () => {
       const approveExtensionSpy = vi
         .spyOn(InnovationSandbox, "approveLeaseExtension")
         .mockResolvedValue({
-          newItem: { ...mockedLease, expirationDate: mockedLease.pendingExtensionRequest.requestedExpirationDate },
+          newItem: { ...mockedLease, expirationDate: mockedLease.pendingExtensionRequest.requestedExpirationDate, pendingExtensionRequest: undefined },
           oldItem: mockedLease,
         });
 
@@ -3550,7 +3550,10 @@ describe("Leases Handler", async () => {
         statusCode: 200,
         body: JSON.stringify({
           status: "success",
-          data: { ...mockedLease, expirationDate: mockedLease.pendingExtensionRequest.requestedExpirationDate },
+          data: (() => {
+            const { pendingExtensionRequest: _, ...rest } = mockedLease;
+            return { ...rest, expirationDate: mockedLease.pendingExtensionRequest.requestedExpirationDate };
+          })(),
         }),
         headers: responseHeaders,
       });

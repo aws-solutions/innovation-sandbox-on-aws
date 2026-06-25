@@ -26,4 +26,9 @@ export type LeaseFormData = LeasePatchRequest & {
   maxDurationEnabled?: boolean;
 };
 
+export type LeaseExtensionRequest = {
+  requestedExpirationDate: string;
+  comments?: string;
+};
+
 export type MonitoredLeaseWithLeaseId = MonitoredLease & LeaseWithLeaseId;

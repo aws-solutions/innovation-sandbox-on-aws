@@ -25,6 +25,12 @@ vi.mock("react-router-dom", async () => {
 vi.mock("@amzn/innovation-sandbox-frontend/domains/leases/hooks");
 vi.mock("@amzn/innovation-sandbox-frontend/domains/settings/hooks");
 vi.mock("@amzn/innovation-sandbox-frontend/hooks/useBreadcrumb");
+vi.mock("@amzn/innovation-sandbox-frontend/hooks/useModal", () => ({
+  useModal: () => ({
+    showModal: vi.fn(),
+    hideModal: vi.fn(),
+  }),
+}));
 
 const mockActiveLease = {
   uuid: "lease-123",
