@@ -162,10 +162,14 @@ describe("BatchActionReview", () => {
     });
 
     test("shows loading status for all items after submit", async () => {
+      // Keep submissions pending via a deferred promise so the transient
+      // "Loading" state stays observable regardless of test-runner load,
+      // then resolve them only after asserting all items are loading.
+      const resolvers: (() => void)[] = [];
       const onSubmit = vi
         .fn()
         .mockImplementation(
-          () => new Promise((resolve) => setTimeout(resolve, 50)),
+          () => new Promise<void>((resolve) => resolvers.push(resolve)),
         );
       renderComponent({ onSubmit });
 
@@ -174,10 +178,12 @@ describe("BatchActionReview", () => {
 
       await user.click(submitButton);
 
-      // Check immediately after click - items should be loading in parallel once processing starts
+      // Items should be loading in parallel while submissions are pending
       await waitFor(() => {
         expect(screen.queryAllByText("Loading").length).toBe(3);
       });
+
+      resolvers.forEach((resolve) => resolve());
     });
 
     test("shows success status for all items on successful submission", async () => {
