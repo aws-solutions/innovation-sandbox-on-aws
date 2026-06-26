@@ -214,7 +214,7 @@ describe("EditBudgetSettings", () => {
     });
 
     // Check that max budget is enabled and populated
-    const maxSpendInput = screen.getByPlaceholderText("e.g., 50");
+    const maxSpendInput = await screen.findByPlaceholderText("e.g., 50");
     expect(maxSpendInput).toHaveValue(100);
 
     // Check that thresholds are populated
@@ -240,7 +240,7 @@ describe("EditBudgetSettings", () => {
     });
 
     // Modify the max spend
-    const maxSpendInput = screen.getByPlaceholderText("e.g., 50");
+    const maxSpendInput = await screen.findByPlaceholderText("e.g., 50");
     await user.clear(maxSpendInput);
     await user.type(maxSpendInput, "150");
 
@@ -317,7 +317,7 @@ describe("EditBudgetSettings", () => {
     });
 
     // Modify the form
-    const maxSpendInput = screen.getByPlaceholderText("e.g., 50");
+    const maxSpendInput = await screen.findByPlaceholderText("e.g., 50");
     await user.clear(maxSpendInput);
     await user.type(maxSpendInput, "150");
 
@@ -364,7 +364,7 @@ describe("EditBudgetSettings", () => {
     });
 
     // Clear max spend to make form invalid
-    const maxSpendInput = screen.getByPlaceholderText("e.g., 50");
+    const maxSpendInput = await screen.findByPlaceholderText("e.g., 50");
     await user.clear(maxSpendInput);
 
     const saveButton = screen.getByRole("button", { name: "Save changes" });

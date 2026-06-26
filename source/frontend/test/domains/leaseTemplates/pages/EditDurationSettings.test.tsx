@@ -100,10 +100,12 @@ describe("EditDurationSettings", () => {
     });
 
     const durationInput = screen.getByLabelText("Maximum Duration (Hours)");
-    await user.clear(durationInput);
-    await user.type(durationInput, "240");
+    await user.tripleClick(durationInput);
+    await user.keyboard("240");
 
-    await user.click(screen.getByRole("button", { name: /save changes/i }));
+    const saveButton = screen.getByRole("button", { name: /save changes/i });
+    await waitFor(() => expect(saveButton).toBeEnabled());
+    await user.click(saveButton);
 
     await waitFor(() => {
       expect(showSuccessToast).toHaveBeenCalledWith(
@@ -133,10 +135,12 @@ describe("EditDurationSettings", () => {
     });
 
     const durationInput = screen.getByLabelText("Maximum Duration (Hours)");
-    await user.clear(durationInput);
-    await user.type(durationInput, "240");
+    await user.tripleClick(durationInput);
+    await user.keyboard("240");
 
-    await user.click(screen.getByRole("button", { name: /save changes/i }));
+    const saveButton = screen.getByRole("button", { name: /save changes/i });
+    await waitFor(() => expect(saveButton).toBeEnabled());
+    await user.click(saveButton);
 
     await waitFor(() => {
       expect(showErrorToast).toHaveBeenCalledWith(
