@@ -90,14 +90,6 @@ export class IsbDataResources {
         type: AttributeType.STRING,
       },
     });
-    this.leaseTable.addGlobalSecondaryIndex({
-      indexName: "UuidIndex",
-      partitionKey: {
-        name: "uuid",
-        type: AttributeType.STRING,
-      },
-      projectionType: ProjectionType.ALL,
-    });
 
     this.blueprintTable = new Table(scope, "BlueprintTable", {
       partitionKey: { name: "PK", type: AttributeType.STRING }, // "bp#{blueprintId}"

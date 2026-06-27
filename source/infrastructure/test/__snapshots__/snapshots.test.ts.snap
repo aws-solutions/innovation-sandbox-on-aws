@@ -25039,18 +25039,6 @@ exports[`IsbDataStack Snapshot > matches the snapshot 1`] = `
             "Projection": {
               "ProjectionType": "ALL"
             }
-          },
-          {
-            "IndexName": "UuidIndex",
-            "KeySchema": [
-              {
-                "AttributeName": "uuid",
-                "KeyType": "HASH"
-              }
-            ],
-            "Projection": {
-              "ProjectionType": "ALL"
-            }
           }
         ],
         "KeySchema": [

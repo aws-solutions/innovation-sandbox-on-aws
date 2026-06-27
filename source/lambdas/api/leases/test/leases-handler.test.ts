@@ -3306,12 +3306,16 @@ describe("Leases Handler", async () => {
       const mockedLease = generateSchemaData(MonitoredLeaseSchema);
       mockedLease.status = "Active";
       mockedLease.userEmail = isbAuthorizedUser.user.email;
+      const mockedLeaseId = base64EncodeCompositeKey({
+        userEmail: mockedLease.userEmail,
+        uuid: mockedLease.uuid,
+      });
       const requestedExpirationDate = now()
         .plus({ hours: 48 })
         .toISO() as string;
       const event = createAPIGatewayProxyEvent({
         httpMethod: "POST",
-        path: `/leases/${mockedLease.uuid}/extend`,
+        path: `/leases/${mockedLeaseId}/extend`,
         body: JSON.stringify({
           requestedExpirationDate,
           comments: "Need more time",
@@ -3322,8 +3326,8 @@ describe("Leases Handler", async () => {
         },
       });
 
-      const findByUuidSpy = vi
-        .spyOn(DynamoLeaseStore.prototype, "findByUuid")
+      const getLeaseSpy = vi
+        .spyOn(DynamoLeaseStore.prototype, "get")
         .mockResolvedValue({
           result: mockedLease,
         });
@@ -3349,7 +3353,7 @@ describe("Leases Handler", async () => {
         }),
         headers: responseHeaders,
       });
-      expect(findByUuidSpy).toHaveBeenCalledOnce();
+      expect(getLeaseSpy).toHaveBeenCalledOnce();
       expect(requestExtensionSpy).toHaveBeenCalledOnce();
     });
 
@@ -3357,12 +3361,16 @@ describe("Leases Handler", async () => {
       const mockedLease = generateSchemaData(MonitoredLeaseSchema);
       mockedLease.status = "Active";
       mockedLease.userEmail = isbAuthorizedUser.user.email;
+      const mockedLeaseId = base64EncodeCompositeKey({
+        userEmail: mockedLease.userEmail,
+        uuid: mockedLease.uuid,
+      });
       const requestedExpirationDate = now()
         .plus({ hours: 48 })
         .toISO() as string;
       const event = createAPIGatewayProxyEvent({
         httpMethod: "POST",
-        path: `/leases/${mockedLease.uuid}/extend`,
+        path: `/leases/${mockedLeaseId}/extend`,
         body: JSON.stringify({
           requestedExpirationDate,
         }),
@@ -3372,8 +3380,8 @@ describe("Leases Handler", async () => {
         },
       });
 
-      const findByUuidSpy = vi
-        .spyOn(DynamoLeaseStore.prototype, "findByUuid")
+      const getLeaseSpy = vi
+        .spyOn(DynamoLeaseStore.prototype, "get")
         .mockResolvedValue({
           result: mockedLease,
         });
@@ -3401,19 +3409,23 @@ describe("Leases Handler", async () => {
         }),
         headers: responseHeaders,
       });
-      expect(findByUuidSpy).toHaveBeenCalledOnce();
+      expect(getLeaseSpy).toHaveBeenCalledOnce();
     });
 
     it("should return 403 when user does not own the lease", async () => {
       const mockedLease = generateSchemaData(MonitoredLeaseSchema);
       mockedLease.status = "Active";
       mockedLease.userEmail = "other-user@example.com";
+      const mockedLeaseId = base64EncodeCompositeKey({
+        userEmail: mockedLease.userEmail,
+        uuid: mockedLease.uuid,
+      });
       const requestedExpirationDate = now()
         .plus({ hours: 48 })
         .toISO() as string;
       const event = createAPIGatewayProxyEvent({
         httpMethod: "POST",
-        path: `/leases/${mockedLease.uuid}/extend`,
+        path: `/leases/${mockedLeaseId}/extend`,
         body: JSON.stringify({
           requestedExpirationDate,
         }),
@@ -3423,7 +3435,7 @@ describe("Leases Handler", async () => {
         },
       });
 
-      vi.spyOn(DynamoLeaseStore.prototype, "findByUuid").mockResolvedValue({
+      vi.spyOn(DynamoLeaseStore.prototype, "get").mockResolvedValue({
         result: mockedLease,
       });
 
@@ -3447,13 +3459,16 @@ describe("Leases Handler", async () => {
     });
 
     it("should return 404 when lease not found", async () => {
-      const mockedUuid = randomUUID();
+      const mockedLeaseId = base64EncodeCompositeKey({
+        userEmail: "test@example.com",
+        uuid: randomUUID(),
+      });
       const requestedExpirationDate = now()
         .plus({ hours: 48 })
         .toISO() as string;
       const event = createAPIGatewayProxyEvent({
         httpMethod: "POST",
-        path: `/leases/${mockedUuid}/extend`,
+        path: `/leases/${mockedLeaseId}/extend`,
         body: JSON.stringify({
           requestedExpirationDate,
         }),
@@ -3463,7 +3478,7 @@ describe("Leases Handler", async () => {
         },
       });
 
-      vi.spyOn(DynamoLeaseStore.prototype, "findByUuid").mockResolvedValue({
+      vi.spyOn(DynamoLeaseStore.prototype, "get").mockResolvedValue({
         result: undefined,
       });
 
@@ -3494,12 +3509,16 @@ describe("Leases Handler", async () => {
         requestedAt: now().toISO() as string,
         requestedBy: mockedLease.userEmail,
       };
+      const mockedLeaseId = base64EncodeCompositeKey({
+        userEmail: mockedLease.userEmail,
+        uuid: mockedLease.uuid,
+      });
       const requestedExpirationDate = now()
         .plus({ hours: 48 })
         .toISO() as string;
       const event = createAPIGatewayProxyEvent({
         httpMethod: "POST",
-        path: `/leases/${mockedLease.uuid}/extend`,
+        path: `/leases/${mockedLeaseId}/extend`,
         body: JSON.stringify({
           requestedExpirationDate,
         }),
@@ -3509,7 +3528,7 @@ describe("Leases Handler", async () => {
         },
       });
 
-      vi.spyOn(DynamoLeaseStore.prototype, "findByUuid").mockResolvedValue({
+      vi.spyOn(DynamoLeaseStore.prototype, "get").mockResolvedValue({
         result: mockedLease,
       });
 
@@ -3542,12 +3561,16 @@ describe("Leases Handler", async () => {
       const mockedLease = generateSchemaData(MonitoredLeaseSchema);
       mockedLease.status = "Active";
       mockedLease.userEmail = isbAuthorizedUser.user.email;
+      const mockedLeaseId = base64EncodeCompositeKey({
+        userEmail: mockedLease.userEmail,
+        uuid: mockedLease.uuid,
+      });
       const requestedExpirationDate = now()
         .minus({ hours: 1 })
         .toISO() as string;
       const event = createAPIGatewayProxyEvent({
         httpMethod: "POST",
-        path: `/leases/${mockedLease.uuid}/extend`,
+        path: `/leases/${mockedLeaseId}/extend`,
         body: JSON.stringify({
           requestedExpirationDate,
         }),
@@ -3557,7 +3580,7 @@ describe("Leases Handler", async () => {
         },
       });
 
-      vi.spyOn(DynamoLeaseStore.prototype, "findByUuid").mockResolvedValue({
+      vi.spyOn(DynamoLeaseStore.prototype, "get").mockResolvedValue({
         result: mockedLease,
       });
 
@@ -3589,12 +3612,16 @@ describe("Leases Handler", async () => {
       const mockedLease = generateSchemaData(MonitoredLeaseSchema);
       mockedLease.status = "Active";
       mockedLease.userEmail = isbAuthorizedUser.user.email;
+      const mockedLeaseId = base64EncodeCompositeKey({
+        userEmail: mockedLease.userEmail,
+        uuid: mockedLease.uuid,
+      });
       const requestedExpirationDate = now()
         .plus({ hours: 1 })
         .toISO() as string;
       const event = createAPIGatewayProxyEvent({
         httpMethod: "POST",
-        path: `/leases/${mockedLease.uuid}/extend`,
+        path: `/leases/${mockedLeaseId}/extend`,
         body: JSON.stringify({
           requestedExpirationDate,
         }),
@@ -3604,7 +3631,7 @@ describe("Leases Handler", async () => {
         },
       });
 
-      vi.spyOn(DynamoLeaseStore.prototype, "findByUuid").mockResolvedValue({
+      vi.spyOn(DynamoLeaseStore.prototype, "get").mockResolvedValue({
         result: mockedLease,
       });
 
@@ -3643,9 +3670,13 @@ describe("Leases Handler", async () => {
         requestedAt: now().toISO() as string,
         requestedBy: mockedLease.userEmail,
       };
+      const mockedLeaseId = base64EncodeCompositeKey({
+        userEmail: mockedLease.userEmail,
+        uuid: mockedLease.uuid,
+      });
       const event = createAPIGatewayProxyEvent({
         httpMethod: "POST",
-        path: `/leases/${mockedLease.uuid}/extend/review`,
+        path: `/leases/${mockedLeaseId}/extend/review`,
         body: JSON.stringify({
           action: "Approve",
         }),
@@ -3655,8 +3686,8 @@ describe("Leases Handler", async () => {
         },
       });
 
-      const findByUuidSpy = vi
-        .spyOn(DynamoLeaseStore.prototype, "findByUuid")
+      const getLeaseSpy = vi
+        .spyOn(DynamoLeaseStore.prototype, "get")
         .mockResolvedValue({
           result: mockedLease,
         });
@@ -3688,7 +3719,7 @@ describe("Leases Handler", async () => {
         }),
         headers: responseHeaders,
       });
-      expect(findByUuidSpy).toHaveBeenCalledOnce();
+      expect(getLeaseSpy).toHaveBeenCalledOnce();
       expect(approveExtensionSpy).toHaveBeenCalledOnce();
     });
 
@@ -3700,9 +3731,13 @@ describe("Leases Handler", async () => {
         requestedAt: now().toISO() as string,
         requestedBy: mockedLease.userEmail,
       };
+      const mockedLeaseId = base64EncodeCompositeKey({
+        userEmail: mockedLease.userEmail,
+        uuid: mockedLease.uuid,
+      });
       const event = createAPIGatewayProxyEvent({
         httpMethod: "POST",
-        path: `/leases/${mockedLease.uuid}/extend/review`,
+        path: `/leases/${mockedLeaseId}/extend/review`,
         body: JSON.stringify({
           action: "Deny",
           comments: "Extension not justified",
@@ -3713,8 +3748,8 @@ describe("Leases Handler", async () => {
         },
       });
 
-      const findByUuidSpy = vi
-        .spyOn(DynamoLeaseStore.prototype, "findByUuid")
+      const getLeaseSpy = vi
+        .spyOn(DynamoLeaseStore.prototype, "get")
         .mockResolvedValue({
           result: mockedLease,
         });
@@ -3740,7 +3775,7 @@ describe("Leases Handler", async () => {
         }),
         headers: responseHeaders,
       });
-      expect(findByUuidSpy).toHaveBeenCalledOnce();
+      expect(getLeaseSpy).toHaveBeenCalledOnce();
       expect(denyExtensionSpy).toHaveBeenCalledOnce();
     });
 
@@ -3752,9 +3787,13 @@ describe("Leases Handler", async () => {
         requestedAt: now().toISO() as string,
         requestedBy: mockedLease.userEmail,
       };
+      const mockedLeaseId = base64EncodeCompositeKey({
+        userEmail: mockedLease.userEmail,
+        uuid: mockedLease.uuid,
+      });
       const event = createAPIGatewayProxyEvent({
         httpMethod: "POST",
-        path: `/leases/${mockedLease.uuid}/extend/review`,
+        path: `/leases/${mockedLeaseId}/extend/review`,
         body: JSON.stringify({
           action: "Approve",
         }),
@@ -3784,10 +3823,13 @@ describe("Leases Handler", async () => {
     });
 
     it("should return 404 when lease not found", async () => {
-      const mockedUuid = randomUUID();
+      const mockedLeaseId = base64EncodeCompositeKey({
+        userEmail: "test@example.com",
+        uuid: randomUUID(),
+      });
       const event = createAPIGatewayProxyEvent({
         httpMethod: "POST",
-        path: `/leases/${mockedUuid}/extend/review`,
+        path: `/leases/${mockedLeaseId}/extend/review`,
         body: JSON.stringify({
           action: "Approve",
         }),
@@ -3797,7 +3839,7 @@ describe("Leases Handler", async () => {
         },
       });
 
-      vi.spyOn(DynamoLeaseStore.prototype, "findByUuid").mockResolvedValue({
+      vi.spyOn(DynamoLeaseStore.prototype, "get").mockResolvedValue({
         result: undefined,
       });
 
