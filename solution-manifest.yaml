@@ -4,7 +4,7 @@ version: v1.2.11
 cloudformation_templates:
   - template: ISBAccountPool.template
     main_template: true
-  - template: InnovationSandbox-IDC.template
+  - template: ISBIdc.template
   - template: ISBData.template
   - template: ISBCompute.template
 build_environment:

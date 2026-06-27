@@ -27,7 +27,7 @@ new IsbAccountPoolStack(app, "ISBAccountPool", {
   synthesizer: synthesizer,
 });
 
-new IsbIdcStack(app, "InnovationSandbox-IDC", {
+new IsbIdcStack(app, "ISBIdc", {
   description: `(${context.solutionId}-IdcStack) ${context.solutionName} ${context.version}`,
   synthesizer: synthesizer,
 });
