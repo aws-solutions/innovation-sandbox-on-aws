@@ -22,7 +22,7 @@ const synthesizer = new SolutionsEngineeringSynthesizer({
   outdir: app.outdir,
 });
 
-new IsbAccountPoolStack(app, "InnovationSandbox-AccountPool", {
+new IsbAccountPoolStack(app, "ISBAccountPool", {
   description: `(${context.solutionId}) ${context.solutionName} ${context.version}`,
   synthesizer: synthesizer,
 });
