@@ -1072,14 +1072,12 @@ async function requestLeaseExtensionHandler(
     throw createHttpJSendValidationError(parsedBody.error);
   }
 
-  const leaseCompositeKey = parseLeaseCompositeKeyFromPathParameters(
-    event.pathParameters,
-  );
-  const leaseResponse = await isbContext.leaseStore.get(leaseCompositeKey);
+  const uuid = parseLeaseUuidFromPathParameters(event.pathParameters);
+  const leaseResponse = await isbContext.leaseStore.findByUuid(uuid);
   const lease = leaseResponse.result;
   if (leaseResponse.error) {
     logger.warn(
-      `Error retrieving lease ${leaseCompositeKey}: ${leaseResponse.error}`,
+      `Error retrieving lease by uuid ${uuid}: ${leaseResponse.error}`,
     );
   }
 
@@ -1237,14 +1235,12 @@ async function reviewLeaseExtensionHandler(
     });
   }
 
-  const leaseCompositeKey = parseLeaseCompositeKeyFromPathParameters(
-    event.pathParameters,
-  );
-  const leaseResponse = await isbContext.leaseStore.get(leaseCompositeKey);
+  const uuid = parseLeaseUuidFromPathParameters(event.pathParameters);
+  const leaseResponse = await isbContext.leaseStore.findByUuid(uuid);
   const lease = leaseResponse.result;
   if (leaseResponse.error) {
     logger.warn(
-      `Error retrieving lease ${leaseCompositeKey}: ${leaseResponse.error}`,
+      `Error retrieving lease by uuid ${uuid}: ${leaseResponse.error}`,
     );
   }
 
@@ -1360,6 +1356,18 @@ function parseLeaseCompositeKeyFromPathParameters(
     throw createHttpJSendValidationError(leaseKeySchemaParseResponse.error);
 
   return leaseKeySchemaParseResponse.data;
+}
+
+function parseLeaseUuidFromPathParameters(
+  pathParameters: APIGatewayProxyEventPathParameters,
+): string {
+  const PathParametersSchema = z.object({ leaseId: z.string().uuid() });
+  const parsedPathParametersResponse =
+    PathParametersSchema.safeParse(pathParameters);
+  if (!parsedPathParametersResponse.success) {
+    throw createHttpJSendValidationError(parsedPathParametersResponse.error);
+  }
+  return parsedPathParametersResponse.data.leaseId;
 }
 
 function authorizedToLeaseFromPrivateLeaseTemplates(user: IsbUser) {

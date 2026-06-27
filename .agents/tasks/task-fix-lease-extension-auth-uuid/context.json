@@ -1,0 +1,29 @@
+{
+  "project_type": "AWS CDK monorepo with TypeScript lambdas, React frontend",
+  "language": "TypeScript",
+  "build_system": "npm workspaces with vitest for testing, CDK for infrastructure",
+  "test_framework": "vitest with aws-sdk-client-mock, CDK snapshot tests",
+  "build_command": "npm run build",
+  "test_command": "npm test",
+  "verification_instructions": "1. Run `npm run build` to typecheck. 2. Run `npm test` to run all tests. 3. Run `npm run test:update-snapshots` if CDK infra changed.",
+  "snapshot_or_generated_files": "CDK snapshot tests in source/infrastructure/test/ - regenerate with `npm run test:update-snapshots`",
+  "setup_instructions": "npm install",
+  "environment_constraints": "No deployment possible in sandbox. Validation is build + test only.",
+  "contribution_requirements": "Apache-2.0 license header on all .ts/.tsx files. Prettier enforced. Use context.env not process.env in lambdas.",
+  "key_patterns": "LeaseStore abstract class with DynamoLeaseStore impl. Authorization uses 3 ARN extraction functions tried in sequence. Frontend uses LeaseService class. API responses use JSend format. Zod schemas for validation.",
+  "relevant_files": [
+    "source/lambdas/api/authorizer/src/authorization-map.ts",
+    "source/lambdas/api/authorizer/src/authorization.ts",
+    "source/lambdas/api/authorizer/test/authorization.test.ts",
+    "source/lambdas/api/leases/src/leases-handler.ts",
+    "source/lambdas/api/leases/test/leases-handler.test.ts",
+    "source/common/data/lease/lease-store.ts",
+    "source/common/data/lease/dynamo-lease-store.ts",
+    "source/infrastructure/lib/isb-data-resources.ts",
+    "source/frontend/src/domains/leases/service.ts",
+    "source/frontend/src/domains/leases/hooks.ts",
+    "source/frontend/src/domains/leases/components/RequestExtensionModal.tsx",
+    "source/frontend/src/domains/leases/components/ReviewExtensionConfirmation.tsx"
+  ],
+  "directory_structure": "source/common - shared code, source/lambdas - lambda handlers, source/infrastructure - CDK, source/frontend - React app"
+}

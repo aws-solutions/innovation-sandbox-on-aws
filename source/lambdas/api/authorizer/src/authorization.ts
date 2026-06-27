@@ -76,6 +76,31 @@ export function extractMethodAndPathFromArnWithPathParameterMiddle(
   return null;
 }
 
+/**
+ * extracts the method and the path from the given method arn assuming the entry third from the end is the path
+ * parameter and replaces it with {param} as expected by the authorizationMap
+ * @param arn sample value arn:aws:execute-api:us-east-1:123456789012:aaaaaaaaaa/prod/POST/leases/{uuid}/extend/review
+ */
+export function extractMethodAndPathFromArnWithPathParameterThirdFromEnd(
+  arn: string,
+): { method: HttpMethod; path: string } | null {
+  const parts = arn.replace(/\/$/, "").split("/");
+  if (parts.length >= 6) {
+    return {
+      method: parts[2]! as HttpMethod,
+      path:
+        "/" +
+        [
+          ...parts.slice(3, parts.length - 3),
+          "{param}",
+          parts[parts.length - 2],
+          parts[parts.length - 1],
+        ].join("/"),
+    };
+  }
+  return null;
+}
+
 export function getAllowedRolesEntry(
   path: string,
   method: HttpMethod,
@@ -158,6 +183,14 @@ export async function isAuthorized(
       ...getAllowedRolesForUrlPattern(
         props,
         extractMethodAndPathFromArnWithPathParameterMiddle,
+      ),
+    );
+  }
+  if (allowedRoles.length === 0) {
+    allowedRoles.push(
+      ...getAllowedRolesForUrlPattern(
+        props,
+        extractMethodAndPathFromArnWithPathParameterThirdFromEnd,
       ),
     );
   }

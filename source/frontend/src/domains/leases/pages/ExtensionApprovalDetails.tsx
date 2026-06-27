@@ -50,7 +50,7 @@ export const ExtensionApprovalDetails = () => {
       content: (
         <ReviewExtensionConfirmation
           mode={mode}
-          leaseId={lease.leaseId}
+          leaseId={lease.uuid}
           pendingExtensionRequest={lease.pendingExtensionRequest}
           onCancel={hideModal}
         />

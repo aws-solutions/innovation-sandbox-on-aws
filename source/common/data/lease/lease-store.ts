@@ -69,4 +69,6 @@ export abstract class LeaseStore {
     pageIdentifier?: string;
     pageSize?: number;
   }): Promise<PaginatedQueryResult<Lease>>;
+
+  abstract findByUuid(uuid: string): Promise<SingleItemResult<Lease>>;
 }

@@ -294,4 +294,24 @@ export class DynamoLeaseStore extends LeaseStore {
       nextPageIdentifier: base64EncodeCompositeKey(result.LastEvaluatedKey),
     };
   }
+
+  public override async findByUuid(uuid: string): Promise<SingleItemResult<Lease>> {
+    const result = await this.ddbClient.send(
+      new QueryCommand({
+        TableName: this.tableName,
+        IndexName: "UuidIndex",
+        KeyConditionExpression: "#uuid = :uuid",
+        ExpressionAttributeNames: {
+          "#uuid": "uuid",
+        },
+        ExpressionAttributeValues: {
+          ":uuid": uuid,
+        },
+        Limit: 1,
+      }),
+    );
+
+    const items = result.Items ?? [];
+    return parseSingleItemResult(items[0], LeaseSchema);
+  }
 }

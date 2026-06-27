@@ -104,7 +104,7 @@ export const RequestExtensionModal = ({
 
     try {
       await requestExtension({
-        leaseId: lease.leaseId,
+        leaseId: lease.uuid,
         request: {
           requestedExpirationDate: data.requestedExpirationDate,
           comments: data.comments || undefined,
