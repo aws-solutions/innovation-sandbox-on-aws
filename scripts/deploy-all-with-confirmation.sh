@@ -107,8 +107,8 @@ fi
 echo -e "${YELLOW}This will deploy the following stacks:${NC}"
 echo -e "  1. ISBAccountPool"
 echo -e "  2. InnovationSandbox-IDC"
-echo -e "  3. InnovationSandbox-Data"
-echo -e "  4. InnovationSandbox-Compute"
+echo -e "  3. ISBData"
+echo -e "  4. ISBCompute"
 echo ""
 
 # Prompt for confirmation

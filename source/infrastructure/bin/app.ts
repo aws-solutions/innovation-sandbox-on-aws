@@ -32,12 +32,12 @@ new IsbIdcStack(app, "InnovationSandbox-IDC", {
   synthesizer: synthesizer,
 });
 
-new IsbDataStack(app, "InnovationSandbox-Data", {
+new IsbDataStack(app, "ISBData", {
   description: `(${context.solutionId}-DataStack) ${context.solutionName} ${context.version}`,
   synthesizer: synthesizer,
 });
 
-new IsbComputeStack(app, "InnovationSandbox-Compute", {
+new IsbComputeStack(app, "ISBCompute", {
   description: `(${context.solutionId}-ComputeStack) ${context.solutionName} ${context.version}`,
   synthesizer: synthesizer,
 });
