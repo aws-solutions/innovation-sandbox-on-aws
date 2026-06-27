@@ -20,6 +20,7 @@ import { LogInsightsQueries } from "@amzn/innovation-sandbox-infrastructure/comp
 import { getContextFromMapping } from "@amzn/innovation-sandbox-infrastructure/helpers/cdk-context";
 import { addCfnGuardSuppression } from "@amzn/innovation-sandbox-infrastructure/helpers/cfn-guard";
 import { YesNoParameter } from "@amzn/innovation-sandbox-infrastructure/helpers/cfn-utils";
+import { CustomDomainParameter } from "@amzn/innovation-sandbox-infrastructure/helpers/custom-domain-params";
 import { IntermediateRole } from "@amzn/innovation-sandbox-infrastructure/helpers/isb-roles";
 import { GroupCostReportingLambda } from "./components/observability/group-cost-reporting-lambda";
 
@@ -29,6 +30,7 @@ export interface IsbComputeResourcesProps {
   idcAccountId: string;
   allowListedCidr: string[];
   useStableTaggingParameter: YesNoParameter;
+  customDomain: CustomDomainParameter;
 }
 
 export class IsbComputeResources {
@@ -104,6 +106,7 @@ export class IsbComputeResources {
     new CloudfrontUiApi(scope, "CloudFrontUiApi", {
       restApi,
       namespace: props.namespace,
+      customDomain: props.customDomain,
     });
 
     new LogInsightsQueries(scope, "LogInsightsQueries", {

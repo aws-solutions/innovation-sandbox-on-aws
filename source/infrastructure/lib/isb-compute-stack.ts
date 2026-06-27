@@ -9,6 +9,7 @@ import {
   ParameterWithLabel,
   YesNoParameter,
 } from "@amzn/innovation-sandbox-infrastructure/helpers/cfn-utils";
+import { CustomDomainParameter } from "@amzn/innovation-sandbox-infrastructure/helpers/custom-domain-params";
 import {
   IdcAccountIdParam,
   NamespaceParam,
@@ -73,6 +74,8 @@ export class IsbComputeStack extends Stack {
       },
     );
 
+    const customDomainParam = new CustomDomainParameter(this);
+
     addParameterGroup(this, {
       label: "Compute Stack Configuration",
       parameters: [
@@ -82,6 +85,15 @@ export class IsbComputeStack extends Stack {
         allowListedCidr,
         useStableTagging,
         acceptTerms,
+      ],
+    });
+
+    addParameterGroup(this, {
+      label: "Custom Domain Configuration (Optional)",
+      parameters: [
+        customDomainParam.domainNameParam,
+        customDomainParam.hostedZoneIdParam,
+        customDomainParam.certificateArnParam,
       ],
     });
 
@@ -98,6 +110,7 @@ export class IsbComputeStack extends Stack {
       idcAccountId: idcAccountId.valueAsString,
       allowListedCidr: allowListedCidr.valueAsList,
       useStableTaggingParameter: useStableTagging,
+      customDomain: customDomainParam,
     });
 
     new ApplicationInsights(this, "IsbApplicationInsights", {
