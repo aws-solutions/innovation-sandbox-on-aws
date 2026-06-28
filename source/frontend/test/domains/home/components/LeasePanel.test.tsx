@@ -28,6 +28,27 @@ vi.mock(
   }),
 );
 
+// Mock the useModal hook used by LeasePanel
+vi.mock("@amzn/innovation-sandbox-frontend/hooks/useModal", () => ({
+  useModal: () => ({
+    showModal: vi.fn(),
+    hideModal: vi.fn(),
+  }),
+}));
+
+// Mock the useGetConfigurations hook
+vi.mock("@amzn/innovation-sandbox-frontend/domains/settings/hooks", () => ({
+  useGetConfigurations: () => ({
+    data: {
+      leases: {
+        maxDurationHours: 720,
+      },
+    },
+    isLoading: false,
+    isError: false,
+  }),
+}));
+
 describe("LeasePanel", () => {
   const renderComponent = (lease: Lease) => {
     return renderWithQueryClient(

@@ -33,7 +33,7 @@ export const authorizationMap: AuthorizationMapType = {
     POST: ["Manager", "Admin"],
   },
   "/leases/{param}/terminate": {
-    POST: ["Manager", "Admin"],
+    POST: ["User", "Manager", "Admin"],
   },
   "/leases/{param}/freeze": {
     POST: ["Manager", "Admin"],

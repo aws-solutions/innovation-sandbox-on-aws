@@ -922,6 +922,20 @@ async function terminateLeaseHandler(
     });
   }
 
+  // Validate user owns the lease or has Admin/Manager role
+  if (isUserNotAllowedByEmail(context.user, lease.userEmail)) {
+    throw createHttpJSendError({
+      statusCode: 403,
+      data: {
+        errors: [
+          {
+            message: `User is not authorized to terminate this lease.`,
+          },
+        ],
+      },
+    });
+  }
+
   try {
     await InnovationSandbox.terminateLease(
       { lease, expiredStatus: "ManuallyTerminated" },

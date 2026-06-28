@@ -371,7 +371,7 @@ describe("authorization", () => {
   it.each([
     { role: "Admin", authorized: true },
     { role: "Manager", authorized: true },
-    { role: "User", authorized: false },
+    { role: "User", authorized: true },
   ] as const)(
     "POST /leases/{param}/terminate authorization for $role -> expected: $authorized",
     async ({ role, authorized }) => {
