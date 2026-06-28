@@ -63,7 +63,10 @@ import { getContextFromMapping } from "@amzn/innovation-sandbox-infrastructure/h
 import { addCfnGuardSuppression } from "@amzn/innovation-sandbox-infrastructure/helpers/cfn-guard";
 import { ConditionAspect } from "@amzn/innovation-sandbox-infrastructure/helpers/cfn-utils";
 import { CustomDomainParameter } from "@amzn/innovation-sandbox-infrastructure/helpers/custom-domain-params";
-import { isDevMode } from "@amzn/innovation-sandbox-infrastructure/helpers/deployment-mode";
+import {
+  getDeploymentMode,
+  isDevMode,
+} from "@amzn/innovation-sandbox-infrastructure/helpers/deployment-mode";
 
 export interface CloudFrontUiApiProps {
   restApi: ApiGatewayRestApi;
@@ -389,6 +392,7 @@ export class CloudfrontUiApi extends Construct {
         Source.asset(
           buildFrontend(
             path.join(__dirname, "..", "..", "..", "..", "frontend"),
+            getDeploymentMode(scope),
           ),
         ),
       ],
@@ -463,7 +467,7 @@ export class CloudfrontUiApi extends Construct {
 /**
  * Builds the frontend application at synth time and returns the dist path
  */
-function buildFrontend(frontendPath: string): string {
+function buildFrontend(frontendPath: string, deploymentMode: string): string {
   const distPath = path.join(frontendPath, "dist");
 
   if (existsSync(distPath)) {
@@ -478,6 +482,10 @@ function buildFrontend(frontendPath: string): string {
     execSync("npm run build", { // NOSONAR typescript:S4036 - only used in cdk synth process
       cwd: frontendPath,
       stdio: "inherit",
+      env: {
+        ...process.env,
+        VITE_DEPLOYMENT_MODE: deploymentMode,
+      },
     });
 
     console.log(`Frontend build completed successfully at ${distPath}`);
