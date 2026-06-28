@@ -94,10 +94,12 @@ describe("EditBudgetSettings", () => {
     });
 
     const maxSpendInput = screen.getByLabelText("Maximum Spend (USD)");
-    await user.clear(maxSpendInput);
-    await user.type(maxSpendInput, "2000");
+    await user.tripleClick(maxSpendInput);
+    await user.keyboard("2000");
 
-    await user.click(screen.getByRole("button", { name: /save changes/i }));
+    const saveButton = screen.getByRole("button", { name: /save changes/i });
+    await waitFor(() => expect(saveButton).toBeEnabled());
+    await user.click(saveButton);
 
     await waitFor(() => {
       expect(showSuccessToast).toHaveBeenCalledWith(
@@ -125,10 +127,12 @@ describe("EditBudgetSettings", () => {
     });
 
     const maxSpendInput = screen.getByLabelText("Maximum Spend (USD)");
-    await user.clear(maxSpendInput);
-    await user.type(maxSpendInput, "2000");
+    await user.tripleClick(maxSpendInput);
+    await user.keyboard("2000");
 
-    await user.click(screen.getByRole("button", { name: /save changes/i }));
+    const saveButton = screen.getByRole("button", { name: /save changes/i });
+    await waitFor(() => expect(saveButton).toBeEnabled());
+    await user.click(saveButton);
 
     await waitFor(() => {
       expect(showErrorToast).toHaveBeenCalledWith(

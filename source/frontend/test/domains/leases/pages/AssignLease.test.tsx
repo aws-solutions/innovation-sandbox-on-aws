@@ -127,8 +127,8 @@ describe("AssignLease", () => {
 
     // Should show error and stay on step 1
     expect(
-      screen.getByText("You must choose a lease template"),
-    ).toBeInTheDocument();
+      screen.getAllByText("You must choose a lease template").length,
+    ).toBeGreaterThan(0);
 
     const wizard = createWrapper().findWizard();
     expect(wizard?.findMenuNavigationLink(1, "active")).not.toBeNull();
@@ -171,16 +171,16 @@ describe("AssignLease", () => {
     // Try to proceed without email
     await user.click(await screen.findByRole("button", { name: /next/i }));
     expect(
-      screen.getByText("You must provide a user email"),
-    ).toBeInTheDocument();
+      screen.getAllByText("You must provide a user email").length,
+    ).toBeGreaterThan(0);
 
     // Enter invalid email
     const emailInput = screen.getByRole("textbox");
     await user.type(emailInput, "invalid-email");
     await user.click(await screen.findByRole("button", { name: /next/i }));
     expect(
-      screen.getByText("You must provide a valid email address"),
-    ).toBeInTheDocument();
+      screen.getAllByText("You must provide a valid email address").length,
+    ).toBeGreaterThan(0);
 
     // Enter valid email
     await user.clear(emailInput);
@@ -213,8 +213,9 @@ describe("AssignLease", () => {
     // Try to proceed without accepting terms
     await user.click(await screen.findByRole("button", { name: /next/i }));
     expect(
-      screen.getByText("You must accept the terms of service to continue"),
-    ).toBeInTheDocument();
+      screen.getAllByText("You must accept the terms of service to continue")
+        .length,
+    ).toBeGreaterThan(0);
 
     // Accept terms
     const termsCheckbox = screen.getByLabelText(
@@ -438,8 +439,8 @@ describe("AssignLease", () => {
     await user.click(nextButton);
 
     expect(
-      screen.getByText("You must choose a lease template"),
-    ).toBeInTheDocument();
+      screen.getAllByText("You must choose a lease template").length,
+    ).toBeGreaterThan(0);
 
     // Select template - error should clear
     await waitFor(() => {

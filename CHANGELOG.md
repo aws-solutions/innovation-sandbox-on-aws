@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.12] - 2026-06-26
+
+### Security
+
+- Updated amazonlinux base image digest to mitigate:
+  - [CVE-2026-42504](https://nvd.nist.gov/vuln/detail/CVE-2026-42504) (golang)
+  - [CVE-2026-49839](https://nvd.nist.gov/vuln/detail/CVE-2026-49839) (jq)
+  - `openssl-libs`, `openssl-fips-provider-latest`:
+    - [CVE-2026-34181](https://nvd.nist.gov/vuln/detail/CVE-2026-34181)
+    - [CVE-2026-34182](https://nvd.nist.gov/vuln/detail/CVE-2026-34182)
+    - [CVE-2026-34183](https://nvd.nist.gov/vuln/detail/CVE-2026-34183)
+    - [CVE-2026-42768](https://nvd.nist.gov/vuln/detail/CVE-2026-42768)
+    - [CVE-2026-45445](https://nvd.nist.gov/vuln/detail/CVE-2026-45445)
+    - [CVE-2026-45447](https://nvd.nist.gov/vuln/detail/CVE-2026-45447)
+  - [CVE-2026-8643](https://nvd.nist.gov/vuln/detail/CVE-2026-8643) (python3-pip, python3-pip-wheel)
+- Added `form-data` override and upgraded `vite` to mitigate:
+  - [CVE-2026-12143](https://nvd.nist.gov/vuln/detail/CVE-2026-12143) (form-data)
+  - [CVE-2026-53571](https://nvd.nist.gov/vuln/detail/CVE-2026-53571) (vite)
+
 ## [1.2.11] - 2026-06-15
 
 ### Fixed
