@@ -32,6 +32,7 @@ import {
   useGetPendingApprovals,
   useGetPendingExtensions,
   useReviewLease,
+  useReviewLeaseExtension,
 } from "@amzn/innovation-sandbox-frontend/domains/leases/hooks";
 import { createDateSortingComparator } from "@amzn/innovation-sandbox-frontend/helpers/date-sorting-comparator";
 import { useBreadcrumb } from "@amzn/innovation-sandbox-frontend/hooks/useBreadcrumb";
@@ -154,6 +155,7 @@ export const ListApprovals = () => {
 
   // state
   const [selectedRequests, setSelectedRequests] = useState<Lease[]>([]);
+  const [selectedExtensions, setSelectedExtensions] = useState<Lease[]>([]);
 
   // api hooks
   const { data: requests, isFetching, refetch } = useGetPendingApprovals();
@@ -165,6 +167,7 @@ export const ListApprovals = () => {
   const { mutateAsync: reviewLease } = useReviewLease({
     skipInvalidation: true,
   });
+  const { mutateAsync: reviewExtension } = useReviewLeaseExtension();
 
   useEffect(() => {
     setBreadcrumb([
@@ -193,6 +196,56 @@ export const ListApprovals = () => {
   const handleSelectionChange = ({ detail }: { detail: any }) => {
     const approvals = detail.selectedItems as Lease[];
     setSelectedRequests(approvals);
+  };
+
+  const handleExtensionSelectionChange = ({ detail }: { detail: any }) => {
+    const extensions = detail.selectedItems as Lease[];
+    setSelectedExtensions(extensions);
+  };
+
+  const showExtensionReviewModal = (mode: "approve" | "deny") => {
+    showModal({
+      header:
+        mode === "approve"
+          ? "Approve extension request(s)"
+          : "Deny extension request(s)",
+      content: (
+        <BatchActionReview
+          items={selectedExtensions}
+          description={`${selectedExtensions.length} extension request(s) to review`}
+          columnDefinitions={extensionColumnDefinitions}
+          identifierKey="leaseId"
+          sequential
+          onSubmit={async (lease: Lease) => {
+            await reviewExtension({
+              leaseId: lease.leaseId,
+              action: mode === "approve" ? "Approve" : "Deny",
+            });
+            setSelectedExtensions((prev) =>
+              prev.filter((r) => r.leaseId !== lease.leaseId),
+            );
+          }}
+          onSuccess={() => {
+            queryClient.invalidateQueries({
+              queryKey: ["leases"],
+              refetchType: "all",
+            });
+            showSuccessToast(
+              mode === "approve"
+                ? "Extension request(s) were successfully approved."
+                : "Extension request(s) were successfully denied.",
+            );
+          }}
+          onError={() =>
+            showErrorToast(
+              "One or more extension requests failed to review, try resubmitting.",
+              "Failed to review extension requests",
+            )
+          }
+        />
+      ),
+      size: "max",
+    });
   };
 
   const extensionColumnDefinitions = [
@@ -316,13 +369,31 @@ export const ListApprovals = () => {
                 header="Extension Requests"
                 totalItemsCount={(extensionRequests || []).length}
                 items={extensionRequests || []}
+                selectedItems={selectedExtensions}
+                onSelectionChange={handleExtensionSelectionChange}
                 loading={isFetchingExtensions}
                 actions={
-                  <Button
-                    iconName="refresh"
-                    onClick={() => refetchExtensions()}
-                    disabled={isFetchingExtensions}
-                  />
+                  <SpaceBetween direction="horizontal" size="s">
+                    <Button
+                      iconName="refresh"
+                      onClick={() => refetchExtensions()}
+                      disabled={isFetchingExtensions}
+                    />
+                    <ButtonDropdown
+                      disabled={selectedExtensions.length === 0}
+                      items={[
+                        { text: "Approve request(s)", id: "approve" },
+                        { text: "Deny request(s)", id: "deny" },
+                      ]}
+                      onItemClick={({ detail }) => {
+                        showExtensionReviewModal(
+                          detail.id === "approve" ? "approve" : "deny",
+                        );
+                      }}
+                    >
+                      Actions
+                    </ButtonDropdown>
+                  </SpaceBetween>
                 }
               />
             ),

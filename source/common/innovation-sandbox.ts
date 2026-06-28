@@ -1096,10 +1096,10 @@ export class InnovationSandbox {
 
     addCorrelationContext(logger, searchableLeaseProperties(lease));
 
+    const { pendingExtensionRequest: _, ...leaseWithoutExtension } = lease;
     const updatedLease = await leaseStore.update({
-      ...lease,
+      ...leaseWithoutExtension,
       expirationDate: requestedExpirationDate,
-      pendingExtensionRequest: undefined,
     });
 
     await isbEventBridgeClient.sendIsbEvent(
@@ -1139,11 +1139,9 @@ export class InnovationSandbox {
 
     addCorrelationContext(logger, searchableLeaseProperties(lease));
 
-    // Clear pending extension request
-    await leaseStore.update({
-      ...lease,
-      pendingExtensionRequest: undefined,
-    });
+    // Clear pending extension request by omitting it from the updated lease
+    const { pendingExtensionRequest: _, ...leaseWithoutExtension } = lease;
+    await leaseStore.update(leaseWithoutExtension);
 
     await isbEventBridgeClient.sendIsbEvent(
       tracer,
