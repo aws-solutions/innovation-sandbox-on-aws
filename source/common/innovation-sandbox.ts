@@ -1053,7 +1053,7 @@ export class InnovationSandbox {
         ...lease,
         pendingExtensionRequest: {
           requestedExpirationDate,
-          comments,
+          ...(comments !== undefined && { comments }),
           requestedAt: nowAsIsoDatetimeString(),
           requestedBy: user.email,
         },
