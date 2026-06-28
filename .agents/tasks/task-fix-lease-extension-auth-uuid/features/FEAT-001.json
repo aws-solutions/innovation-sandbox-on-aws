@@ -29,5 +29,5 @@
     "npm run test:update-snapshots && npm test"
   ],
   "blocked_reason": null,
-  "findings": "Reverted UUID-based lookup to base64 composite key approach. All 139 test files pass (1429 tests). CDK snapshot updated after removing UuidIndex GSI. Authorization map entries and ARN extractor for /extend/review path kept intact to fix the 403 error. Frontend now passes lease.leaseId (base64 encoded composite key) for both extension request and review."
+  "findings": "Reverted UUID-based lookup to base64 composite key approach. All 139 test files pass (1429 tests). CDK snapshot updated after removing UuidIndex GSI. Authorization map entries and ARN extractor for /extend/review path kept intact to fix the 403 error. Frontend now passes lease.leaseId (base64 encoded composite key) for both extension request and review. Additional fix: used conditional spread for comments field in pendingExtensionRequest to prevent DynamoDB marshaller error when comments is undefined."
 }
