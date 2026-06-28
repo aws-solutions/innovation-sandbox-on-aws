@@ -31,7 +31,7 @@ export const BaseLayout = ({ children }: AppLayoutProps) => {
   const navigate = useNavigate();
   const location = useLocation();
   const { breadcrumb } = useAppContext();
-  const { user } = useUser();
+  const { user, isAdmin, isManager } = useUser();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [navigationOpen, setNavigationOpen] = useState(
     window.innerWidth > LARGE_DISPLAY_MINIMUM_WIDTH,
@@ -40,7 +40,7 @@ export const BaseLayout = ({ children }: AppLayoutProps) => {
   const [toolsContent, setToolsContent] = useState<ReactNode>(null);
 
   const { data: versionData } = useVersionCheck({
-    enabled: user?.roles?.includes("Admin"),
+    enabled: isAdmin,
   });
 
   const onExit = useCallback(() => {
@@ -50,8 +50,6 @@ export const BaseLayout = ({ children }: AppLayoutProps) => {
   }, [queryClient]);
 
   const navigation = useMemo(() => {
-    const isAdmin = user?.roles?.includes("Admin");
-    const isManager = user?.roles?.includes("Manager");
     const navigationItems: SideNavigationProps.Item[] = [];
 
     // Home (all users)
@@ -133,7 +131,7 @@ export const BaseLayout = ({ children }: AppLayoutProps) => {
         )}
       </>
     );
-  }, [user?.roles, navigate, location.pathname, versionData]);
+  }, [isAdmin, isManager, navigate, location.pathname, versionData]);
 
   if (isLoggingOut) {
     return <FullPageLoader label="Signing out..." />;

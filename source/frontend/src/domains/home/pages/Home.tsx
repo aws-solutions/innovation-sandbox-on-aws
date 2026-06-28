@@ -20,7 +20,7 @@ export const Home = () => {
   const navigate = useNavigate();
   const setBreadcrumb = useBreadcrumb();
   const { setTools } = useAppLayoutContext();
-  const { user, isAdmin, isManager } = useUser();
+  const { isAdmin, isManager } = useUser();
 
   useEffect(() => {
     setBreadcrumb([{ text: "Home", href: "/" }]);
@@ -28,7 +28,7 @@ export const Home = () => {
   }, []);
 
   const body = () => {
-    if (user?.roles?.includes("Admin")) {
+    if (isAdmin) {
       return (
         <SpaceBetween size="m">
           <Divider />
@@ -41,7 +41,7 @@ export const Home = () => {
       );
     }
 
-    if (user?.roles?.includes("Manager")) {
+    if (isManager) {
       return (
         <SpaceBetween size="m">
           <Divider />
