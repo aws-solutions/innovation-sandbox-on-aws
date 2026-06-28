@@ -22,6 +22,7 @@ import { AssignLease } from "@amzn/innovation-sandbox-frontend/domains/leases/pa
 import { EditBudgetSettings as EditLeaseBudgetSettings } from "@amzn/innovation-sandbox-frontend/domains/leases/pages/EditBudgetSettings";
 import { EditCostReportSettings as EditLeaseCostReportSettings } from "@amzn/innovation-sandbox-frontend/domains/leases/pages/EditCostReportSettings";
 import { EditDurationSettings as EditLeaseDurationSettings } from "@amzn/innovation-sandbox-frontend/domains/leases/pages/EditDurationSettings";
+import { ExtensionApprovalDetails } from "@amzn/innovation-sandbox-frontend/domains/leases/pages/ExtensionApprovalDetails";
 import { LeaseDetails } from "@amzn/innovation-sandbox-frontend/domains/leases/pages/LeaseDetails";
 import { ListApprovals } from "@amzn/innovation-sandbox-frontend/domains/leases/pages/ListApprovals";
 import { ListLeases } from "@amzn/innovation-sandbox-frontend/domains/leases/pages/ListLeases";
@@ -65,6 +66,10 @@ export const App = () => {
     { path: "/accounts/new", Element: AddAccounts },
     { path: "/approvals", Element: ListApprovals },
     { path: "/approvals/:leaseId", Element: ApprovalDetails },
+    {
+      path: "/approvals/extensions/:leaseId",
+      Element: ExtensionApprovalDetails,
+    },
     { path: "/leases", Element: ListLeases },
     { path: "/leases/:leaseId", Element: LeaseDetails },
     { path: "/leases/:leaseId/edit/budget", Element: EditLeaseBudgetSettings },

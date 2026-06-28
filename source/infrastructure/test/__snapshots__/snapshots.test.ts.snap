@@ -8175,6 +8175,9 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
             "LeaseFrozen",
             "LeaseUnfrozen",
             "LeaseProvisioningFailed",
+            "LeaseExtensionRequested",
+            "LeaseExtensionApproved",
+            "LeaseExtensionDenied",
             "AccountCleanupFailed",
             "AccountDriftDetected",
             "LeaseBudgetThresholdAlert",
@@ -11300,7 +11303,7 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
       "UpdateReplacePolicy": "Retain",
       "DeletionPolicy": "Retain"
     },
-    "IsbRestApiDeployment120FC0535d19a79d318ac2087c393ccf48eaff60": {
+    "IsbRestApiDeployment120FC0533f5379d18419393d9b0e665eed5a0e4a": {
       "Type": "AWS::ApiGateway::Deployment",
       "Properties": {
         "Description": "Innovation Sandbox on AWS Rest API",
@@ -11337,6 +11340,10 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
         "IsbRestApiconfigurationsGETCB095983",
         "IsbRestApiconfigurationsPOSTD70E362B",
         "IsbRestApiconfigurations6FE57EA4",
+        "IsbRestApileasesleaseIdextendPOST1D351494",
+        "IsbRestApileasesleaseIdextend0461FAB0",
+        "IsbRestApileasesleaseIdextendreviewPOST05A27405",
+        "IsbRestApileasesleaseIdextendreview9FF9103B",
         "IsbRestApileasesleaseIdfreezePOSTDE894D78",
         "IsbRestApileasesleaseIdfreeze3A28784A",
         "IsbRestApileasesleaseIdGETFC53DF30",
@@ -11376,7 +11383,7 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
           "Format": "$context.identity.sourceIp $context.identity.caller $context.identity.user [$context.requestTime] \\"$context.httpMethod $context.resourcePath $context.protocol\\" $context.status $context.responseLength $context.requestId"
         },
         "DeploymentId": {
-          "Ref": "IsbRestApiDeployment120FC0535d19a79d318ac2087c393ccf48eaff60"
+          "Ref": "IsbRestApiDeployment120FC0533f5379d18419393d9b0e665eed5a0e4a"
         },
         "MethodSettings": [
           {
@@ -12884,6 +12891,272 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
         },
         "ResourceId": {
           "Ref": "IsbRestApileasesleaseIdterminate0B5F429B"
+        },
+        "RestApiId": {
+          "Ref": "IsbRestApi377E2CC6"
+        }
+      }
+    },
+    "IsbRestApileasesleaseIdextend0461FAB0": {
+      "Type": "AWS::ApiGateway::Resource",
+      "Properties": {
+        "ParentId": {
+          "Ref": "IsbRestApileasesleaseId9851F99B"
+        },
+        "PathPart": "extend",
+        "RestApiId": {
+          "Ref": "IsbRestApi377E2CC6"
+        }
+      }
+    },
+    "IsbRestApileasesleaseIdextendPOSTApiPermissionIsbComputeStackIsbRestApiAC643E2APOSTleasesleaseIdextend7DB8C405": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "LeasesLambdaFunction6133D88B",
+            "Arn"
+          ]
+        },
+        "Principal": "apigateway.amazonaws.com",
+        "SourceArn": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:",
+              {
+                "Ref": "AWS::Partition"
+              },
+              ":execute-api:",
+              {
+                "Ref": "AWS::Region"
+              },
+              ":",
+              {
+                "Ref": "AWS::AccountId"
+              },
+              ":",
+              {
+                "Ref": "IsbRestApi377E2CC6"
+              },
+              "/",
+              {
+                "Ref": "IsbRestApiDeploymentStageprod7DDD9304"
+              },
+              "/POST/leases/*/extend"
+            ]
+          ]
+        }
+      }
+    },
+    "IsbRestApileasesleaseIdextendPOSTApiPermissionTestIsbComputeStackIsbRestApiAC643E2APOSTleasesleaseIdextendF6911E0B": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "LeasesLambdaFunction6133D88B",
+            "Arn"
+          ]
+        },
+        "Principal": "apigateway.amazonaws.com",
+        "SourceArn": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:",
+              {
+                "Ref": "AWS::Partition"
+              },
+              ":execute-api:",
+              {
+                "Ref": "AWS::Region"
+              },
+              ":",
+              {
+                "Ref": "AWS::AccountId"
+              },
+              ":",
+              {
+                "Ref": "IsbRestApi377E2CC6"
+              },
+              "/test-invoke-stage/POST/leases/*/extend"
+            ]
+          ]
+        }
+      }
+    },
+    "IsbRestApileasesleaseIdextendPOST1D351494": {
+      "Type": "AWS::ApiGateway::Method",
+      "Properties": {
+        "AuthorizationType": "CUSTOM",
+        "AuthorizerId": {
+          "Ref": "AuthorizerBD825682"
+        },
+        "HttpMethod": "POST",
+        "Integration": {
+          "IntegrationHttpMethod": "POST",
+          "Type": "AWS_PROXY",
+          "Uri": {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition"
+                },
+                ":apigateway:",
+                {
+                  "Ref": "AWS::Region"
+                },
+                ":lambda:path/2015-03-31/functions/",
+                {
+                  "Fn::GetAtt": [
+                    "LeasesLambdaFunction6133D88B",
+                    "Arn"
+                  ]
+                },
+                "/invocations"
+              ]
+            ]
+          }
+        },
+        "ResourceId": {
+          "Ref": "IsbRestApileasesleaseIdextend0461FAB0"
+        },
+        "RestApiId": {
+          "Ref": "IsbRestApi377E2CC6"
+        }
+      }
+    },
+    "IsbRestApileasesleaseIdextendreview9FF9103B": {
+      "Type": "AWS::ApiGateway::Resource",
+      "Properties": {
+        "ParentId": {
+          "Ref": "IsbRestApileasesleaseIdextend0461FAB0"
+        },
+        "PathPart": "review",
+        "RestApiId": {
+          "Ref": "IsbRestApi377E2CC6"
+        }
+      }
+    },
+    "IsbRestApileasesleaseIdextendreviewPOSTApiPermissionIsbComputeStackIsbRestApiAC643E2APOSTleasesleaseIdextendreviewACBF8B1A": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "LeasesLambdaFunction6133D88B",
+            "Arn"
+          ]
+        },
+        "Principal": "apigateway.amazonaws.com",
+        "SourceArn": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:",
+              {
+                "Ref": "AWS::Partition"
+              },
+              ":execute-api:",
+              {
+                "Ref": "AWS::Region"
+              },
+              ":",
+              {
+                "Ref": "AWS::AccountId"
+              },
+              ":",
+              {
+                "Ref": "IsbRestApi377E2CC6"
+              },
+              "/",
+              {
+                "Ref": "IsbRestApiDeploymentStageprod7DDD9304"
+              },
+              "/POST/leases/*/extend/review"
+            ]
+          ]
+        }
+      }
+    },
+    "IsbRestApileasesleaseIdextendreviewPOSTApiPermissionTestIsbComputeStackIsbRestApiAC643E2APOSTleasesleaseIdextendreview44E271D8": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "LeasesLambdaFunction6133D88B",
+            "Arn"
+          ]
+        },
+        "Principal": "apigateway.amazonaws.com",
+        "SourceArn": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:",
+              {
+                "Ref": "AWS::Partition"
+              },
+              ":execute-api:",
+              {
+                "Ref": "AWS::Region"
+              },
+              ":",
+              {
+                "Ref": "AWS::AccountId"
+              },
+              ":",
+              {
+                "Ref": "IsbRestApi377E2CC6"
+              },
+              "/test-invoke-stage/POST/leases/*/extend/review"
+            ]
+          ]
+        }
+      }
+    },
+    "IsbRestApileasesleaseIdextendreviewPOST05A27405": {
+      "Type": "AWS::ApiGateway::Method",
+      "Properties": {
+        "AuthorizationType": "CUSTOM",
+        "AuthorizerId": {
+          "Ref": "AuthorizerBD825682"
+        },
+        "HttpMethod": "POST",
+        "Integration": {
+          "IntegrationHttpMethod": "POST",
+          "Type": "AWS_PROXY",
+          "Uri": {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition"
+                },
+                ":apigateway:",
+                {
+                  "Ref": "AWS::Region"
+                },
+                ":lambda:path/2015-03-31/functions/",
+                {
+                  "Fn::GetAtt": [
+                    "LeasesLambdaFunction6133D88B",
+                    "Arn"
+                  ]
+                },
+                "/invocations"
+              ]
+            ]
+          }
+        },
+        "ResourceId": {
+          "Ref": "IsbRestApileasesleaseIdextendreview9FF9103B"
         },
         "RestApiId": {
           "Ref": "IsbRestApi377E2CC6"

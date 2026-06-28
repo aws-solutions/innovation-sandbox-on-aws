@@ -9,6 +9,7 @@ import {
   extractMethodAndPathFromArn,
   extractMethodAndPathFromArnWithPathParameterEnd,
   extractMethodAndPathFromArnWithPathParameterMiddle,
+  extractMethodAndPathFromArnWithPathParameterThirdFromEnd,
   isAuthorized,
 } from "@amzn/innovation-sandbox-authorizer/authorization.js";
 import { AuthorizerLambdaEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/authorizer-lambda-environment.js";
@@ -108,6 +109,27 @@ describe("authorization", () => {
     });
     result = extractMethodAndPathFromArnWithPathParameterMiddle(
       methodArnPrefix + "/PUT/accounts",
+    );
+    expect(result).toBeNull();
+  });
+
+  it("extract method and path from method ARN with path parameter third from end", () => {
+    let result = extractMethodAndPathFromArnWithPathParameterThirdFromEnd(
+      methodArnPrefix + "/POST/leases/550e8400-e29b-41d4-a716-446655440000/extend/review",
+    );
+    expect(result).toEqual({
+      method: "POST",
+      path: "/leases/{param}/extend/review",
+    });
+    result = extractMethodAndPathFromArnWithPathParameterThirdFromEnd(
+      methodArnPrefix + "/POST/v2/leases/550e8400-e29b-41d4-a716-446655440000/extend/review",
+    );
+    expect(result).toEqual({
+      method: "POST",
+      path: "/v2/leases/{param}/extend/review",
+    });
+    result = extractMethodAndPathFromArnWithPathParameterThirdFromEnd(
+      methodArnPrefix + "/PUT/leases/Lease101",
     );
     expect(result).toBeNull();
   });
@@ -349,7 +371,7 @@ describe("authorization", () => {
   it.each([
     { role: "Admin", authorized: true },
     { role: "Manager", authorized: true },
-    { role: "User", authorized: false },
+    { role: "User", authorized: true },
   ] as const)(
     "POST /leases/{param}/terminate authorization for $role -> expected: $authorized",
     async ({ role, authorized }) => {
@@ -391,6 +413,48 @@ describe("authorization", () => {
     "DELETE /leaseTemplates/{param} authorization for $role -> expected: $authorized",
     async ({ role, authorized }) => {
       const methodArn = methodArnPrefix + "/DELETE/leaseTemplates/Template101";
+      const testUser: IsbUser = {
+        ...testUserBase,
+        roles: [role],
+      };
+      const authorizationToken = jwt.sign({ user: testUser }, jwtSecret);
+      expect(
+        await isAuthorized({ methodArn, authorizationToken }, testContext),
+      ).toEqual(authorized);
+    },
+  );
+
+  it.each([
+    { role: "Admin", authorized: true },
+    { role: "Manager", authorized: true },
+    { role: "User", authorized: true },
+  ] as const)(
+    "POST /leases/{param}/extend authorization for $role -> expected: $authorized",
+    async ({ role, authorized }) => {
+      const methodArn =
+        methodArnPrefix +
+        "/POST/leases/550e8400-e29b-41d4-a716-446655440000/extend";
+      const testUser: IsbUser = {
+        ...testUserBase,
+        roles: [role],
+      };
+      const authorizationToken = jwt.sign({ user: testUser }, jwtSecret);
+      expect(
+        await isAuthorized({ methodArn, authorizationToken }, testContext),
+      ).toEqual(authorized);
+    },
+  );
+
+  it.each([
+    { role: "Admin", authorized: true },
+    { role: "Manager", authorized: false },
+    { role: "User", authorized: false },
+  ] as const)(
+    "POST /leases/{param}/extend/review authorization for $role -> expected: $authorized",
+    async ({ role, authorized }) => {
+      const methodArn =
+        methodArnPrefix +
+        "/POST/leases/550e8400-e29b-41d4-a716-446655440000/extend/review";
       const testUser: IsbUser = {
         ...testUserBase,
         roles: [role],

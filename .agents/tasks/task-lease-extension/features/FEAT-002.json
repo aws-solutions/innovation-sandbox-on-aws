@@ -1,0 +1,40 @@
+{
+  "id": "FEAT-002",
+  "type": "feat",
+  "description": "Backend: Add lease extension request, approval, and denial domain logic with events and notifications. This is the core feature implementing the full lease extension workflow in the commons layer and API handler.",
+  "status": "completed",
+  "steps": [
+    "Step 1 - Add 'LeaseExtensionRequested' and 'LeaseExtensionApproved' and 'LeaseExtensionDenied' to EventDetailTypes in source/common/events/index.ts",
+    "Step 2 - Create source/common/events/lease-extension-requested-event.ts following the pattern in lease-requested-event.ts. Include fields: leaseId (LeaseKeySchema), userEmail, requestedExpirationDate (ISO datetime string), comments (optional FreeTextSchema)",
+    "Step 3 - Create source/common/events/lease-extension-approved-event.ts following the pattern in lease-approved-event.ts. Include fields: leaseId (LeaseKeySchema), userEmail, approvedBy, newExpirationDate",
+    "Step 4 - Create source/common/events/lease-extension-denied-event.ts following the pattern in lease-denied-event.ts. Include fields: leaseId (LeaseKeySchema), userEmail, deniedBy, comments (optional)",
+    "Step 5 - Add a new static method `requestLeaseExtension` to the InnovationSandbox class in source/common/innovation-sandbox.ts. This method should: (a) accept the lease (must be Active or Frozen monitored lease), requested new expiration date, comments, and user context; (b) validate that the requested expiration date does not exceed globalConfig.leases.maxDurationHours from the lease startDate (use validateMaxDuration logic from global-config-utils.ts); (c) if validation fails, throw a new `LeaseExtensionExceedsMaxDurationError` (add this to the error classes at top of file); (d) emit a LeaseExtensionRequested event via isbEventBridgeClient; (e) return success",
+    "Step 6 - Add a new static method `approveLeaseExtension` to InnovationSandbox class. This method should: (a) accept the lease (must be Active or Frozen monitored lease), approver email; (b) update the lease expirationDate in the lease store using leaseStore.update(); (c) emit a LeaseExtensionApproved event; (d) return the updated lease",
+    "Step 7 - Add a new static method `denyLeaseExtension` to InnovationSandbox class. This method should: (a) accept the lease and denier IsbUser and optional comments; (b) emit a LeaseExtensionDenied event; (c) return",
+    "Step 8 - Add a new POST /leases/{leaseId}/extend route to the routes array in source/lambdas/api/leases/src/leases-handler.ts. Create a `requestLeaseExtensionHandler` function that: (a) parses the body with a Zod schema requiring requestedExpirationDate (ISO datetime) and optional comments; (b) retrieves the lease; (c) validates the user owns the lease OR has Admin/Manager role; (d) calls InnovationSandbox.requestLeaseExtension with appropriate context; (e) handles LeaseExtensionExceedsMaxDurationError by returning 400 with a clear error message about max duration exceeded",
+    "Step 9 - Add a new POST /leases/{leaseId}/extend/review route to the routes array in source/lambdas/api/leases/src/leases-handler.ts. Create a `reviewLeaseExtensionHandler` function that: (a) parses body with schema {action: 'Approve'|'Deny', comments?: string}; (b) retrieves the lease; (c) requires Admin/Manager role; (d) calls InnovationSandbox.approveLeaseExtension or denyLeaseExtension accordingly",
+    "Step 10 - Store pending extension requests. Add optional fields to MonitoredLeaseSchema in source/common/data/lease/lease.ts: `pendingExtensionRequest` as an optional object with shape {requestedExpirationDate: z.string().datetime(), comments: z.string().optional(), requestedAt: z.string().datetime(), requestedBy: z.string().email()}. Update LeaseSchemaVersion (bump by 1). The requestLeaseExtension method should store this on the lease, and approveLeaseExtension/denyLeaseExtension should clear it.",
+    "Step 11 - Add the 3 new event detail types to SubscribedEmailEvents array in source/common/isb-services/notification/email-events.ts",
+    "Step 12 - Add email template functions for all 3 events in source/common/isb-services/notification/email-templates.ts: (a) LeaseExtensionRequested - sent to admins/managers (bcc), subject: '[Action Required] Innovation Sandbox: Lease Extension Request'; (b) LeaseExtensionApproved - sent to user (to), subject: '[Informational] Innovation Sandbox: Lease Extension Approved'; (c) LeaseExtensionDenied - sent to user (to), subject: '[Informational] Innovation Sandbox: Lease Extension Denied'",
+    "Step 13 - Add case handlers for the 3 new events in the sendNotificationEmail switch statement in source/common/isb-services/notification/email-service.ts, following the existing pattern (parse event, build context with destination, call EmailTemplates function)",
+    "Step 14 - Add the CDK API Gateway resource for the new endpoints in source/infrastructure/lib/components/api/leases-api.ts: add an 'extend' sub-resource under leaseIdResource with POST method, and a 'review' sub-resource under that with POST method",
+    "Step 15 - Update CDK snapshot tests by running `npm run test:update-snapshots`",
+    "Step 16 - Add unit tests in source/lambdas/api/leases/test/leases-handler.test.ts for the new extend and extend/review endpoints, testing: (a) successful extension request; (b) extension request exceeding max duration returns 400; (c) extension approval; (d) extension denial; (e) unauthorized user gets 403; (f) lease not found returns 404"
+  ],
+  "acceptance_criteria": [
+    "`npm run build` passes - all TypeScript compiles with no errors",
+    "`npm test` passes - all tests including new handler tests pass",
+    "New POST /leases/{leaseId}/extend endpoint validates max duration against global config and returns 400 if exceeded",
+    "New POST /leases/{leaseId}/extend/review endpoint allows Admin/Manager to approve or deny extension requests",
+    "LeaseExtensionRequested event triggers email notification to admins/managers",
+    "LeaseExtensionApproved event triggers email notification to the user",
+    "LeaseExtensionDenied event triggers email notification to the user with denial comment",
+    "Pending extension request is stored on the lease record and cleared on approval/denial"
+  ],
+  "verification": [
+    "npm run build",
+    "npm test"
+  ],
+  "blocked_reason": null,
+  "findings": "All 16 steps completed. Build passes cleanly. All 1419 tests pass (139 test files). CDK snapshots updated (3 snapshots regenerated). LeaseSchemaVersion bumped from 3 to 4. The table-schemas.test.ts inline snapshot for MonitoredLeaseSchema hash did not change despite adding optional pendingExtensionRequest field - object-hash appears stable for optional schema additions. The email-notification-handler.test.ts required adding the 3 new event test cases due to RequiredTestCases type enforcement."
+}

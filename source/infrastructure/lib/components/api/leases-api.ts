@@ -186,5 +186,11 @@ export class LeasesApi {
 
     const leaseTerminateResource = leaseIdResource.addResource("terminate");
     leaseTerminateResource.addMethod("POST");
+
+    const leaseExtendResource = leaseIdResource.addResource("extend");
+    leaseExtendResource.addMethod("POST");
+
+    const leaseExtendReviewResource = leaseExtendResource.addResource("review");
+    leaseExtendReviewResource.addMethod("POST");
   }
 }

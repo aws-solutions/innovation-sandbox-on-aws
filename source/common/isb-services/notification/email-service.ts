@@ -5,6 +5,9 @@ import { AccountCleanupFailureEvent } from "@amzn/innovation-sandbox-commons/eve
 import { AccountDriftDetectedAlert } from "@amzn/innovation-sandbox-commons/events/account-drift-detected-alert.js";
 import { GroupCostReportGeneratedEvent } from "@amzn/innovation-sandbox-commons/events/group-cost-report-generated-event.js";
 import { GroupCostReportGeneratedFailureEvent } from "@amzn/innovation-sandbox-commons/events/group-cost-report-generated-failure-event.js";
+import { LeaseExtensionApprovedEvent } from "@amzn/innovation-sandbox-commons/events/lease-extension-approved-event.js";
+import { LeaseExtensionDeniedEvent } from "@amzn/innovation-sandbox-commons/events/lease-extension-denied-event.js";
+import { LeaseExtensionRequestedEvent } from "@amzn/innovation-sandbox-commons/events/lease-extension-requested-event.js";
 import { LeaseApprovedEvent } from "@amzn/innovation-sandbox-commons/events/lease-approved-event.js";
 import { LeaseBudgetThresholdBreachedAlert } from "@amzn/innovation-sandbox-commons/events/lease-budget-threshold-breached-alert.js";
 import { LeaseDeniedEvent } from "@amzn/innovation-sandbox-commons/events/lease-denied-event.js";
@@ -246,6 +249,57 @@ export class EmailService {
           EmailTemplates.LeaseProvisioningFailed(
             leaseProvisioningFailedEvent,
             provisioningFailedContext,
+          ),
+        );
+        break;
+      case "LeaseExtensionRequested":
+        const leaseExtensionRequestedEvent =
+          LeaseExtensionRequestedEvent.parse(isbAlert);
+        const leaseExtensionRequestedContext = {
+          webAppUrl: this.webAppUrl,
+          destination: {
+            bcc: await union(
+              await allAdmins(this.idcService),
+              await allManagers(this.idcService),
+            ),
+          },
+        };
+        await this.sendEmail(
+          EmailTemplates.LeaseExtensionRequested(
+            leaseExtensionRequestedEvent,
+            leaseExtensionRequestedContext,
+          ),
+        );
+        break;
+      case "LeaseExtensionApproved":
+        const leaseExtensionApprovedEvent =
+          LeaseExtensionApprovedEvent.parse(isbAlert);
+        const leaseExtensionApprovedContext = {
+          webAppUrl: this.webAppUrl,
+          destination: {
+            to: [leaseExtensionApprovedEvent.Detail.userEmail],
+          },
+        };
+        await this.sendEmail(
+          EmailTemplates.LeaseExtensionApproved(
+            leaseExtensionApprovedEvent,
+            leaseExtensionApprovedContext,
+          ),
+        );
+        break;
+      case "LeaseExtensionDenied":
+        const leaseExtensionDeniedEvent =
+          LeaseExtensionDeniedEvent.parse(isbAlert);
+        const leaseExtensionDeniedContext = {
+          webAppUrl: this.webAppUrl,
+          destination: {
+            to: [leaseExtensionDeniedEvent.Detail.userEmail],
+          },
+        };
+        await this.sendEmail(
+          EmailTemplates.LeaseExtensionDenied(
+            leaseExtensionDeniedEvent,
+            leaseExtensionDeniedContext,
           ),
         );
         break;

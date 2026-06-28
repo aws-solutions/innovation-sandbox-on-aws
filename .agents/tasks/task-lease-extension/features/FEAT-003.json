@@ -1,0 +1,33 @@
+{
+  "id": "FEAT-003",
+  "type": "feat",
+  "description": "Frontend: Add lease extension request UI for users and extension approval/denial UI for administrators. Implements the user-facing request button on lease details and the admin approval flow.",
+  "status": "completed",
+  "steps": [
+    "Step 1 - Add frontend service methods in source/frontend/src/domains/leases/service.ts: (a) `requestExtension(leaseId: string, request: {requestedExpirationDate: string, comments?: string})` calling POST /leases/{leaseId}/extend; (b) `reviewExtension(leaseId: string, action: 'Approve'|'Deny', comments?: string)` calling POST /leases/{leaseId}/extend/review",
+    "Step 2 - Add frontend types in source/frontend/src/domains/leases/types.ts: `LeaseExtensionRequest` type with requestedExpirationDate and optional comments",
+    "Step 3 - Add React Query hooks in source/frontend/src/domains/leases/hooks.ts: (a) `useRequestLeaseExtension` mutation hook; (b) `useReviewLeaseExtension` mutation hook; (c) `useGetPendingExtensions` query hook (select filter on leases with pendingExtensionRequest)",
+    "Step 4 - Create source/frontend/src/domains/leases/components/RequestExtensionModal.tsx: a modal component with a date picker for the new expiration date and optional comments textarea. Validate that the selected date is in the future and does not exceed the global max duration. On submit, call the requestExtension service method. Show success/error toast.",
+    "Step 5 - Add 'Request Extension' button to the LeaseDetails page in source/frontend/src/domains/leases/pages/LeaseDetails.tsx. The button should only be visible when the lease is in Active or Frozen status. Clicking it opens the RequestExtensionModal.",
+    "Step 6 - Create source/frontend/src/domains/leases/components/ReviewExtensionConfirmation.tsx: a component similar to ReviewLeaseConfirmation.tsx but for extensions. Shows the requested expiration date and comments. Has Approve and Deny buttons. On Deny, shows a textarea for denial comments.",
+    "Step 7 - Create source/frontend/src/domains/leases/pages/ExtensionApprovalDetails.tsx: a page that shows lease details plus the pending extension request info with approve/deny buttons. Follow the pattern from ApprovalDetails.tsx.",
+    "Step 8 - Update the ListApprovals page (source/frontend/src/domains/leases/pages/ListApprovals.tsx) to also show leases with pending extension requests in a separate table or section. Add a tab or section labeled 'Extension Requests' that filters active leases with pendingExtensionRequest field set.",
+    "Step 9 - Add routes in source/frontend/src/App.tsx for the new extension approval page: { path: '/approvals/extensions/:leaseId', Element: ExtensionApprovalDetails }",
+    "Step 10 - Show pending extension request status on the LeaseDetails page: if lease.pendingExtensionRequest is set, display an info box showing the requested expiration date, comments, and who requested it"
+  ],
+  "acceptance_criteria": [
+    "`npm run build` passes with all new frontend components type-checking correctly",
+    "`npm test` passes including any existing frontend tests (no regressions)",
+    "LeaseDetails page shows 'Request Extension' button for Active/Frozen leases",
+    "RequestExtensionModal validates max duration against global config and shows error if exceeded",
+    "ListApprovals page shows pending extension requests",
+    "ExtensionApprovalDetails page allows admin/manager to approve or deny with comments",
+    "Pending extension request status is visible on the lease details page"
+  ],
+  "verification": [
+    "npm run build",
+    "npm test"
+  ],
+  "blocked_reason": null,
+  "findings": "All 10 steps completed. Build passes cleanly. All 1419 tests pass (139 test files). Fixed pre-existing test issue in leases-handler.test.ts where the approveLeaseExtension mock return value did not properly clear pendingExtensionRequest (set to undefined) causing JSON serialization mismatch. Added useModal mock to LeaseDetails test since the component now uses the modal hook for the extension request flow. Used Tabs component from Cloudscape to separate Lease Requests and Extension Requests in ListApprovals page."
+}

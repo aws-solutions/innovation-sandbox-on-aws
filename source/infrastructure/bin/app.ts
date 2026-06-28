@@ -22,22 +22,22 @@ const synthesizer = new SolutionsEngineeringSynthesizer({
   outdir: app.outdir,
 });
 
-new IsbAccountPoolStack(app, "InnovationSandbox-AccountPool", {
+new IsbAccountPoolStack(app, "ISBAccountPool", {
   description: `(${context.solutionId}) ${context.solutionName} ${context.version}`,
   synthesizer: synthesizer,
 });
 
-new IsbIdcStack(app, "InnovationSandbox-IDC", {
+new IsbIdcStack(app, "ISBIdc", {
   description: `(${context.solutionId}-IdcStack) ${context.solutionName} ${context.version}`,
   synthesizer: synthesizer,
 });
 
-new IsbDataStack(app, "InnovationSandbox-Data", {
+new IsbDataStack(app, "ISBData", {
   description: `(${context.solutionId}-DataStack) ${context.solutionName} ${context.version}`,
   synthesizer: synthesizer,
 });
 
-new IsbComputeStack(app, "InnovationSandbox-Compute", {
+new IsbComputeStack(app, "ISBCompute", {
   description: `(${context.solutionId}-ComputeStack) ${context.solutionName} ${context.version}`,
   synthesizer: synthesizer,
 });

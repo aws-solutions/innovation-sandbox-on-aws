@@ -294,4 +294,5 @@ export class DynamoLeaseStore extends LeaseStore {
       nextPageIdentifier: base64EncodeCompositeKey(result.LastEvaluatedKey),
     };
   }
+
 }

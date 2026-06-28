@@ -5,6 +5,9 @@ import { AccountCleanupFailureEvent } from "@amzn/innovation-sandbox-commons/eve
 import { AccountDriftDetectedAlert } from "@amzn/innovation-sandbox-commons/events/account-drift-detected-alert.js";
 import { GroupCostReportGeneratedEvent } from "@amzn/innovation-sandbox-commons/events/group-cost-report-generated-event.js";
 import { GroupCostReportGeneratedFailureEvent } from "@amzn/innovation-sandbox-commons/events/group-cost-report-generated-failure-event.js";
+import { LeaseExtensionApprovedEvent } from "@amzn/innovation-sandbox-commons/events/lease-extension-approved-event.js";
+import { LeaseExtensionDeniedEvent } from "@amzn/innovation-sandbox-commons/events/lease-extension-denied-event.js";
+import { LeaseExtensionRequestedEvent } from "@amzn/innovation-sandbox-commons/events/lease-extension-requested-event.js";
 import { LeaseApprovedEvent } from "@amzn/innovation-sandbox-commons/events/lease-approved-event.js";
 import { LeaseBudgetThresholdBreachedAlert } from "@amzn/innovation-sandbox-commons/events/lease-budget-threshold-breached-alert.js";
 import { LeaseDeniedEvent } from "@amzn/innovation-sandbox-commons/events/lease-denied-event.js";
@@ -620,6 +623,69 @@ export namespace EmailTemplates {
       The lease has been reset to PendingApproval status and requires manager re-approval.
       The account (${event.Detail.accountId}) will be cleaned up and returned to the Available pool.
       Sign in to Innovation Sandbox on AWS ${context.webAppUrl} to investigate the blueprint configuration and retry the approval.
+    `,
+    };
+  }
+
+  export function LeaseExtensionRequested(
+    event: LeaseExtensionRequestedEvent,
+    context: EmailTemplatesContext,
+  ): SynthesizedEmail {
+    return {
+      bcc: context.destination.bcc!,
+      subject:
+        "[Action Required] Innovation Sandbox: Lease Extension Request",
+      htmlBody: `
+      <h1>Lease Extension Request from ${event.Detail.userEmail}</h1>
+      <p>A lease extension has been requested by sandbox user ${event.Detail.userEmail} for lease ID: ${event.Detail.leaseId.uuid}.
+      Requested new expiration date: ${event.Detail.requestedExpirationDate}.${event.Detail.comments ? ` Comments: ${event.Detail.comments}` : ""}
+      Sign in to Innovation Sandbox on AWS ${context.webAppUrl} to approve or deny the extension request.</p>
+    `,
+      textBody: `
+      Lease Extension Request from ${event.Detail.userEmail}
+      A lease extension has been requested by sandbox user ${event.Detail.userEmail} for lease ID: ${event.Detail.leaseId.uuid}.
+      Requested new expiration date: ${event.Detail.requestedExpirationDate}.${event.Detail.comments ? ` Comments: ${event.Detail.comments}` : ""}
+      Sign in to Innovation Sandbox on AWS ${context.webAppUrl} to approve or deny the extension request.
+    `,
+    };
+  }
+
+  export function LeaseExtensionApproved(
+    event: LeaseExtensionApprovedEvent,
+    context: EmailTemplatesContext,
+  ): SynthesizedEmail {
+    return {
+      to: context.destination.to!,
+      subject:
+        "[Informational] Innovation Sandbox: Lease Extension Approved",
+      htmlBody: `
+      <p>Your lease extension request for lease ID: ${event.Detail.leaseId.uuid} has been approved by ${event.Detail.approvedBy}.
+      Your new expiration date is ${event.Detail.newExpirationDate}.
+      Sign in to Innovation Sandbox on AWS ${context.webAppUrl} to view your updated lease.</p>
+    `,
+      textBody: `
+      Your lease extension request for lease ID: ${event.Detail.leaseId.uuid} has been approved by ${event.Detail.approvedBy}.
+      Your new expiration date is ${event.Detail.newExpirationDate}.
+      Sign in to Innovation Sandbox on AWS ${context.webAppUrl} to view your updated lease.
+    `,
+    };
+  }
+
+  export function LeaseExtensionDenied(
+    event: LeaseExtensionDeniedEvent,
+    context: EmailTemplatesContext,
+  ): SynthesizedEmail {
+    return {
+      to: context.destination.to!,
+      subject:
+        "[Informational] Innovation Sandbox: Lease Extension Denied",
+      htmlBody: `
+      <p>Your lease extension request for lease ID: ${event.Detail.leaseId.uuid} has been denied by ${event.Detail.deniedBy}.${event.Detail.comments ? ` Reason: ${event.Detail.comments}` : ""}
+      Contact your Innovation Sandbox on AWS administrator or manager for more details.</p>
+    `,
+      textBody: `
+      Your lease extension request for lease ID: ${event.Detail.leaseId.uuid} has been denied by ${event.Detail.deniedBy}.${event.Detail.comments ? ` Reason: ${event.Detail.comments}` : ""}
+      Contact your Innovation Sandbox on AWS administrator or manager for more details.
     `,
     };
   }

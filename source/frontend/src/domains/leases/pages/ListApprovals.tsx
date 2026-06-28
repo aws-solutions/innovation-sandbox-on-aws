@@ -7,6 +7,7 @@ import {
   ButtonDropdown,
   Header,
   SpaceBetween,
+  Tabs,
 } from "@cloudscape-design/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { DateTime } from "luxon";
@@ -14,7 +15,10 @@ import { useEffect, useState } from "react";
 
 import { TextLink } from "@amzn/innovation-sandbox-frontend/components/TextLink";
 
-import { LeaseWithLeaseId as Lease } from "@amzn/innovation-sandbox-commons/data/lease/lease";
+import {
+  LeaseWithLeaseId as Lease,
+  MonitoredLease,
+} from "@amzn/innovation-sandbox-commons/data/lease/lease";
 import { useAppLayoutContext } from "@amzn/innovation-sandbox-frontend/components/AppLayout/AppLayoutContext";
 import { ContentLayout } from "@amzn/innovation-sandbox-frontend/components/ContentLayout";
 import { InfoLink } from "@amzn/innovation-sandbox-frontend/components/InfoLink";
@@ -26,7 +30,9 @@ import {
 } from "@amzn/innovation-sandbox-frontend/components/Toast";
 import {
   useGetPendingApprovals,
+  useGetPendingExtensions,
   useReviewLease,
+  useReviewLeaseExtension,
 } from "@amzn/innovation-sandbox-frontend/domains/leases/hooks";
 import { createDateSortingComparator } from "@amzn/innovation-sandbox-frontend/helpers/date-sorting-comparator";
 import { useBreadcrumb } from "@amzn/innovation-sandbox-frontend/hooks/useBreadcrumb";
@@ -149,12 +155,19 @@ export const ListApprovals = () => {
 
   // state
   const [selectedRequests, setSelectedRequests] = useState<Lease[]>([]);
+  const [selectedExtensions, setSelectedExtensions] = useState<Lease[]>([]);
 
   // api hooks
   const { data: requests, isFetching, refetch } = useGetPendingApprovals();
+  const {
+    data: extensionRequests,
+    isFetching: isFetchingExtensions,
+    refetch: refetchExtensions,
+  } = useGetPendingExtensions();
   const { mutateAsync: reviewLease } = useReviewLease({
     skipInvalidation: true,
   });
+  const { mutateAsync: reviewExtension } = useReviewLeaseExtension();
 
   useEffect(() => {
     setBreadcrumb([
@@ -185,6 +198,111 @@ export const ListApprovals = () => {
     setSelectedRequests(approvals);
   };
 
+  const handleExtensionSelectionChange = ({ detail }: { detail: any }) => {
+    const extensions = detail.selectedItems as Lease[];
+    setSelectedExtensions(extensions);
+  };
+
+  const showExtensionReviewModal = (mode: "approve" | "deny") => {
+    showModal({
+      header:
+        mode === "approve"
+          ? "Approve extension request(s)"
+          : "Deny extension request(s)",
+      content: (
+        <BatchActionReview
+          items={selectedExtensions}
+          description={`${selectedExtensions.length} extension request(s) to review`}
+          columnDefinitions={extensionColumnDefinitions}
+          identifierKey="leaseId"
+          sequential
+          onSubmit={async (lease: Lease) => {
+            await reviewExtension({
+              leaseId: lease.leaseId,
+              action: mode === "approve" ? "Approve" : "Deny",
+            });
+            setSelectedExtensions((prev) =>
+              prev.filter((r) => r.leaseId !== lease.leaseId),
+            );
+          }}
+          onSuccess={() => {
+            queryClient.invalidateQueries({
+              queryKey: ["leases"],
+              refetchType: "all",
+            });
+            showSuccessToast(
+              mode === "approve"
+                ? "Extension request(s) were successfully approved."
+                : "Extension request(s) were successfully denied.",
+            );
+          }}
+          onError={() =>
+            showErrorToast(
+              "One or more extension requests failed to review, try resubmitting.",
+              "Failed to review extension requests",
+            )
+          }
+        />
+      ),
+      size: "max",
+    });
+  };
+
+  const extensionColumnDefinitions = [
+    {
+      id: "requestor",
+      header: "Requested by",
+      sortingField: "userEmail",
+      cell: (lease: Lease) => (
+        <TextLink to={`/approvals/extensions/${lease.leaseId}`}>
+          {lease.userEmail}
+        </TextLink>
+      ),
+    },
+    {
+      id: "originalLeaseTemplateName",
+      header: "Lease Template",
+      sortingField: "originalLeaseTemplateName",
+      cell: (lease: Lease) => lease.originalLeaseTemplateName,
+    },
+    {
+      id: "requestedExpiration",
+      header: "Requested Expiration",
+      cell: (lease: Lease) => {
+        const monitored = lease as MonitoredLease & { leaseId: string };
+        return monitored.pendingExtensionRequest
+          ? DateTime.fromISO(
+              monitored.pendingExtensionRequest.requestedExpirationDate,
+            ).toLocaleString(DateTime.DATETIME_SHORT)
+          : "-";
+      },
+    },
+    {
+      id: "requestedAt",
+      header: "Requested",
+      sortingComparator: createDateSortingComparator<Lease>((a) => {
+        const monitored = a as MonitoredLease & { leaseId: string };
+        return monitored.pendingExtensionRequest?.requestedAt;
+      }),
+      cell: (lease: Lease) => {
+        const monitored = lease as MonitoredLease & { leaseId: string };
+        return monitored.pendingExtensionRequest?.requestedAt
+          ? DateTime.fromISO(
+              monitored.pendingExtensionRequest.requestedAt,
+            ).toRelative()
+          : "-";
+      },
+    },
+    {
+      id: "comments",
+      header: "Comments",
+      cell: (lease: Lease) => {
+        const monitored = lease as MonitoredLease & { leaseId: string };
+        return monitored.pendingExtensionRequest?.comments ?? "";
+      },
+    },
+  ];
+
   return (
     <ContentLayout
       disablePadding
@@ -198,37 +316,89 @@ export const ListApprovals = () => {
         </Header>
       }
     >
-      <Table
-        stripedRows
-        trackBy="leaseId"
-        columnDefinitions={createColumnDefinitions(true)}
-        header="Approvals"
-        totalItemsCount={(requests || []).length}
-        items={requests || []}
-        selectedItems={selectedRequests}
-        onSelectionChange={handleSelectionChange}
-        loading={isFetching}
-        actions={
-          <SpaceBetween direction="horizontal" size="s">
-            <Button
-              iconName="refresh"
-              onClick={() => refetch()}
-              disabled={isFetching}
-            />
-            <ButtonDropdown
-              disabled={selectedRequests.length === 0}
-              items={[
-                { text: "Approve request(s)", id: "approve" },
-                { text: "Deny request(s)", id: "deny" },
-              ]}
-              onItemClick={({ detail }) => {
-                showReviewModal(detail.id === "approve" ? "approve" : "deny");
-              }}
-            >
-              Actions
-            </ButtonDropdown>
-          </SpaceBetween>
-        }
+      <Tabs
+        tabs={[
+          {
+            label: "Lease Requests",
+            id: "lease-requests",
+            content: (
+              <Table
+                stripedRows
+                trackBy="leaseId"
+                columnDefinitions={createColumnDefinitions(true)}
+                header="Lease Requests"
+                totalItemsCount={(requests || []).length}
+                items={requests || []}
+                selectedItems={selectedRequests}
+                onSelectionChange={handleSelectionChange}
+                loading={isFetching}
+                actions={
+                  <SpaceBetween direction="horizontal" size="s">
+                    <Button
+                      iconName="refresh"
+                      onClick={() => refetch()}
+                      disabled={isFetching}
+                    />
+                    <ButtonDropdown
+                      disabled={selectedRequests.length === 0}
+                      items={[
+                        { text: "Approve request(s)", id: "approve" },
+                        { text: "Deny request(s)", id: "deny" },
+                      ]}
+                      onItemClick={({ detail }) => {
+                        showReviewModal(
+                          detail.id === "approve" ? "approve" : "deny",
+                        );
+                      }}
+                    >
+                      Actions
+                    </ButtonDropdown>
+                  </SpaceBetween>
+                }
+              />
+            ),
+          },
+          {
+            label: "Extension Requests",
+            id: "extension-requests",
+            content: (
+              <Table
+                stripedRows
+                trackBy="leaseId"
+                columnDefinitions={extensionColumnDefinitions}
+                header="Extension Requests"
+                totalItemsCount={(extensionRequests || []).length}
+                items={extensionRequests || []}
+                selectedItems={selectedExtensions}
+                onSelectionChange={handleExtensionSelectionChange}
+                loading={isFetchingExtensions}
+                actions={
+                  <SpaceBetween direction="horizontal" size="s">
+                    <Button
+                      iconName="refresh"
+                      onClick={() => refetchExtensions()}
+                      disabled={isFetchingExtensions}
+                    />
+                    <ButtonDropdown
+                      disabled={selectedExtensions.length === 0}
+                      items={[
+                        { text: "Approve request(s)", id: "approve" },
+                        { text: "Deny request(s)", id: "deny" },
+                      ]}
+                      onItemClick={({ detail }) => {
+                        showExtensionReviewModal(
+                          detail.id === "approve" ? "approve" : "deny",
+                        );
+                      }}
+                    >
+                      Actions
+                    </ButtonDropdown>
+                  </SpaceBetween>
+                }
+              />
+            ),
+          },
+        ]}
       />
     </ContentLayout>
   );

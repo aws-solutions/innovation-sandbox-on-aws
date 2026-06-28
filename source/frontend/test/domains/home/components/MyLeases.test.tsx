@@ -62,6 +62,14 @@ vi.mock("@amzn/innovation-sandbox-frontend/domains/settings/hooks", () => ({
   }),
 }));
 
+// Mock the useModal hook used by LeasePanel
+vi.mock("@amzn/innovation-sandbox-frontend/hooks/useModal", () => ({
+  useModal: () => ({
+    showModal: vi.fn(),
+    hideModal: vi.fn(),
+  }),
+}));
+
 describe("MyLeases", () => {
   beforeEach(() => {
     vi.clearAllMocks();

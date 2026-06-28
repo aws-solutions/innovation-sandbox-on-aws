@@ -14,6 +14,9 @@ import { LeaseApprovedEventSchema } from "@amzn/innovation-sandbox-commons/event
 import { LeaseBudgetThresholdTriggeredEventSchema } from "@amzn/innovation-sandbox-commons/events/lease-budget-threshold-breached-alert.js";
 import { LeaseDeniedEventSchema } from "@amzn/innovation-sandbox-commons/events/lease-denied-event.js";
 import { LeaseExpirationAlertEventSchema } from "@amzn/innovation-sandbox-commons/events/lease-duration-threshold-breached-alert.js";
+import { LeaseExtensionApprovedEventSchema } from "@amzn/innovation-sandbox-commons/events/lease-extension-approved-event.js";
+import { LeaseExtensionDeniedEventSchema } from "@amzn/innovation-sandbox-commons/events/lease-extension-denied-event.js";
+import { LeaseExtensionRequestedEventSchema } from "@amzn/innovation-sandbox-commons/events/lease-extension-requested-event.js";
 import { LeaseFrozenEventSchema } from "@amzn/innovation-sandbox-commons/events/lease-frozen-event.js";
 import { LeaseProvisioningFailedEventSchema } from "@amzn/innovation-sandbox-commons/events/lease-provisioning-failed-event.js";
 import { LeaseRequestedEventSchema } from "@amzn/innovation-sandbox-commons/events/lease-requested-event.js";
@@ -140,6 +143,18 @@ describe("email-notification-handler", () => {
     [EventDetailTypes.GroupCostReportGeneratedFailure]: {
       eventName: EventDetailTypes.GroupCostReportGeneratedFailure,
       schema: GroupCostReportGenerationFailureEventSchema,
+    },
+    [EventDetailTypes.LeaseExtensionRequested]: {
+      eventName: EventDetailTypes.LeaseExtensionRequested,
+      schema: LeaseExtensionRequestedEventSchema,
+    },
+    [EventDetailTypes.LeaseExtensionApproved]: {
+      eventName: EventDetailTypes.LeaseExtensionApproved,
+      schema: LeaseExtensionApprovedEventSchema,
+    },
+    [EventDetailTypes.LeaseExtensionDenied]: {
+      eventName: EventDetailTypes.LeaseExtensionDenied,
+      schema: LeaseExtensionDeniedEventSchema,
     },
   };
 

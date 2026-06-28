@@ -1,0 +1,7 @@
+{
+  "task_id": "task-fix-lease-extension-auth-uuid",
+  "task_description": "Fix two bugs in the lease extension feature: (1) missing authorization map entries causing 403, (2) use plain UUID in URL path instead of base64-encoded composite key to avoid ARN path splitting issues with '/' characters",
+  "status": "in_progress",
+  "feature_order": ["FEAT-001"],
+  "blocked_reason": null
+}

@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { LeaseService } from "@amzn/innovation-sandbox-frontend/domains/leases/service";
 import {
+  LeaseExtensionRequest,
   LeasePatchRequest,
   NewLeaseRequest,
 } from "@amzn/innovation-sandbox-frontend/domains/leases/types";
@@ -160,6 +161,65 @@ export const useUnfreezeLease = (options?: { skipInvalidation?: boolean }) => {
           refetchType: "all",
         });
       }
+    },
+  });
+};
+
+export const useRequestLeaseExtension = () => {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      leaseId,
+      request,
+    }: {
+      leaseId: string;
+      request: LeaseExtensionRequest;
+    }) => {
+      await new LeaseService().requestExtension(leaseId, request);
+    },
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["leases"], refetchType: "all" });
+    },
+  });
+};
+
+export const useReviewLeaseExtension = () => {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      leaseId,
+      action,
+      comments,
+    }: {
+      leaseId: string;
+      action: "Approve" | "Deny";
+      comments?: string;
+    }) => {
+      await new LeaseService().reviewExtension(leaseId, action, comments);
+    },
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["leases"], refetchType: "all" });
+      client.invalidateQueries({
+        queryKey: ["accounts"],
+        refetchType: "all",
+      });
+    },
+  });
+};
+
+export const useGetPendingExtensions = () => {
+  return useQuery({
+    queryKey: ["leases"],
+    queryFn: fetchLeases,
+    select: (data) => {
+      return (
+        data?.filter(
+          (lease) =>
+            (lease.status === "Active" || lease.status === "Frozen") &&
+            "pendingExtensionRequest" in lease &&
+            lease.pendingExtensionRequest != null,
+        ) ?? []
+      );
     },
   });
 };
