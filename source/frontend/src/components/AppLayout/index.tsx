@@ -5,15 +5,23 @@ import { ReactNode } from "react";
 
 import { AppContext } from "@amzn/innovation-sandbox-frontend/components/AppContext";
 import { BaseLayout } from "@amzn/innovation-sandbox-frontend/components/AppLayout/BaseLayout";
+import {
+  DevRoleContext,
+  useDevRoleState,
+} from "@amzn/innovation-sandbox-frontend/hooks/useDevRole";
 
 export interface AppLayoutProps {
   children: ReactNode;
 }
 
 export const AppLayout = ({ children }: AppLayoutProps) => {
+  const devRoleState = useDevRoleState();
+
   return (
-    <AppContext>
-      <BaseLayout>{children}</BaseLayout>
-    </AppContext>
+    <DevRoleContext.Provider value={devRoleState}>
+      <AppContext>
+        <BaseLayout>{children}</BaseLayout>
+      </AppContext>
+    </DevRoleContext.Provider>
   );
 };

@@ -9,6 +9,10 @@ import { FC, useMemo } from "react";
 
 import { IsbUser } from "@amzn/innovation-sandbox-commons/types/isb-types";
 import { useAppContext } from "@amzn/innovation-sandbox-frontend/components/AppContext/context";
+import {
+  DevRoleOverride,
+  useDevRole,
+} from "@amzn/innovation-sandbox-frontend/hooks/useDevRole";
 
 export interface NavHeaderProps {
   title: string;
@@ -26,72 +30,115 @@ export const NavHeader: FC<NavHeaderProps> = ({
   onExit,
 }) => {
   const { theme, density, setTheme, setDensity } = useAppContext();
+  const { activeRole, setActiveRole, isDevModeEnabled } = useDevRole();
 
   const utilities: TopNavigationProps.Utility[] = useMemo(() => {
-    const menu: TopNavigationProps.Utility[] = [
-      {
+    const menu: TopNavigationProps.Utility[] = [];
+
+    // Dev mode role switcher - only shown when DEPLOYMENT_MODE=dev
+    if (isDevModeEnabled) {
+      menu.push({
         type: "menu-dropdown",
-        iconName: "settings",
-        ariaLabel: "Settings",
+        text:
+          activeRole === "none"
+            ? "DEV Role: Default"
+            : `DEV Role: ${activeRole}`,
+        ariaLabel: "Switch Role (Dev Mode)",
         items: [
           {
-            id: "theme",
-            text: "Theme",
-            itemType: "group",
-            items: [
-              {
-                id: "theme.light",
-                text: "Light",
-                itemType: "checkbox",
-                checked: theme === Mode.Light,
-              },
-              {
-                id: "theme.dark",
-                text: "Dark",
-                itemType: "checkbox",
-                checked: theme === Mode.Dark,
-              },
-            ],
+            id: "role.none",
+            text: "Default (no override)",
+            itemType: "checkbox",
+            checked: activeRole === "none",
           },
           {
-            id: "density",
-            text: "Density",
-            items: [
-              {
-                id: "density.comfortable",
-                text: "Comfortable",
-                itemType: "checkbox",
-                checked: density === Density.Comfortable,
-              },
-              {
-                id: "density.compact",
-                text: "Compact",
-                itemType: "checkbox",
-                checked: density === Density.Compact,
-              },
-            ],
+            id: "role.User",
+            text: "User",
+            itemType: "checkbox",
+            checked: activeRole === "User",
+          },
+          {
+            id: "role.Manager",
+            text: "Manager",
+            itemType: "checkbox",
+            checked: activeRole === "Manager",
+          },
+          {
+            id: "role.Admin",
+            text: "Admin",
+            itemType: "checkbox",
+            checked: activeRole === "Admin",
           },
         ],
         onItemClick: (e) => {
-          switch (e.detail.id) {
-            case "theme.light":
-              setTheme(Mode.Light);
-              break;
-            case "theme.dark":
-              setTheme(Mode.Dark);
-              break;
-            case "density.comfortable":
-              setDensity(Density.Comfortable);
-              break;
-            case "density.compact":
-              setDensity(Density.Compact);
-              break;
-            default:
-              break;
-          }
+          const role = e.detail.id.replace("role.", "") as DevRoleOverride;
+          setActiveRole(role);
         },
+      });
+    }
+
+    menu.push({
+      type: "menu-dropdown",
+      iconName: "settings",
+      ariaLabel: "Settings",
+      items: [
+        {
+          id: "theme",
+          text: "Theme",
+          itemType: "group",
+          items: [
+            {
+              id: "theme.light",
+              text: "Light",
+              itemType: "checkbox",
+              checked: theme === Mode.Light,
+            },
+            {
+              id: "theme.dark",
+              text: "Dark",
+              itemType: "checkbox",
+              checked: theme === Mode.Dark,
+            },
+          ],
+        },
+        {
+          id: "density",
+          text: "Density",
+          items: [
+            {
+              id: "density.comfortable",
+              text: "Comfortable",
+              itemType: "checkbox",
+              checked: density === Density.Comfortable,
+            },
+            {
+              id: "density.compact",
+              text: "Compact",
+              itemType: "checkbox",
+              checked: density === Density.Compact,
+            },
+          ],
+        },
+      ],
+      onItemClick: (e) => {
+        switch (e.detail.id) {
+          case "theme.light":
+            setTheme(Mode.Light);
+            break;
+          case "theme.dark":
+            setTheme(Mode.Dark);
+            break;
+          case "density.comfortable":
+            setDensity(Density.Comfortable);
+            break;
+          case "density.compact":
+            setDensity(Density.Compact);
+            break;
+          default:
+            break;
+        }
       },
-    ];
+    });
 
     if (user) {
       menu.push({
@@ -105,7 +152,17 @@ export const NavHeader: FC<NavHeaderProps> = ({
     }
 
     return menu;
-  }, [theme, density, setDensity, setTheme, user, onExit]);
+  }, [
+    theme,
+    density,
+    setDensity,
+    setTheme,
+    user,
+    onExit,
+    isDevModeEnabled,
+    activeRole,
+    setActiveRole,
+  ]);
 
   const topNavLogo = logo ? { src: logo, alt: title } : undefined;
 
