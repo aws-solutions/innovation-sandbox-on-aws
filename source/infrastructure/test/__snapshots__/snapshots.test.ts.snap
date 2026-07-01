@@ -1398,6 +1398,9 @@ exports[`IsbAccountPoolStack Snapshot > matches the snapshot 1`] = `
         "HubAccountId": {
           "default": "Hub Account Id"
         },
+        "AccountPoolOuName": {
+          "default": "Account Pool OU Name (Optional)"
+        },
         "ParentOuId": {
           "default": "Parent OU Id"
         },
@@ -1413,6 +1416,7 @@ exports[`IsbAccountPoolStack Snapshot > matches the snapshot 1`] = `
           "Parameters": [
             "Namespace",
             "HubAccountId",
+            "AccountPoolOuName",
             "ParentOuId",
             "IsbManagedRegions"
           ]
@@ -1432,6 +1436,12 @@ exports[`IsbAccountPoolStack Snapshot > matches the snapshot 1`] = `
       "AllowedPattern": "^[0-9]{12}$",
       "Description": "The AWS Account Id where the Innovation Sandbox hub application is (to be) deployed"
     },
+    "AccountPoolOuName": {
+      "Type": "String",
+      "Default": "",
+      "MaxLength": 128,
+      "Description": "A custom name to provide for the top-level account pool OU (value if left empty: <namespace>_InnovationSandboxAccountPool)."
+    },
     "ParentOuId": {
       "Type": "String",
       "AllowedPattern": "^(r-[0-9a-z]{4,32})|(ou-[0-9a-z]{4,32}-[a-z0-9]{8,32})$",
@@ -1449,19 +1459,37 @@ exports[`IsbAccountPoolStack Snapshot > matches the snapshot 1`] = `
       "Description": "Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]"
     }
   },
+  "Conditions": {
+    "AccountPoolOuNameEmptyCondition": {
+      "Fn::Equals": [
+        {
+          "Ref": "AccountPoolOuName"
+        },
+        ""
+      ]
+    }
+  },
   "Resources": {
     "InnovationSandboxAccountPoolOu": {
       "Type": "AWS::Organizations::OrganizationalUnit",
       "Properties": {
         "Name": {
-          "Fn::Join": [
-            "",
-            [
-              {
-                "Ref": "Namespace"
-              },
-              "_InnovationSandboxAccountPool"
-            ]
+          "Fn::If": [
+            "AccountPoolOuNameEmptyCondition",
+            {
+              "Fn::Join": [
+                "",
+                [
+                  {
+                    "Ref": "Namespace"
+                  },
+                  "_InnovationSandboxAccountPool"
+                ]
+              ]
+            },
+            {
+              "Ref": "AccountPoolOuName"
+            }
           ]
         },
         "ParentId": {
