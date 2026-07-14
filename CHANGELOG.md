@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.13] - 2026-07-14
+
+### Security
+
+- Updated amazonlinux base image digest to mitigate:
+  - `sqlite-libs`:
+    - [CVE-2026-11822](https://nvd.nist.gov/vuln/detail/CVE-2026-11822)
+    - [CVE-2026-11824](https://nvd.nist.gov/vuln/detail/CVE-2026-11824)
+  - `expat`:
+    - [CVE-2026-56132](https://nvd.nist.gov/vuln/detail/CVE-2026-56132)
+    - [CVE-2026-56403](https://nvd.nist.gov/vuln/detail/CVE-2026-56403)
+    - [CVE-2026-56406](https://nvd.nist.gov/vuln/detail/CVE-2026-56406)
+    - [CVE-2026-56407](https://nvd.nist.gov/vuln/detail/CVE-2026-56407)
+  - `libblkid`, `libmount`, `libuuid`, `util-linux-core`:
+    - [CVE-2026-53615](https://nvd.nist.gov/vuln/detail/CVE-2026-53615)
+  - `libxml2`:
+    - [CVE-2026-6653](https://nvd.nist.gov/vuln/detail/CVE-2026-6653)
+  - `python3`, `python-unversioned-command`:
+    - [CVE-2026-8328](https://nvd.nist.gov/vuln/detail/CVE-2026-8328)
+    - [CVE-2026-3446](https://nvd.nist.gov/vuln/detail/CVE-2026-3446)
+    - [CVE-2026-7210](https://nvd.nist.gov/vuln/detail/CVE-2026-7210)
+- Upgraded `aws-nuke` to v3.65.0 to mitigate:
+  - [CVE-2026-39822](https://nvd.nist.gov/vuln/detail/CVE-2026-39822) (go/stdlib)
+  - [CVE-2026-42505](https://nvd.nist.gov/vuln/detail/CVE-2026-42505) (go/stdlib)
+- Upgraded `js-yaml` to mitigate [CVE-2026-53550](https://nvd.nist.gov/vuln/detail/CVE-2026-53550)
+
 ## [1.2.12] - 2026-06-26
 
 ### Security
