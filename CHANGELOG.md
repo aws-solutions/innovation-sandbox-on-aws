@@ -5,6 +5,47 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.14] - 2026-07-24
+
+### Security
+
+- Updated `amazonlinux:2023-minimal` base image digest to mitigate:
+  - `python3`, `python-unversioned-command`, `python3-libs`:
+    - [CVE-2026-0864](https://nvd.nist.gov/vuln/detail/CVE-2026-0864)
+    - [CVE-2026-3276](https://nvd.nist.gov/vuln/detail/CVE-2026-3276)
+    - [CVE-2026-9669](https://nvd.nist.gov/vuln/detail/CVE-2026-9669)
+    - [CVE-2026-11940](https://nvd.nist.gov/vuln/detail/CVE-2026-11940)
+    - [CVE-2026-11972](https://nvd.nist.gov/vuln/detail/CVE-2026-11972)
+  - `krb5-libs`:
+    - [CVE-2026-11850](https://nvd.nist.gov/vuln/detail/CVE-2026-11850)
+  - `libacl`:
+    - [CVE-2026-54369](https://nvd.nist.gov/vuln/detail/CVE-2026-54369)
+    - [CVE-2026-54370](https://nvd.nist.gov/vuln/detail/CVE-2026-54370)
+  - `glib2`:
+    - [CVE-2026-58010](https://nvd.nist.gov/vuln/detail/CVE-2026-58010)
+    - [CVE-2026-58011](https://nvd.nist.gov/vuln/detail/CVE-2026-58011)
+    - [CVE-2026-58012](https://nvd.nist.gov/vuln/detail/CVE-2026-58012)
+    - [CVE-2026-58013](https://nvd.nist.gov/vuln/detail/CVE-2026-58013)
+    - [CVE-2026-58014](https://nvd.nist.gov/vuln/detail/CVE-2026-58014)
+    - [CVE-2026-58015](https://nvd.nist.gov/vuln/detail/CVE-2026-58015)
+    - [CVE-2026-58016](https://nvd.nist.gov/vuln/detail/CVE-2026-58016)
+- Upgraded `aws-cdk-lib` to v2.262.0 to mitigate:
+  - [CVE-2026-13760](https://nvd.nist.gov/vuln/detail/CVE-2026-13760) — OS Command Injection in NodejsFunction Docker Bundling
+  - [CVE-2026-45149](https://nvd.nist.gov/vuln/detail/CVE-2026-45149) — DoS due to excessive memory allocation when expanding large numeric ranges (`brace-expansion`)
+  - [CVE-2026-13149](https://nvd.nist.gov/vuln/detail/CVE-2026-13149) — DoS due to exponential-time complexity (`brace-expansion`)
+- Upgraded `fast-uri` to mitigate:
+  - [CVE-2026-13676](https://nvd.nist.gov/vuln/detail/CVE-2026-13676) — host confusion via failed IDN canonicalization
+  - [CVE-2026-16221](https://nvd.nist.gov/vuln/detail/CVE-2026-16221) — host confusion via literal backslash authority delimiter
+- Upgraded `immutable` to mitigate:
+  - [CVE-2026-59879](https://nvd.nist.gov/vuln/detail/CVE-2026-59879) — `List` 32-bit trie overflow → unrecoverable DoS
+  - [CVE-2026-59880](https://nvd.nist.gov/vuln/detail/CVE-2026-59880) — Hash-collision algorithmic complexity DoS in `Map`/`Set`
+- Upgraded `js-yaml` to mitigate:
+  - [CVE-2026-59869](https://nvd.nist.gov/vuln/detail/CVE-2026-59869) — DoS via crafted YAML documents
+- Upgraded `body-parser` to mitigate:
+  - [CVE-2026-12590](https://nvd.nist.gov/vuln/detail/CVE-2026-12590) — denial of service when invalid `limit` value silently disables size enforcement
+- Upgraded `esbuild` to mitigate:
+  - [GHSA-g7r4-m6w7-qqqr](https://github.com/advisories/GHSA-g7r4-m6w7-qqqr) — arbitrary file read when running dev server on Windows
+
 ## [1.2.13] - 2026-07-14
 
 ### Security
