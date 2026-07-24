@@ -1739,6 +1739,7 @@ exports[`IsbAccountPoolStack Snapshot > matches the snapshot 1`] = `
                 "ecs:*",
                 "elasticfilesystem:*",
                 "eks:*",
+                "eks-auth:*",
                 "elasticache:*",
                 "elasticbeanstalk:*",
                 "es:*",
