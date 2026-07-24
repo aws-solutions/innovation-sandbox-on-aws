@@ -2,14 +2,14 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # To update: docker manifest inspect public.ecr.aws/amazonlinux/amazonlinux:2023-minimal | jq -r '.manifests[] | select(.platform.architecture=="amd64") | .digest'
-ARG BASE_IMAGE_DIGEST=sha256:eacb3cccd1675ac3cbef0033dd437dc69c6cd4d96dc5d0ebbdbb12830e10aee1
+ARG BASE_IMAGE_DIGEST=sha256:397fda2c6f8b4130c557dd3eae3e52536444d5493c2918ef72385f2abd2eaf64
 
 # Build aws-nuke from source
 FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@${BASE_IMAGE_DIGEST} AS builder
 
-ARG AWS_NUKE_VERSION=v3.65.0
+ARG AWS_NUKE_VERSION=v3.66.0
 # To update: curl -sL https://github.com/ekristen/aws-nuke/archive/refs/tags/vX.Y.Z.tar.gz | shasum -a 256 | awk '{print $1}'
-ARG AWS_NUKE_SOURCE_SHA256=feb73b963ef14fe8fb1a3b77ad274e497edf41479a8f5d02155d0144de5625e1
+ARG AWS_NUKE_SOURCE_SHA256=3071dd7f1d61f42ca065af87aa675ada8ec11abfac08d135058845635561b676
 
 # Go 1.26.5 required by aws-nuke v3.65.0 (AL2023 only ships Go 1.25.x via dnf)
 ARG GO_VERSION=1.26.5

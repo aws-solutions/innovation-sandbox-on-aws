@@ -1,7 +1,7 @@
 {
   "name": "@amzn/innovation-sandbox-infrastructure",
   "description": "Infrastructure - Innovation Sandbox on AWS (SO0284)",
-  "version": "1.2.13",
+  "version": "1.2.14",
   "bin": {
     "infrastructure": "bin/app.js"
   },

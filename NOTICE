@@ -152,6 +152,7 @@ fast-xml-builder under the MIT license.
 path-expression-matcher under the MIT license.
 xml-naming under the MIT license.
 strnum under the MIT license.
+@aws/cloudformation-validate under the Apache-2.0 license.
 @aws/lambda-invoke-store under the Apache-2.0 license.
 @smithy/core under the Apache-2.0 license.
 @aws-crypto/crc32 under the Apache-2.0 license.
