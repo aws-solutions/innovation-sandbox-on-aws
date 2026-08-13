@@ -5,6 +5,7 @@ import { Construct } from "constructs";
 
 import {
   addParameterGroup,
+  OptionalParameter,
   ParameterWithLabel,
 } from "@amzn/innovation-sandbox-infrastructure/helpers/cfn-utils";
 import {
@@ -23,6 +24,14 @@ export class IsbAccountPoolStack extends Stack {
     const namespaceParam = new NamespaceParam(this);
 
     const hubAccountIdParam = new HubAccountIdParam(this);
+
+    const accountPoolOuName = new OptionalParameter(this, "AccountPoolOuName", {
+      label: "Account Pool OU Name (Optional)",
+      description:
+        "A custom name to provide for the top-level account pool OU (value if left empty: <namespace>_InnovationSandboxAccountPool).",
+      maxLength: 128,
+      valueIfEmpty: `${namespaceParam.valueAsString}_InnovationSandboxAccountPool`,
+    });
 
     const parentOuId = new ParameterWithLabel(this, "ParentOuId", {
       label: "Parent OU Id",
@@ -51,6 +60,7 @@ export class IsbAccountPoolStack extends Stack {
       parameters: [
         namespaceParam,
         hubAccountIdParam,
+        accountPoolOuName,
         parentOuId,
         isbManagedRegions,
       ],
@@ -58,6 +68,7 @@ export class IsbAccountPoolStack extends Stack {
 
     new IsbAccountPoolResources(this, {
       namespace: namespaceParam.valueAsString,
+      accountPoolOuName: accountPoolOuName.resolve(),
       parentOuId: parentOuId.valueAsString,
       hubAccountId: hubAccountIdParam.valueAsString,
       isbManagedRegions: isbManagedRegions.valueAsList,

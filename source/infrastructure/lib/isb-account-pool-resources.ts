@@ -59,6 +59,7 @@ const supportedSchemas = ["1"];
 
 export interface IsbAccountPoolResourcesProps {
   readonly namespace: string;
+  readonly accountPoolOuName: string;
   readonly parentOuId: string;
   readonly hubAccountId: string;
   readonly isbManagedRegions: string[];
@@ -72,7 +73,7 @@ export class IsbAccountPoolResources {
       scope,
       "InnovationSandboxAccountPoolOu",
       {
-        name: `${props.namespace}_InnovationSandboxAccountPool`,
+        name: props.accountPoolOuName,
         parentId: props.parentOuId,
       },
     );
