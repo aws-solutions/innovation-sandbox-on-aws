@@ -97,7 +97,7 @@
     "@tanstack/react-query": "^5.74.4",
     "aws-cdk-lib": "^2.265.0",
     "esbuild": "^0.28.1",
-    "fast-uri": "^3.1.5",
+    "fast-uri": "^3.1.7",
     "form-data": "^4.0.6",
     "js-cookie": "^3.0.7",
     "uuid": "^11.1.1"
