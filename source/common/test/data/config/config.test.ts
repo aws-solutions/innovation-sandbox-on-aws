@@ -4,6 +4,7 @@
 import {
   CleanupConfigSchema,
   CleanupConfigWriteSchema,
+  CONFIG_BOUNDS,
   ConfigSchemas,
   ConfigWriteSchemas,
   CostReportingConfigSchema,
@@ -213,16 +214,31 @@ describe("CostReportingConfigSchema", () => {
     });
   });
 
-  it("rejects more than 100 groups", () => {
+  it("accepts exactly MAX_COST_REPORT_GROUPS groups", () => {
     const result = CostReportingConfigSchema.safeParse({
-      costReportGroups: Array.from({ length: 101 }, (_, i) => `g${i}`),
+      costReportGroups: Array.from(
+        { length: CONFIG_BOUNDS.MAX_COST_REPORT_GROUPS },
+        (_, i) => `g${i}`,
+      ),
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects more than MAX_COST_REPORT_GROUPS groups", () => {
+    const result = CostReportingConfigSchema.safeParse({
+      costReportGroups: Array.from(
+        { length: CONFIG_BOUNDS.MAX_COST_REPORT_GROUPS + 1 },
+        (_, i) => `g${i}`,
+      ),
     });
     expect(result.success).toBe(false);
   });
 
-  it("rejects a group name longer than 50 characters", () => {
+  it("rejects a group name longer than MAX_COST_REPORT_GROUP_LENGTH characters", () => {
     const result = CostReportingConfigSchema.safeParse({
-      costReportGroups: ["x".repeat(51)],
+      costReportGroups: [
+        "x".repeat(CONFIG_BOUNDS.MAX_COST_REPORT_GROUP_LENGTH + 1),
+      ],
     });
     expect(result.success).toBe(false);
   });

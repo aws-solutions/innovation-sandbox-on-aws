@@ -30,8 +30,9 @@ export const DEFAULT_TERMS_OF_SERVICE = `Users, who use a leased AWS account for
 
 /**
  * Numeric/length bounds for the configuration fields, referenced by the schemas
- * below so the limits live in one place. The cost report group bounds must stay
- * in sync with `ReportingConfigSchema` in data/reporting-config/reporting-config.ts.
+ * below so the limits live in one place. `ReportingConfigSchema` in
+ * data/reporting-config/reporting-config.ts imports these same bounds, so the
+ * cost report group limits have a single source of truth.
  */
 export const CONFIG_BOUNDS = {
   MAX_BUDGET: 1_000_000_000,
@@ -47,7 +48,7 @@ export const CONFIG_BOUNDS = {
   MAX_REPORT_RETENTION_DAYS: 3650,
   MAX_EMAIL_LENGTH: 254,
   MAX_TERMS_OF_SERVICE_LENGTH: 10_000,
-  MAX_COST_REPORT_GROUPS: 100,
+  MAX_COST_REPORT_GROUPS: 250,
   MAX_COST_REPORT_GROUP_LENGTH: 50,
 } as const;
 
@@ -287,8 +288,9 @@ export const TermsOfServiceConfigWriteSchema = z
 // Cost Reporting section
 // ---------------------------------------------------------------------------
 
-// Constraints MUST match ReportingConfigSchema in
-// source/common/data/reporting-config/reporting-config.ts exactly.
+// Cost report group bounds share the single source of truth in CONFIG_BOUNDS,
+// which is also imported by ReportingConfigSchema in
+// source/common/data/reporting-config/reporting-config.ts.
 const costReportingBaseShape = {
   costReportGroups: z
     .array(z.string().min(1).max(CONFIG_BOUNDS.MAX_COST_REPORT_GROUP_LENGTH))
