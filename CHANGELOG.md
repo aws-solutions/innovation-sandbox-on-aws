@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.2] - 2026-09-11
+
+### Security
+
+- Updated the account cleaner container base image (`amazonlinux:2023-minimal`) to the latest digest to pick up upstream operating system package fixes
+
+### Fixed
+
+- Included the ECR image tag manifest in the open-source distribution so source builds can validate and apply the release image tags
+- Corrected the `AccountCleanupLogs` CloudWatch Logs Insights saved query, which asked for an account cleaner state machine execution ID that no longer exists. The query now names the AWS CodeBuild build ID that scopes the AWS Nuke logs for a cleanup
+- Removed a dead `StateMachineExecutionId` line from the account cleaner buildspec, which logged an empty value on every cleanup build
+
 ## [1.3.1] - 2026-09-03
 
 ### Fixed
