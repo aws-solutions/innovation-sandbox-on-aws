@@ -48,16 +48,17 @@ fields @timestamp, @message, message.errorMessage
       name: query_root_folder + "AccountCleanupLogs",
       logGroupNames: [IsbComputeResources.cleanupLogGroup.logGroupName],
       queryString: `# Innovation Sandbox Account Cleanup Logs
-# View all logs from the account cleanup process for a given state machine execution id.
+# View all logs from a single account cleanup build.
 # Results show resource deletion failures that occurred and aws nuke summary logs.
 # Remember to set the time range for this log query in the widget above
 fields @timestamp, type as resourceType, owner as region, name, msg
-# Replace /PasteStateMachineExecutionIdHere/ with the account cleanup state machine execution id for the account under investigation.
-| filter @logStream like /PasteStateMachineExecutionIdHere/
-| filter # Comment out this filter to see all logs from the state machine execution.
+# Replace /PasteCodeBuildBuildIdHere/ with the CodeBuild build id of the nuke phase under investigation.
+# To find it, open the account details page in the web UI, choose the failed cleanup
+# report, and use the "View build logs" link on the nuke phase step.
+| filter @logStream like /PasteCodeBuildBuildIdHere/
+| filter # Comment out this filter to see all logs from the build.
   component = "libnuke"
    or state = "failed"
-| sort @timestamp desc
 | sort time desc`,
     });
   }

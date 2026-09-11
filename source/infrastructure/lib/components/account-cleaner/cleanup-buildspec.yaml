@@ -3,7 +3,6 @@ phases:
   build:
     commands:
       - echo =================================== Cleaning up AWS account $CLEANUP_ACCOUNT_ID ===================================
-      - echo StateMachineExecutionId=$STATE_MACHINE_EXECUTION_ID
       - echo ----------------------------- Retrieving nuke config file from AWS AppConfig ------------------------------
       - |
         export APPCONFIG_TOKEN=$(aws appconfigdata start-configuration-session --application-identifier $APPCONFIG_APPLICATION_ID \
