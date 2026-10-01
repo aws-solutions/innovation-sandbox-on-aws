@@ -1,6 +1,6 @@
 {
   "name": "@amzn/innovation-sandbox-api-model",
-  "version": "1.3.3",
+  "version": "1.3.4",
   "description": "Smithy model for the Innovation Sandbox on AWS HTTP API",
   "private": true,
   "license": "Apache-2.0",

@@ -102,6 +102,7 @@ describe("SES Service", async () => {
       expect(sesMock.calls().length).toEqual(1);
     });
     it.each<string>([
+      "AccessDenied",
       "AccountSendingPausedException",
       "ConfigurationSetDoesNotExistException",
       "ConfigurationSetSendingPausedException",

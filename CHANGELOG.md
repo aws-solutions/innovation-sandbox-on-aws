@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.4] - 2026-10-01
+
+### Security
+
+- Upgraded `brace-expansion` to mitigate:
+  - [CVE-2026-102276](https://nvd.nist.gov/vuln/detail/CVE-2026-102276) — denial of service via stack exhaustion from crafted brace patterns
+  - [CVE-2026-102278](https://nvd.nist.gov/vuln/detail/CVE-2026-102278) — denial of service via uncontrolled recursion in nested brace patterns
+- Upgraded `fast-uri` to mitigate:
+  - [CVE-2026-84292](https://nvd.nist.gov/vuln/detail/CVE-2026-84292) — authority injection via unvalidated port serialization
+  - [CVE-2026-84394](https://nvd.nist.gov/vuln/detail/CVE-2026-84394) — host confusion via unbalanced URI brackets, bypassing security policies
+- Updated `amazonlinux:2023-minimal` base image digest to mitigate:
+  - `curl-minimal`, `libcurl-minimal`:
+    - [CVE-2026-80230](https://nvd.nist.gov/vuln/detail/CVE-2026-80230)
+  - `pcre2`, `pcre2-syntax`:
+    - [CVE-2026-89161](https://nvd.nist.gov/vuln/detail/CVE-2026-89161)
+  - `rpm`, `rpm-libs`:
+    - [CVE-2026-78367](https://nvd.nist.gov/vuln/detail/CVE-2026-78367)
+    - [CVE-2026-84233](https://nvd.nist.gov/vuln/detail/CVE-2026-84233)
+
+### Fixed
+
+- Restored email notification delivery for deployments whose Amazon SES sending identity has a default configuration set, by authorizing `ses:SendEmail` against configuration set resources in addition to the sender identity ([#195](https://github.com/aws-solutions/innovation-sandbox-on-aws/issues/195))
+- Logged Amazon SES authorization failures once and surfaced them immediately, instead of retrying against progressively smaller recipient batches and logging one failure per recipient
+- Prevented sandbox users from tagging AWS Config resources with case variants of the AWS Control Tower management tag key, which could make those resources appear Control Tower-managed and block account cleanup and account reuse
+- Excluded the AWS-managed Amazon ElastiCache defaults `default.iam-user` and `default.iam-user-group` from account cleanup and post-cleanup validation, so that AWS rejecting the delete calls for these identifiers no longer ends the cleanup run in a failed state
+
 ## [1.3.3] - 2026-09-21
 
 ### Added
@@ -80,6 +106,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- For deployments with customized AWS Nuke filters, updating from a version earlier than v1.3.0 activates the packaged AWS Nuke configuration instead of the customized version (**breaking**). Before updating, save the active version. After an update or rollback, verify the active version and redeploy the intended version if they differ. See [Preserve AWS Nuke configuration customizations](https://docs.aws.amazon.com/solutions/latest/innovation-sandbox-on-aws/update-the-solution.html#v1-3-0-preserve-nuke-config). ([#193](https://github.com/aws-solutions/innovation-sandbox-on-aws/issues/193))
 - Authentication mechanism migrated from custom SAML + self-signed JWT to Amazon Cognito with SigV4 (**breaking** — post-deployment SAML app reconfiguration required; see [upgrade guide](https://docs.aws.amazon.com/solutions/latest/innovation-sandbox-on-aws/update-the-solution.html))
 
 ### Removed

@@ -87,6 +87,11 @@ export class EmailNotificationLambda extends Construct {
               resource: "identity",
               resourceName: "*",
             }),
+            Stack.of(scope).formatArn({
+              service: "ses",
+              resource: "configuration-set",
+              resourceName: "*",
+            }),
           ],
         }),
       ],

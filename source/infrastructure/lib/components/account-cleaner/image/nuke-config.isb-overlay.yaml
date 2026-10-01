@@ -95,3 +95,9 @@ accounts:
       ResourceExplorer2View:
         - type: exact
           value: isb-post-cleanup-validator
+      ElasticacheUser:
+        - type: exact
+          value: default.iam-user
+      ElasticacheUserGroup:
+        - type: exact
+          value: default.iam-user-group
