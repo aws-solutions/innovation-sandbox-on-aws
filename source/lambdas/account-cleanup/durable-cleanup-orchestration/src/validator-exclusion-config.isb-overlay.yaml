@@ -1,0 +1,25 @@
+# ISB-managed post-cleanup validator exclusions.
+#
+# These entries are REQUIRED by the solution. They are kept out of the shipped
+# validator exclusion config (config/validator-exclusion-config.yaml) because that
+# file becomes an AppConfig hosted configuration that customers are expected to
+# customize — any release that modified it would supersede their edits. Instead,
+# this overlay is merged into the customer's config when the durable cleanup Lambda
+# fetches it.
+#
+# SYNC REQUIREMENT: every filter in the nuke overlay
+# (infrastructure/lib/components/account-cleaner/image/nuke-config.isb-overlay.yaml)
+# whose resource type Resource Explorer indexes needs a matching ARN pattern here,
+# or the post-cleanup validator flags the preserved resource as a cleanup failure
+# and quarantines the account.
+#
+# Merge semantics (see fetchValidatorExclusionConfig):
+#   - these patterns are unioned with the customer's, and duplicates removed
+#   - the customer's own values are always preserved alongside these
+
+validation:
+  excludedArnPatterns:
+    # AWS auto-creates these alongside the ElastiCache service-linked role. The
+    # nuke overlay preserves them, so Resource Explorer keeps reporting them.
+    - "arn:aws:elasticache:*:*:user:default.iam-user"
+    - "arn:aws:elasticache:*:*:usergroup:default.iam-user-group"

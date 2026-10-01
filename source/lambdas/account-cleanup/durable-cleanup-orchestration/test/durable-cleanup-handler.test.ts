@@ -65,6 +65,7 @@ import {
 } from "@aws/durable-execution-sdk-js-testing";
 import { mockClient } from "aws-sdk-client-mock";
 import yaml from "js-yaml";
+import path from "node:path";
 
 import { IsbServices } from "@amzn/innovation-sandbox-commons/isb-services/index.js";
 import { handler } from "@amzn/innovation-sandbox-durable-cleanup-orchestration/durable-cleanup-handler.js";
@@ -194,6 +195,10 @@ afterAll(async () => {
 beforeEach(async () => {
   bulkStubEnv(testEnv);
   vi.stubEnv("AWS_REGION", "us-east-1");
+  vi.stubEnv(
+    "ISB_VALIDATOR_OVERLAY_PATH",
+    path.join(__dirname, "../src/validator-exclusion-config.isb-overlay.yaml"),
+  );
 
   stsClient.reset();
   stsClient.on(GetCallerIdentityCommand).resolves({
@@ -442,6 +447,68 @@ describe("Initialize-Cleanup Step", () => {
 
     expect(result.getStatus()).toBe(ExecutionStatus.FAILED);
     expect(result.getError()?.errorMessage).toContain("is not assumable");
+  });
+});
+
+describe("Validator Exclusion Overlay", () => {
+  it("merges the ISB overlay into the customer's exclusion patterns", async () => {
+    mockAccountStoreDefaults();
+    mockConfigStore();
+
+    const resourceExplorerSpy = vi.spyOn(IsbServices, "resourceExplorer");
+
+    const runPromise = runner.run({
+      payload: createCleanAccountEvent("123456789012", "LEASE_TERMINATION"),
+    });
+    await completeNukeCallbacks(2);
+    await runPromise;
+
+    expect(resourceExplorerSpy).toHaveBeenCalled();
+    const patterns =
+      resourceExplorerSpy.mock.calls[0]![1].exclusionConfig.excludedArnPatterns;
+
+    // ISB-required entries from validator-exclusion-config.isb-overlay.yaml
+    expect(patterns).toContain("arn:aws:elasticache:*:*:user:default.iam-user");
+    expect(patterns).toContain(
+      "arn:aws:elasticache:*:*:usergroup:default.iam-user-group",
+    );
+    // the customer's own AppConfig pattern survives the merge
+    expect(patterns).toContain("arn:aws:iam::*:role/aws-service-role/*");
+  });
+
+  it("does not duplicate a pattern the customer already declared", async () => {
+    mockAccountStoreDefaults();
+    mockConfigStore();
+
+    appConfigDataClient.on(GetLatestConfigurationCommand).resolves({
+      Configuration: new TextEncoder().encode(
+        yaml.dump({
+          validation: {
+            excludedArnPatterns: [
+              "arn:aws:elasticache:*:*:user:default.iam-user",
+            ],
+          },
+        }),
+      ) as any,
+      NextPollConfigurationToken: "next-token",
+    });
+
+    const resourceExplorerSpy = vi.spyOn(IsbServices, "resourceExplorer");
+
+    const runPromise = runner.run({
+      payload: createCleanAccountEvent("123456789012", "LEASE_TERMINATION"),
+    });
+    await completeNukeCallbacks(2);
+    await runPromise;
+
+    const patterns =
+      resourceExplorerSpy.mock.calls[0]![1].exclusionConfig.excludedArnPatterns;
+
+    expect(
+      patterns.filter(
+        (p) => p === "arn:aws:elasticache:*:*:user:default.iam-user",
+      ),
+    ).toHaveLength(1);
   });
 });
 

@@ -229,6 +229,15 @@ export class AccountCleaner extends Construct {
           "durable-cleanup-handler.ts",
         ),
         handler: "handler",
+        bundling: {
+          commandHooks: {
+            beforeBundling: () => [],
+            beforeInstall: () => [],
+            afterBundling: (inputDir: string, outputDir: string) => [
+              `cp ${inputDir}/source/lambdas/account-cleanup/durable-cleanup-orchestration/src/validator-exclusion-config.isb-overlay.yaml ${outputDir}`,
+            ],
+          },
+        },
         // Per-invocation timeout (not total execution time). Needs headroom for
         // Resource Explorer enumeration across regions and durable replay overhead.
         timeout: Duration.minutes(5),

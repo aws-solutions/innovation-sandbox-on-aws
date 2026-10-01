@@ -17,6 +17,9 @@ import {
 import { StartBuildCommand } from "@aws-sdk/client-codebuild";
 import { EventBridgeEvent } from "aws-lambda";
 import yaml from "js-yaml";
+import fs from "node:fs";
+import path from "node:path";
+
 import z from "zod";
 
 import {
@@ -457,9 +460,21 @@ async function fetchValidatorExclusionConfig(env: {
   );
   const parsed = ValidatorExclusionConfigSchema.parse(rawConfig);
 
+  const overlayPath =
+    process.env.ISB_VALIDATOR_OVERLAY_PATH ??
+    path.join(__dirname, "validator-exclusion-config.isb-overlay.yaml");
+  const overlay = ValidatorExclusionConfigSchema.parse(
+    yaml.load(fs.readFileSync(overlayPath, "utf-8")),
+  );
+
   // Map to ExclusionConfig interface (excludedResourceTypes not in AppConfig schema — default empty)
   return {
-    excludedArnPatterns: parsed.validation.excludedArnPatterns,
+    excludedArnPatterns: [
+      ...new Set([
+        ...overlay.validation.excludedArnPatterns,
+        ...parsed.validation.excludedArnPatterns,
+      ]),
+    ],
     excludedResourceTypes: [],
   };
 }

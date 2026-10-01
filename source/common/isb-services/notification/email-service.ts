@@ -509,6 +509,7 @@ export class EmailService {
   ) {
     if (error instanceof SESServiceException) {
       switch (error.name) {
+        case "AccessDenied":
         case "AccountSendingPausedException":
         case "ConfigurationSetDoesNotExistException":
         case "ConfigurationSetSendingPausedException":
