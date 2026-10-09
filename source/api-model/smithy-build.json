@@ -178,7 +178,7 @@
         "typescript-client-codegen": {
           "service": "com.amazon.isb#IsbApi",
           "package": "@amzn/innovation-sandbox-api-client",
-          "packageVersion": "1.3.4"
+          "packageVersion": "1.3.5"
         }
       }
     },
@@ -187,7 +187,7 @@
         "typescript-ssdk-codegen": {
           "service": "com.amazon.isb#LeaseTemplatesApi",
           "package": "@amzn/innovation-sandbox-api-server",
-          "packageVersion": "1.3.4",
+          "packageVersion": "1.3.5",
           "requiredMemberMode": "strict",
           "disableDefaultValidation": true
         }
@@ -198,7 +198,7 @@
         "typescript-ssdk-codegen": {
           "service": "com.amazon.isb#ConfigurationsApi",
           "package": "@amzn/innovation-sandbox-api-server",
-          "packageVersion": "1.3.4",
+          "packageVersion": "1.3.5",
           "requiredMemberMode": "strict",
           "disableDefaultValidation": true
         }
@@ -209,7 +209,7 @@
         "typescript-ssdk-codegen": {
           "service": "com.amazon.isb#PrincipalsApi",
           "package": "@amzn/innovation-sandbox-api-server",
-          "packageVersion": "1.3.4",
+          "packageVersion": "1.3.5",
           "requiredMemberMode": "strict",
           "disableDefaultValidation": true
         }
@@ -220,7 +220,7 @@
         "typescript-ssdk-codegen": {
           "service": "com.amazon.isb#AccountsApi",
           "package": "@amzn/innovation-sandbox-api-server",
-          "packageVersion": "1.3.4",
+          "packageVersion": "1.3.5",
           "requiredMemberMode": "strict",
           "disableDefaultValidation": true
         }
@@ -231,7 +231,7 @@
         "typescript-ssdk-codegen": {
           "service": "com.amazon.isb#LeasesApi",
           "package": "@amzn/innovation-sandbox-api-server",
-          "packageVersion": "1.3.4",
+          "packageVersion": "1.3.5",
           "requiredMemberMode": "strict",
           "disableDefaultValidation": true
         }
@@ -242,7 +242,7 @@
         "typescript-ssdk-codegen": {
           "service": "com.amazon.isb#BlueprintsApi",
           "package": "@amzn/innovation-sandbox-api-server",
-          "packageVersion": "1.3.4",
+          "packageVersion": "1.3.5",
           "requiredMemberMode": "strict",
           "disableDefaultValidation": true
         }

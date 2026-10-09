@@ -434,26 +434,64 @@ export class CostExplorerService {
       accounts,
       granularity,
     );
-    const command = new GetCostAndUsageCommand(params);
-    const response = await this.costExplorerClient.send(command);
+    const accountsCost = new AccountsCostReport();
+    let nextPageToken: string | undefined = undefined;
+    let pageCount = 0;
+    let resultByTimeCount = 0;
+    let rowCount = 0;
 
-    if (!response.ResultsByTime || response.ResultsByTime.length === 0) {
+    do {
+      const response: GetCostAndUsageCommandOutput =
+        await this.costExplorerClient.send(
+          new GetCostAndUsageCommand({
+            ...params,
+            NextPageToken: nextPageToken,
+          }),
+        );
+      const resultsByTime = response.ResultsByTime ?? [];
+
+      pageCount++;
+      resultByTimeCount += resultsByTime.length;
+      rowCount += resultsByTime.reduce(
+        (total, result) => total + (result.Groups?.length ?? 0),
+        0,
+      );
+      accountsCost.merge(
+        this.calculateTotalCostForLeases(
+          resultsByTime,
+          accountsWithStartDates,
+          granularity,
+        ),
+      );
+
+      nextPageToken = response.NextPageToken;
+    } while (nextPageToken);
+
+    if (resultByTimeCount === 0) {
       logger.warn("No cost data available", {
         start,
         end,
         accounts,
       });
-      return new AccountsCostReport();
     }
-    return this.calculateTotalCostForLeases(
-      response.ResultsByTime,
-      accountsWithStartDates,
-      granularity,
-    );
+
+    if (pageCount > 1) {
+      logger.info("Processed multi-page Cost Explorer lease query", {
+        start: start.toISO(),
+        end: end.toISO(),
+        granularity,
+        accountCount: accounts.length,
+        pageCount,
+        rowCount,
+      });
+    }
+
+    return accountsCost;
   }
 
   /**
-   * @deprecated
+   * Internal helper of the legacy {@link getCostForLeases} path.
+   * Remove when {@link getCostForLeases} is removed.
    */
   private calculateTotalCostForLeases(
     resultByTime: ResultByTime[],

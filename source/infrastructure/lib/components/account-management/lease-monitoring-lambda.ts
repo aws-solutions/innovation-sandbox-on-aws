@@ -1,5 +1,6 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
+import { Duration } from "aws-cdk-lib";
 import { EventBus } from "aws-cdk-lib/aws-events";
 import { Role, ServicePrincipal } from "aws-cdk-lib/aws-iam";
 import { CfnSchedule } from "aws-cdk-lib/aws-scheduler";
@@ -57,6 +58,7 @@ export class LeaseMonitoringLambda extends Construct {
       logGroup: IsbComputeResources.globalLogGroup,
       envSchema: LeaseMonitoringEnvironmentSchema,
       reservedConcurrentExecutions: 1,
+      timeout: Duration.minutes(15),
     });
 
     props.isbEventBus.grantPutEventsTo(lambda.lambdaFunction);
