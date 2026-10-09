@@ -248,6 +248,122 @@ describe("CostExplorerService", () => {
       expect(costCalculated.costMap).toEqual(costExpected.costMap);
     });
 
+    it("follows NextPageToken until exhausted and merges account rows when a day spans pages", async () => {
+      const day = now().minus({ days: 1 }).startOf("day");
+      const sendSpy = vi
+        .fn()
+        .mockResolvedValueOnce({
+          NextPageToken: "page-2",
+          ResultsByTime: [
+            {
+              Groups: [
+                {
+                  Keys: [testAccount1],
+                  Metrics: {
+                    UnblendedCost: { Amount: "100.00", Unit: "USD" },
+                  },
+                },
+              ],
+              TimePeriod: {
+                Start: CostExplorerService.toCostExplorerFormat(
+                  day,
+                  Granularity.DAILY,
+                ),
+                End: CostExplorerService.toCostExplorerFormat(
+                  day.plus({ days: 1 }),
+                  Granularity.DAILY,
+                ),
+              },
+            },
+          ],
+        })
+        .mockResolvedValueOnce({
+          ResultsByTime: [
+            {
+              Groups: [
+                {
+                  Keys: [testAccount2],
+                  Metrics: {
+                    UnblendedCost: { Amount: "50.00", Unit: "USD" },
+                  },
+                },
+              ],
+              TimePeriod: {
+                Start: CostExplorerService.toCostExplorerFormat(
+                  day,
+                  Granularity.DAILY,
+                ),
+                End: CostExplorerService.toCostExplorerFormat(
+                  day.plus({ days: 1 }),
+                  Granularity.DAILY,
+                ),
+              },
+            },
+          ],
+        });
+      costExplorerService.costExplorerClient.send = sendSpy;
+
+      const report = await costExplorerService.getCostForLeases(
+        {
+          [testAccount1]: day,
+          [testAccount2]: day,
+        },
+        day,
+      );
+
+      expect(sendSpy).toHaveBeenCalledTimes(2);
+      expect(sendSpy.mock.calls[0]![0].input.NextPageToken).toBeUndefined();
+      expect(sendSpy.mock.calls[1]![0].input.NextPageToken).toBe("page-2");
+      expect(report.costMap).toEqual({
+        [testAccount1]: 100,
+        [testAccount2]: 50,
+      });
+    });
+
+    it("continues to the next page when a page has no ResultsByTime", async () => {
+      const day = now().minus({ days: 1 }).startOf("day");
+      const sendSpy = vi
+        .fn()
+        .mockResolvedValueOnce({
+          NextPageToken: "page-2",
+          ResultsByTime: [],
+        })
+        .mockResolvedValueOnce({
+          ResultsByTime: [
+            {
+              Groups: [
+                {
+                  Keys: [testAccount1],
+                  Metrics: {
+                    UnblendedCost: { Amount: "25.00", Unit: "USD" },
+                  },
+                },
+              ],
+              TimePeriod: {
+                Start: CostExplorerService.toCostExplorerFormat(
+                  day,
+                  Granularity.DAILY,
+                ),
+                End: CostExplorerService.toCostExplorerFormat(
+                  day.plus({ days: 1 }),
+                  Granularity.DAILY,
+                ),
+              },
+            },
+          ],
+        });
+      costExplorerService.costExplorerClient.send = sendSpy;
+
+      const report = await costExplorerService.getCostForLeases(
+        { [testAccount1]: day },
+        day,
+      );
+
+      expect(sendSpy).toHaveBeenCalledTimes(2);
+      expect(sendSpy.mock.calls[1]![0].input.NextPageToken).toBe("page-2");
+      expect(report.getCost(testAccount1)).toBe(25);
+    });
+
     it("returns costs for accounts some within time period based on daily resolution", async () => {
       costExplorerService.costExplorerClient.send = vi
         .fn()

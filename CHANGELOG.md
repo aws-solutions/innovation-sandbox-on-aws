@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.5] - 2026-10-07
+
+### Fixed
+
+- Corrected legacy Cost Explorer pagination so lease cost totals accumulate across every `GetCostAndUsage` page instead of only the final page, preventing undercounted spend for leases on the pre-tagging fallback path
+- Suppressed redundant freeze alerts for leases that are already Frozen; the lifecycle handler previously rejected those events because only Active leases can freeze, causing unnecessary retries and allowing a freeze threshold to shadow an eligible ordinary alert
+- Extended the lease-monitoring Lambda timeout to 15 minutes so large catch-up cohorts can complete a full scan
+
+### Security
+
+- Pinned `source-map-js` and `postcss-selector-parser` to their patched versions
+
 ## [1.3.4] - 2026-10-01
 
 ### Security

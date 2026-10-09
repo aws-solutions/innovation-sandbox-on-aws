@@ -244,19 +244,36 @@ function determineLeaseEvents(props: {
     currentDateTime,
   );
   const totalCostSpent = latestCostReport.getCost(lease.awsAccountId);
+  const canFreeze = lease.status === "Active";
+  const eligibleBudgetThresholds = canFreeze
+    ? breachedBudgetThresholds
+    : breachedBudgetThresholds.filter(
+        (threshold) => threshold.action !== "FREEZE_ACCOUNT",
+      );
   const largestBreachedBudgetThreshold = getLargestBudgetThreshold(
-    breachedBudgetThresholds,
+    eligibleBudgetThresholds,
   );
-  const budgetFreezeThreshold = breachedBudgetThresholds.find(
-    (threshold) => threshold.action === "FREEZE_ACCOUNT",
-  );
+  const budgetFreezeThreshold = canFreeze
+    ? breachedBudgetThresholds.find(
+        (threshold) => threshold.action === "FREEZE_ACCOUNT",
+      )
+    : undefined;
+  const eligibleDurationThresholds = canFreeze
+    ? breachedDurationThresholds
+    : breachedDurationThresholds.filter(
+        (threshold) => threshold.action !== "FREEZE_ACCOUNT",
+      );
   const latestBreachedDurationTheshold = getLatestDurationThreshold(
-    breachedDurationThresholds,
+    eligibleDurationThresholds,
   );
-  const durationFreezeThreshold = breachedDurationThresholds.find(
-    (threshold) => threshold.action === "FREEZE_ACCOUNT",
-  );
-  //check for freeze actions, don't need to send a freeze event twice
+  const durationFreezeThreshold = canFreeze
+    ? breachedDurationThresholds.find(
+        (threshold) => threshold.action === "FREEZE_ACCOUNT",
+      )
+    : undefined;
+
+  // Only Active leases can transition to Frozen. A Frozen lease still has its
+  // corrected cost persisted and can still be terminated by maxSpend above.
   if (budgetFreezeThreshold) {
     logger.info(
       `Lease (${lease.uuid}) budget freeze threshold crossed ` +
