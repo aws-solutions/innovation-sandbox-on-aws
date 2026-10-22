@@ -2,19 +2,19 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # To update: docker manifest inspect public.ecr.aws/amazonlinux/amazonlinux:2023-minimal | jq -r '.manifests[] | select(.platform.architecture=="amd64") | .digest'
-ARG BASE_IMAGE_DIGEST=sha256:22e32c73af0a7797937d9c6dbcecc5af427405ac166ad1e72396701053f8eac6
+ARG BASE_IMAGE_DIGEST=sha256:478c519817ce1c2cdc64700e4395775143446f8706706906b942960f0394ff2e
 
 # Build aws-nuke from source
 FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@${BASE_IMAGE_DIGEST} AS builder
 
-ARG AWS_NUKE_VERSION=v3.67.0
+ARG AWS_NUKE_VERSION=v3.68.3
 # To update: curl -sL https://github.com/ekristen/aws-nuke/archive/refs/tags/vX.Y.Z.tar.gz | shasum -a 256 | awk '{print $1}'
-ARG AWS_NUKE_SOURCE_SHA256=69ef6d51aba9d1b875c2adae35e321e4030bf098c4bedc8c10822a99af8fc95b
+ARG AWS_NUKE_SOURCE_SHA256=2f06b307aa1addccf9231f0fd1f394c63507a8c7438e8113a91386066be0d6aa
 
-# Go 1.26.6 required by aws-nuke v3.67.0 (AL2023 only ships Go 1.25.x via dnf)
-# Patched to 1.26.6 to pick up Go stdlib security fixes (see CHANGELOG v1.2.17)
-ARG GO_VERSION=1.26.6
-ARG GO_SHA256=708effb774be8237570d0add163225abbdfaf4fca28b2611df167beba4feef89
+# Go 1.26.1+ required by aws-nuke v3.68.3 (AL2023 only ships Go 1.25.x via dnf)
+# Patched to 1.26.9 to pick up Go stdlib security fixes (see CHANGELOG v1.3.6)
+ARG GO_VERSION=1.26.9
+ARG GO_SHA256=42d158b4d8f7b61ac0a830567c940a86098fb7aac52e467a5ebec03ef5cc2f8d
 
 RUN dnf install -y tar gzip git patch && \
     curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" -o /tmp/go.tar.gz && \

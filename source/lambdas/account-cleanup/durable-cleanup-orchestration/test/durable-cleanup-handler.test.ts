@@ -468,6 +468,9 @@ describe("Validator Exclusion Overlay", () => {
       resourceExplorerSpy.mock.calls[0]![1].exclusionConfig.excludedArnPatterns;
 
     // ISB-required entries from validator-exclusion-config.isb-overlay.yaml
+    expect(patterns).toContain(
+      "arn:aws:access-analyzer:*:*:analyzer/_AccessAnalyzerForSecurityHubV2*",
+    );
     expect(patterns).toContain("arn:aws:elasticache:*:*:user:default.iam-user");
     expect(patterns).toContain(
       "arn:aws:elasticache:*:*:usergroup:default.iam-user-group",

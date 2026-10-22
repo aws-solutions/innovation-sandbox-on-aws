@@ -49,7 +49,7 @@ test("LeaseTemplate Schema Version", () => {
   //Changes to this test have critical upgrade path implications as detailed at the top of this file
   expect(
     objectHash.sha1(PersistedLeaseTemplateSchema.shape),
-  ).toMatchInlineSnapshot(`"3ce2bba84ef99205bc2131aaa09a7e1a0e2c8388"`);
+  ).toMatchInlineSnapshot(`"80a138fb47d57bf982d41f65f383e1ee995ba5b3"`);
   expect(LeaseTemplateSchemaVersion).toEqual(4);
 });
 
@@ -57,16 +57,16 @@ test("Lease Schema Version", () => {
   //Changes to this test have critical upgrade path implications as detailed at the top of this file
   expect(
     objectHash.sha1(PersistedPendingLeaseSchema.shape),
-  ).toMatchInlineSnapshot(`"56c366826e834e16daa17e05b8509ae1110e4694"`);
+  ).toMatchInlineSnapshot(`"b92958290b79eaf13a19c5d84d99f6f86e1a0bd2"`);
   expect(
     objectHash.sha1(PersistedApprovalDeniedLeaseSchema.shape),
-  ).toMatchInlineSnapshot(`"e994b3d0c0c305a542b9204c7e18a940510cc835"`);
+  ).toMatchInlineSnapshot(`"52ac06eec4ba8ec7c1dc70883e55e47d3cc58b62"`);
   expect(
     objectHash.sha1(PersistedMonitoredLeaseSchema.shape),
-  ).toMatchInlineSnapshot(`"ad902edf355918a40baefa5d960afd70e88b6690"`);
+  ).toMatchInlineSnapshot(`"4ff31d1a0beab2d7f6ab5f3361610b792fbb31fc"`);
   expect(
     objectHash.sha1(PersistedExpiredLeaseSchema.shape),
-  ).toMatchInlineSnapshot(`"ed02e23d18c18c891f869be08b4b79872ea3922a"`);
+  ).toMatchInlineSnapshot(`"e98562864256968bbb2adcdbfeadd22de1c45d75"`);
   expect(LeaseSchemaVersion).toEqual(4);
 });
 
@@ -74,7 +74,7 @@ test("PersistedSandboxAccount Schema Version", () => {
   //Changes to this test have critical upgrade path implications as detailed at the top of this file
   expect(
     objectHash.sha1(PersistedSandboxAccountSchema.shape),
-  ).toMatchInlineSnapshot(`"986a4e50112549f8d283df4c3bc5ebdb0304e756"`);
+  ).toMatchInlineSnapshot(`"bfe522aad6a5a225a05e11ebcf685e0220f7ead7"`);
   expect(SandboxAccountSchemaVersion).toEqual(2);
 });
 
@@ -82,13 +82,13 @@ test("Blueprint Schema Version", () => {
   //Changes to this test have critical upgrade path implications as detailed at the top of this file
   expect(
     objectHash.sha1(PersistedBlueprintItemSchema.shape),
-  ).toMatchInlineSnapshot(`"4791d017fe73a3890bc634759b83e06110e777c9"`);
+  ).toMatchInlineSnapshot(`"b2bf3101f9348f9088c3478c99a4fbb9c6ff4481"`);
   expect(
     objectHash.sha1(PersistedStackSetItemSchema.shape),
-  ).toMatchInlineSnapshot(`"29048ca26d32f1ad5c03d9b69decbcd70b35eb97"`);
+  ).toMatchInlineSnapshot(`"460d8c1516b98a06f25f60e45a076bb97352b53c"`);
   expect(
     objectHash.sha1(PersistedDeploymentHistoryItemSchema.shape),
-  ).toMatchInlineSnapshot(`"4627b913d536e97fbb9ffcb83f9b215aadb13a08"`);
+  ).toMatchInlineSnapshot(`"06b57221051e914458db376647250d1f7bb991d1"`);
   expect(BlueprintSchemaVersion).toEqual(1);
 });
 
@@ -96,12 +96,12 @@ test("Principal Schema Version", () => {
   //Changes to this test have critical upgrade path implications as detailed at the top of this file
   expect(
     objectHash.sha1(PersistedUserAssignmentSchema.shape),
-  ).toMatchInlineSnapshot(`"117b5fdde1d7fffabfb8837e1c19bff46bb05563"`);
+  ).toMatchInlineSnapshot(`"7b6ddc9fedabd00aee402a330acfe440a8b78211"`);
   expect(
     objectHash.sha1(PersistedGroupAssignmentSchema.shape),
-  ).toMatchInlineSnapshot(`"45228edf4477170c4a8835e673bdf09d3b131ccf"`);
+  ).toMatchInlineSnapshot(`"861abd7b39897a116419c11717f981405b3e7dcb"`);
   expect(
     objectHash.sha1(PersistedGroupMembershipCacheSchema.shape),
-  ).toMatchInlineSnapshot(`"0642e5aa84b4478db15f3c22a56a646bedef044b"`);
+  ).toMatchInlineSnapshot(`"1374b4465840b33e96a8595ac78e8681f867de45"`);
   expect(PrincipalSchemaVersion).toEqual(1);
 });

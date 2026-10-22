@@ -54,6 +54,18 @@ describe("Idc service api", () => {
   const ssmClientMock = mockClient(SSMClient);
   const testPermissionSetArn =
     "arn:aws:sso:::permissionSet/ssoins-11111111/ps-11111111";
+  const testGroupMembershipMetadata = {
+    MembershipId: "test-membership-id",
+    MembershipArn: "arn:aws:identitystore:::membership/test-membership-id",
+  };
+  const testUserMetadata = {
+    UserArn: "arn:aws:identitystore:::user/test-user-id",
+    Revision: "1",
+  };
+  const testGroupMetadata = {
+    GroupArn: "arn:aws:identitystore:::group/test-group-id",
+    Revision: "1",
+  };
 
   const idcConfig = {
     identityStoreId: test_env.IDENTITY_STORE_ID,
@@ -116,6 +128,7 @@ describe("Idc service api", () => {
         identityStoreMock.on(ListGroupMembershipsCommand).resolves({
           GroupMemberships: [
             {
+              ...testGroupMembershipMetadata,
               IdentityStoreId: test_env.IDENTITY_STORE_ID,
               MemberId: {
                 UserId: testIdcUser.UserId,
@@ -158,6 +171,7 @@ describe("Idc service api", () => {
       identityStoreMock.on(ListGroupMembershipsCommand).resolves({
         GroupMemberships: [
           {
+            ...testGroupMembershipMetadata,
             IdentityStoreId: test_env.IDENTITY_STORE_ID,
             MemberId: {
               UserId: testIdcUser.UserId,
@@ -191,14 +205,17 @@ describe("Idc service api", () => {
       identityStoreMock.on(ListGroupMembershipsForMemberCommand).resolves({
         GroupMemberships: [
           {
+            ...testGroupMembershipMetadata,
             GroupId: idcConfig.userGroupId,
             IdentityStoreId: test_env.IDENTITY_STORE_ID,
           },
           {
+            ...testGroupMembershipMetadata,
             GroupId: idcConfig.managerGroupId,
             IdentityStoreId: test_env.IDENTITY_STORE_ID,
           },
           {
+            ...testGroupMembershipMetadata,
             GroupId: idcConfig.adminGroupId,
             IdentityStoreId: test_env.IDENTITY_STORE_ID,
           },
@@ -225,6 +242,7 @@ describe("Idc service api", () => {
       identityStoreMock.on(ListGroupMembershipsForMemberCommand).resolves({
         GroupMemberships: [
           {
+            ...testGroupMembershipMetadata,
             GroupId: idcConfig.userGroupId,
             IdentityStoreId: test_env.IDENTITY_STORE_ID,
           },
@@ -251,6 +269,7 @@ describe("Idc service api", () => {
       identityStoreMock.on(ListGroupMembershipsForMemberCommand).resolves({
         GroupMemberships: [
           {
+            ...testGroupMembershipMetadata,
             GroupId: "not-isb-group",
             IdentityStoreId: test_env.IDENTITY_STORE_ID,
           },
@@ -269,6 +288,7 @@ describe("Idc service api", () => {
       identityStoreMock.on(ListGroupMembershipsForMemberCommand).resolves({
         GroupMemberships: [
           {
+            ...testGroupMembershipMetadata,
             GroupId: idcConfig.userGroupId,
             IdentityStoreId: test_env.IDENTITY_STORE_ID,
           },
@@ -421,6 +441,7 @@ describe("Idc service api", () => {
       identityStoreMock.on(ListUsersCommand).resolves({
         Users: [
           {
+            ...testUserMetadata,
             IdentityStoreId: test_env.IDENTITY_STORE_ID,
             UserId: "user-1",
             UserName: "alice",
@@ -447,6 +468,7 @@ describe("Idc service api", () => {
         .resolvesOnce({
           Users: [
             {
+              ...testUserMetadata,
               IdentityStoreId: test_env.IDENTITY_STORE_ID,
               UserId: "user-1",
               DisplayName: "User One",
@@ -458,6 +480,7 @@ describe("Idc service api", () => {
         .resolvesOnce({
           Users: [
             {
+              ...testUserMetadata,
               IdentityStoreId: test_env.IDENTITY_STORE_ID,
               UserId: "user-2",
               DisplayName: "User Two",
@@ -477,6 +500,7 @@ describe("Idc service api", () => {
       identityStoreMock.on(ListUsersCommand).resolves({
         Users: [
           {
+            ...testUserMetadata,
             IdentityStoreId: test_env.IDENTITY_STORE_ID,
             UserId: "user-1",
             DisplayName: "No Email",
@@ -494,6 +518,7 @@ describe("Idc service api", () => {
       identityStoreMock.on(ListUsersCommand).resolves({
         Users: [
           {
+            ...testUserMetadata,
             IdentityStoreId: test_env.IDENTITY_STORE_ID,
             UserId: "user-1",
             UserName: "jdoe",
@@ -512,12 +537,14 @@ describe("Idc service api", () => {
       identityStoreMock.on(ListUsersCommand).resolves({
         Users: [
           {
+            ...testUserMetadata,
             IdentityStoreId: test_env.IDENTITY_STORE_ID,
             UserId: "valid",
             DisplayName: "Valid",
             Emails: [],
           },
           {
+            ...testUserMetadata,
             IdentityStoreId: test_env.IDENTITY_STORE_ID,
             UserId: undefined,
             DisplayName: "Ghost",
@@ -556,6 +583,7 @@ describe("Idc service api", () => {
       identityStoreMock.on(ListGroupsCommand).resolves({
         Groups: [
           {
+            ...testGroupMetadata,
             GroupId: "group-1",
             DisplayName: "Engineering",
             IdentityStoreId: test_env.IDENTITY_STORE_ID,
@@ -579,6 +607,7 @@ describe("Idc service api", () => {
         .resolvesOnce({
           Groups: [
             {
+              ...testGroupMetadata,
               GroupId: "group-1",
               DisplayName: "Group One",
               IdentityStoreId: test_env.IDENTITY_STORE_ID,
@@ -589,6 +618,7 @@ describe("Idc service api", () => {
         .resolvesOnce({
           Groups: [
             {
+              ...testGroupMetadata,
               GroupId: "group-2",
               DisplayName: "Group Two",
               IdentityStoreId: test_env.IDENTITY_STORE_ID,
@@ -607,16 +637,19 @@ describe("Idc service api", () => {
       identityStoreMock.on(ListGroupsCommand).resolves({
         Groups: [
           {
+            ...testGroupMetadata,
             GroupId: "valid",
             DisplayName: "Valid",
             IdentityStoreId: test_env.IDENTITY_STORE_ID,
           },
           {
+            ...testGroupMetadata,
             GroupId: undefined,
             DisplayName: "No ID",
             IdentityStoreId: test_env.IDENTITY_STORE_ID,
           },
           {
+            ...testGroupMetadata,
             GroupId: "no-name",
             DisplayName: undefined,
             IdentityStoreId: test_env.IDENTITY_STORE_ID,
@@ -651,6 +684,7 @@ describe("Idc service api", () => {
 
   function createGroupMembership(userId?: string) {
     return {
+      ...testGroupMembershipMetadata,
       IdentityStoreId: test_env.IDENTITY_STORE_ID,
       MemberId: userId ? { UserId: userId } : undefined,
     };
@@ -751,6 +785,7 @@ describe("Idc service api", () => {
   describe("listGroupsForUser", () => {
     function createMockGroupMembership(groupId: string, userId: string) {
       return {
+        ...testGroupMembershipMetadata,
         IdentityStoreId: test_env.IDENTITY_STORE_ID,
         GroupId: groupId,
         MemberId: { UserId: userId },
@@ -802,6 +837,7 @@ describe("Idc service api", () => {
         GroupMemberships: [
           createMockGroupMembership("group-1", "user-x"),
           {
+            ...testGroupMembershipMetadata,
             IdentityStoreId: test_env.IDENTITY_STORE_ID,
             MemberId: { UserId: "user-x" },
             MembershipId: "no-group-id",

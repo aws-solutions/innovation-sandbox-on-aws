@@ -79,10 +79,6 @@ export class RestApi extends SpecRestApi {
         throttlingBurstLimit: Token.asNumber(
           getContextFromMapping(scope, "apiThrottlingBurstLimit"),
         ),
-        cacheClusterEnabled: true,
-        cacheClusterSize: "0.5",
-        cachingEnabled: false,
-        cacheDataEncrypted: true,
       },
     });
 

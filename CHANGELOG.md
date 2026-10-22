@@ -5,7 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.3.5] - 2026-10-08
+## [1.3.6] - 2026-10-20
+
+### Security
+
+- Upgraded `brace-expansion` to mitigate:
+  - [CVE-2026-102276](https://nvd.nist.gov/vuln/detail/CVE-2026-102276) — denial of service via uncontrolled recursion in nested brace groups
+  - [CVE-2026-102277](https://nvd.nist.gov/vuln/detail/CVE-2026-102277) — denial of service via quadratic-time brace expansion
+  - [CVE-2026-102278](https://nvd.nist.gov/vuln/detail/CVE-2026-102278) — denial of service via stack exhaustion from nested brace patterns
+- Upgraded the Go toolchain used to build the account cleaner container image from 1.26.6 to 1.26.9 to mitigate:
+  - [CVE-2026-56857](https://nvd.nist.gov/vuln/detail/CVE-2026-56857)
+  - [CVE-2026-78663](https://nvd.nist.gov/vuln/detail/CVE-2026-78663)
+  - [CVE-2026-56866](https://nvd.nist.gov/vuln/detail/CVE-2026-56866)
+  - [CVE-2026-78659](https://nvd.nist.gov/vuln/detail/CVE-2026-78659)
+  - [CVE-2026-78660](https://nvd.nist.gov/vuln/detail/CVE-2026-78660)
+  - [CVE-2026-78667](https://nvd.nist.gov/vuln/detail/CVE-2026-78667)
+  - [CVE-2026-78669](https://nvd.nist.gov/vuln/detail/CVE-2026-78669)
+  - [CVE-2026-94439](https://nvd.nist.gov/vuln/detail/CVE-2026-94439)
+  - [CVE-2026-94440](https://nvd.nist.gov/vuln/detail/CVE-2026-94440)
+  - [CVE-2026-97031](https://nvd.nist.gov/vuln/detail/CVE-2026-97031)
+  - [CVE-2026-97032](https://nvd.nist.gov/vuln/detail/CVE-2026-97032)
+  - [CVE-2026-94448](https://nvd.nist.gov/vuln/detail/CVE-2026-94448)
+  - [CVE-2026-97030](https://nvd.nist.gov/vuln/detail/CVE-2026-97030)
+- Updated the account cleaner container base image (`amazonlinux:2023-minimal`) to the latest digest to pick up upstream operating system package fixes
+
+### Changed
+
+- Updated `aws-nuke` from 3.67.0 to 3.68.3, adding Security Hub V2 cleanup and improved handling of AWS-managed EventBridge and ElastiCache resources
+- Refreshed transitive npm dependencies and removed overrides that are no longer required
+
+### Fixed
+
+- Removed the unused API Gateway cache cluster and its associated security-rule suppression, avoiding cache-cluster cost when API response caching is disabled ([#204](https://github.com/aws-solutions/innovation-sandbox-on-aws/issues/204))
+
+## [1.3.5] - 2026-10-07
 
 ### Fixed
 
