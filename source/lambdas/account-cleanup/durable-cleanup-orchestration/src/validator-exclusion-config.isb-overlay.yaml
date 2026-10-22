@@ -19,6 +19,11 @@
 
 validation:
   excludedArnPatterns:
+    # Security Hub V2 creates this service-owned IAM Access Analyzer. aws-nuke
+    # cannot delete it even after disabling Security Hub V2, so validation must
+    # ignore it as well.
+    - "arn:aws:access-analyzer:*:*:analyzer/_AccessAnalyzerForSecurityHubV2*"
+
     # AWS auto-creates these alongside the ElastiCache service-linked role. The
     # nuke overlay preserves them, so Resource Explorer keeps reporting them.
     - "arn:aws:elasticache:*:*:user:default.iam-user"
