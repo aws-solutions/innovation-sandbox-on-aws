@@ -475,6 +475,7 @@ describe("Validator Exclusion Overlay", () => {
     expect(patterns).toContain(
       "arn:aws:elasticache:*:*:usergroup:default.iam-user-group",
     );
+    expect(patterns).toContain("arn:aws:xray:*:*:group/Default");
     // the customer's own AppConfig pattern survives the merge
     expect(patterns).toContain("arn:aws:iam::*:role/aws-service-role/*");
   });

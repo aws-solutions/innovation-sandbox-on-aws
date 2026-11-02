@@ -28,3 +28,7 @@ validation:
     # nuke overlay preserves them, so Resource Explorer keeps reporting them.
     - "arn:aws:elasticache:*:*:user:default.iam-user"
     - "arn:aws:elasticache:*:*:usergroup:default.iam-user-group"
+
+    # AWS creates this X-Ray group in every region. It cannot be deleted, so
+    # aws-nuke skips it and validation must ignore it as well.
+    - "arn:aws:xray:*:*:group/Default"
