@@ -157,4 +157,4 @@ for stack in "${STACKS_TO_DESTROY[@]}"; do
 done
 
 print_summary "Destroy" "${STACKS_TO_DESTROY[@]}"
-[ -n "$FAILED_STACK" ] && exit 1
+if [ -n "$FAILED_STACK" ]; then exit 1; fi

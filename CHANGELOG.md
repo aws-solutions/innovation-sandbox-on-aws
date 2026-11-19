@@ -5,6 +5,62 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.7] - 2026-11-19
+
+### Security
+
+- Upgraded `fast-uri` to 3.1.9 to mitigate:
+  - [CVE-2026-110095](https://nvd.nist.gov/vuln/detail/CVE-2026-110095) — path traversal via improper relative URI normalization
+  - [CVE-2026-110180](https://nvd.nist.gov/vuln/detail/CVE-2026-110180) — security policy bypass via improper host canonicalization
+  - [CVE-2026-110306](https://nvd.nist.gov/vuln/detail/CVE-2026-110306) — cross-site scripting via improper URI scheme decoding
+  - [CVE-2026-110725](https://nvd.nist.gov/vuln/detail/CVE-2026-110725) — cross-site scripting via an unescaped colon in relative URI paths
+- Upgraded the `minimatch` dependency used by `@typescript-eslint/typescript-estree` to 11.0.8 to mitigate [CVE-2026-118764](https://nvd.nist.gov/vuln/detail/CVE-2026-118764).
+- Updated `amazonlinux:2023-minimal` base image digest to mitigate:
+  - `ca-certificates`:
+    - [CVE-2026-113470](https://nvd.nist.gov/vuln/detail/CVE-2026-113470)
+    - [CVE-2026-114406](https://nvd.nist.gov/vuln/detail/CVE-2026-114406)
+  - `curl-minimal`, `libcurl-minimal`:
+    - [CVE-2026-18924](https://nvd.nist.gov/vuln/detail/CVE-2026-18924)
+    - [CVE-2026-19931](https://nvd.nist.gov/vuln/detail/CVE-2026-19931)
+    - [CVE-2026-92392](https://nvd.nist.gov/vuln/detail/CVE-2026-92392)
+  - `glibc`, `glibc-common`, `glibc-minimal-langpack`:
+    - [CVE-2026-86805](https://nvd.nist.gov/vuln/detail/CVE-2026-86805)
+  - `libcap`:
+    - [CVE-2026-78659](https://nvd.nist.gov/vuln/detail/CVE-2026-78659)
+    - [CVE-2026-78667](https://nvd.nist.gov/vuln/detail/CVE-2026-78667)
+    - [CVE-2026-94440](https://nvd.nist.gov/vuln/detail/CVE-2026-94440)
+  - `libxml2`:
+    - [CVE-2026-76781](https://nvd.nist.gov/vuln/detail/CVE-2026-76781)
+  - `pcre2`, `pcre2-syntax`:
+    - [CVE-2026-86145](https://nvd.nist.gov/vuln/detail/CVE-2026-86145)
+    - [CVE-2026-89156](https://nvd.nist.gov/vuln/detail/CVE-2026-89156)
+    - [CVE-2026-89160](https://nvd.nist.gov/vuln/detail/CVE-2026-89160)
+    - [CVE-2026-103111](https://nvd.nist.gov/vuln/detail/CVE-2026-103111)
+  - `rpm`, `rpm-libs`:
+    - [CVE-2026-84837](https://nvd.nist.gov/vuln/detail/CVE-2026-84837)
+    - [CVE-2026-95519](https://nvd.nist.gov/vuln/detail/CVE-2026-95519)
+    - [CVE-2026-95520](https://nvd.nist.gov/vuln/detail/CVE-2026-95520)
+    - [CVE-2026-95521](https://nvd.nist.gov/vuln/detail/CVE-2026-95521)
+    - [CVE-2026-103242](https://nvd.nist.gov/vuln/detail/CVE-2026-103242)
+  - `sqlite-libs`:
+    - [CVE-2026-119371](https://nvd.nist.gov/vuln/detail/CVE-2026-119371)
+    - [CVE-2026-119372](https://nvd.nist.gov/vuln/detail/CVE-2026-119372)
+    - [CVE-2026-119373](https://nvd.nist.gov/vuln/detail/CVE-2026-119373)
+    - [CVE-2026-119375](https://nvd.nist.gov/vuln/detail/CVE-2026-119375)
+    - [CVE-2026-119376](https://nvd.nist.gov/vuln/detail/CVE-2026-119376)
+    - [CVE-2026-119377](https://nvd.nist.gov/vuln/detail/CVE-2026-119377)
+    - [CVE-2026-119378](https://nvd.nist.gov/vuln/detail/CVE-2026-119378)
+
+### Changed
+
+- Updated `aws-nuke` from 3.68.3 to 3.69.1
+- Switched the account cleaner image build to the Go toolchain provided by Amazon Linux 2023
+
+### Fixed
+
+- Fixed `deploy.sh` and `destroy.sh` exiting with status 1 when all stacks succeed ([#209](https://github.com/aws-solutions/innovation-sandbox-on-aws/issues/209), [#210](https://github.com/aws-solutions/innovation-sandbox-on-aws/pull/210) @rupe120)
+- Excluded the default AWS X-Ray group from post-cleanup validation, so accounts are no longer quarantined for a group that cannot be deleted ([#208](https://github.com/aws-solutions/innovation-sandbox-on-aws/pull/208) @kwevers)
+
 ## [1.3.6] - 2026-10-20
 
 ### Security
