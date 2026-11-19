@@ -331,4 +331,4 @@ for stack in "${STACKS_TO_DEPLOY[@]}"; do
 done
 
 print_summary "Deployment" "${STACKS_TO_DEPLOY[@]}"
-[ -n "$FAILED_STACK" ] && exit 1
+if [ -n "$FAILED_STACK" ]; then exit 1; fi
