@@ -1,6 +1,6 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 
 import { Logger } from "@aws-lambda-powertools/logger";
 import {

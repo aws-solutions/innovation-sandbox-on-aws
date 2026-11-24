@@ -16,7 +16,7 @@ import {
   OrgMgtAccountIdParam,
 } from "@amzn/innovation-sandbox-infrastructure/helpers/shared-cfn-params";
 import { applyIsbTag } from "@amzn/innovation-sandbox-infrastructure/helpers/tagging-helper";
-import { IsbIdcResources } from "@amzn/innovation-sandbox-infrastructure/isb-idc-resources";
+import { addIsbIdcResources } from "@amzn/innovation-sandbox-infrastructure/isb-idc-resources";
 
 export interface IsbIdcStackProps extends StackProps {
   adminGroupName?: string;
@@ -84,7 +84,7 @@ export class IsbIdcStack extends Stack {
       ],
     });
 
-    new IsbIdcResources(this, {
+    addIsbIdcResources(this, {
       orgMgtAccountId: orgManagementAccountIdParam.valueAsString,
       hubAccountId: hubAccountIdParam.valueAsString,
       identityStoreId: identityStoreId.valueAsString,

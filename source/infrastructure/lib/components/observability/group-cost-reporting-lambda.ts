@@ -23,7 +23,7 @@ import {
 import { CfnSchedule } from "aws-cdk-lib/aws-scheduler";
 import { Queue, QueueEncryption } from "aws-cdk-lib/aws-sqs";
 import { Construct } from "constructs";
-import path from "path";
+import path from "node:path";
 
 export interface GroupCostReportingLambdaProps {
   readonly orgMgtAccountId: string;

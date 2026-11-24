@@ -164,32 +164,35 @@ export const AccessCleanupSummarySchema = z.object({
 
 export type AccessCleanupSummary = z.infer<typeof AccessCleanupSummarySchema>;
 
-export const PersistedCleanupReportSchema = z
-  .object({
-    pk: AwsAccountIdSchema,
-    sk: z
-      .string()
-      .regex(/^CleanupReport#\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/),
-    accountId: AwsAccountIdSchema,
-    durableExecutionArn: z.string().min(1),
-    status: CleanupReportStatusSchema,
-    cleanupStatus: CleanupStatusSchema,
-    startedAt: z.iso.datetime(),
-    completedAt: z.iso.datetime().optional(),
-    reasonForCleanup: CleanupReasonBackwardCompatibleSchema,
-    // Identity that initiated the cleanup, when a specific actor is known
-    // (e.g. the admin email for a manually-initiated cleanup). Omitted for
-    // system-triggered cleanups.
-    initiatedBy: z.string().optional(),
-    resourceSummary: ResourceSummarySchema.optional(),
-    accessCleanupSummary: AccessCleanupSummarySchema.optional(),
-    steps: CleanupReportStepsSchema,
-    error: CleanupReportErrorSchema.optional(),
-    skipCooldownCallbackId: z.string().optional(),
-    cooldownSkippedBy: z.string().optional(),
-    ttl: z.number().int().nonnegative(),
-  })
-  .merge(CleanupReportItemWithMetadataSchema);
+export const PersistedCleanupReportKeySchema = z.strictObject({
+  pk: AwsAccountIdSchema,
+  sk: z
+    .string()
+    .regex(/^CleanupReport#\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/),
+});
+
+export const PersistedCleanupReportSchema = z.object({
+  ...PersistedCleanupReportKeySchema.shape,
+  accountId: AwsAccountIdSchema,
+  durableExecutionArn: z.string().min(1),
+  status: CleanupReportStatusSchema,
+  cleanupStatus: CleanupStatusSchema,
+  startedAt: z.iso.datetime(),
+  completedAt: z.iso.datetime().optional(),
+  reasonForCleanup: CleanupReasonBackwardCompatibleSchema,
+  // Identity that initiated the cleanup, when a specific actor is known
+  // (e.g. the admin email for a manually-initiated cleanup). Omitted for
+  // system-triggered cleanups.
+  initiatedBy: z.string().optional(),
+  resourceSummary: ResourceSummarySchema.optional(),
+  accessCleanupSummary: AccessCleanupSummarySchema.optional(),
+  steps: CleanupReportStepsSchema,
+  error: CleanupReportErrorSchema.optional(),
+  skipCooldownCallbackId: z.string().optional(),
+  cooldownSkippedBy: z.string().optional(),
+  ttl: z.number().int().nonnegative(),
+  ...CleanupReportItemWithMetadataSchema.shape,
+});
 
 export type PersistedCleanupReport = z.infer<
   typeof PersistedCleanupReportSchema

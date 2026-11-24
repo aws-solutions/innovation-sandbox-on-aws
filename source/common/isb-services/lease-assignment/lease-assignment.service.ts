@@ -7,7 +7,8 @@ import {
   SSOAdminClient,
   TargetType,
 } from "@aws-sdk/client-sso-admin";
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
+import pMap from "p-map";
 
 import { PaginatedQueryResult } from "@amzn/innovation-sandbox-commons/data/common-types.js";
 import {
@@ -17,13 +18,25 @@ import {
 import { IdcStackConfigStore } from "@amzn/innovation-sandbox-commons/data/idc-stack-config/ssm-idc-stack-config-store.js";
 import { LeaseStore } from "@amzn/innovation-sandbox-commons/data/lease/lease-store.js";
 import { type PersistedLease } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
+import {
+  assignmentSk,
+  parseAssignmentSk,
+  userPk,
+} from "@amzn/innovation-sandbox-commons/data/principal/principal-dynamodb-keys.js";
 import { PrincipalStore } from "@amzn/innovation-sandbox-commons/data/principal/principal-store.js";
-import type {
+import {
   PersistedGroupAssignment,
   PersistedUserAssignment,
+  PersistedUserAssignmentKeySchema,
+  PrincipalSchemaVersion,
 } from "@amzn/innovation-sandbox-commons/data/principal/principal.js";
 import { AssignmentRequestedEvent } from "@amzn/innovation-sandbox-commons/events/assignment-requested-event.js";
 import { getGroupMemberships } from "@amzn/innovation-sandbox-commons/isb-services/group-membership/index.js";
+import {
+  assertPermissionSetGrantAllowed,
+  assignmentTupleKey,
+  type AssignmentTupleKey,
+} from "@amzn/innovation-sandbox-commons/isb-services/permission-set/index.js";
 import {
   now,
   nowAsIsoDatetimeString,
@@ -35,23 +48,28 @@ import {
   isExpiredLease,
   isFrozenLease,
   LeaseKey,
+  LeaseKeySchema,
   type LeaseResourceLock,
   MAX_ASSIGNMENTS,
 } from "@amzn/innovation-sandbox-shared/types/lease.js";
+import { permissionSetIdFromArn } from "@amzn/innovation-sandbox-shared/types/permission-set.js";
+import type { PrincipalType } from "@amzn/innovation-sandbox-shared/types/principal.js";
 
 import { ItemAlreadyExists } from "@amzn/innovation-sandbox-commons/data/errors.js";
 import {
   AssignmentAction,
   AssignmentProcessingLock,
   type AssignmentSyncStatus,
-  type AssignmentView,
+  DeriveAssignmentProjectionProps,
   DesiredAssignment,
   EnrichDesiredAssignmentsServices,
   EnrichedAssignment,
   GetLeasesForUserDirectServices,
   GetLeasesForUserProps,
   GetLeasesForUserViaGroupsServices,
-  type LeaseAssignmentsView,
+  IneligibleAssignmentPrincipalError,
+  IneligibleLeaseOwnerError,
+  InvalidDirectLeasePageIdentifierError,
   LeaseLockIntent,
   MaxAssignmentsExceededError,
   ProcessAssignmentInput,
@@ -63,10 +81,13 @@ import {
   SharedLeaseAccessType,
   TriggerAssignmentProcessingProps,
   TriggerAssignmentProcessingServices,
+  type UnhydratedAssignmentProjection,
+  type UnhydratedLeaseAssignmentsProjection,
 } from "./lease-assignment.types.js";
 
 const CRITICAL_LOCK_TIMEOUT_SECONDS = 900;
 const NON_CRITICAL_LOCK_TIMEOUT_SECONDS = 300;
+const IDC_ASSIGNMENT_RESOLUTION_CONCURRENCY = 2;
 const CRITICAL_INTENTS: readonly string[] = CriticalLockIntents;
 
 /**
@@ -94,12 +115,22 @@ export async function triggerAssignmentProcessing(
  * fails before publishing; see releaseAssignmentProcessingLock.
  *
  * @throws {ResourceLockConflictError} when a competing lock cannot be preempted
+ * @throws {ConcurrentDataModificationException} when validated lease state changed
+ * @throws {UnknownItem} when the lease was deleted before a guarded write
  */
 export async function acquireAssignmentProcessingLock(
   props: TriggerAssignmentProcessingProps,
   services: TriggerAssignmentProcessingServices,
 ): Promise<AssignmentProcessingLock> {
-  const { leaseId, userEmail, intent, desiredAssignments } = props;
+  const {
+    leaseId,
+    userEmail,
+    intent,
+    desiredAssignments,
+    defaultPermissionSetArn,
+    resolvedOwner,
+    expectedLease,
+  } = props;
   const requestedBy = props.requestedBy ?? userEmail;
   const { leaseStore, principalStore, idcService, logger } = services;
 
@@ -118,6 +149,9 @@ export async function acquireAssignmentProcessingLock(
       userEmail,
       intent,
       desiredAssignments,
+      defaultPermissionSetArn,
+      resolvedOwner,
+      expectedLease,
       lockOwnerId,
       timeoutSeconds,
     },
@@ -202,6 +236,9 @@ async function acquireAssignmentLock(
     userEmail: string;
     intent: LeaseLockIntent;
     desiredAssignments: DesiredAssignment[] | undefined;
+    defaultPermissionSetArn?: string;
+    resolvedOwner?: TriggerAssignmentProcessingProps["resolvedOwner"];
+    expectedLease?: TriggerAssignmentProcessingProps["expectedLease"];
     lockOwnerId: string;
     timeoutSeconds: number;
   },
@@ -217,6 +254,9 @@ async function acquireAssignmentLock(
     userEmail,
     intent,
     desiredAssignments,
+    defaultPermissionSetArn,
+    resolvedOwner,
+    expectedLease,
     lockOwnerId,
     timeoutSeconds,
   } = props;
@@ -239,10 +279,9 @@ async function acquireAssignmentLock(
   }
 
   const enriched = await enrichWithOwner(
-    { desiredAssignments, userEmail },
+    { desiredAssignments, userEmail, defaultPermissionSetArn, resolvedOwner },
     { principalStore, idcService, logger },
   );
-  validateAssignmentCount(enriched);
 
   const lock = await leaseStore.acquireLockWithDesiredAssignments({
     leaseId,
@@ -251,6 +290,7 @@ async function acquireAssignmentLock(
     timeoutSeconds,
     meta: { intent },
     desiredAssignments: enriched,
+    expectedLease,
   });
   logger.info("Resource lock acquired with desiredAssignments", {
     leaseId,
@@ -268,14 +308,24 @@ async function acquireAssignmentLock(
  * idcService are required.
  */
 async function enrichWithOwner(
-  props: { desiredAssignments: DesiredAssignment[]; userEmail: string },
+  props: {
+    desiredAssignments: DesiredAssignment[];
+    userEmail: string;
+    defaultPermissionSetArn?: string;
+    resolvedOwner?: TriggerAssignmentProcessingProps["resolvedOwner"];
+  },
   services: {
     principalStore: TriggerAssignmentProcessingServices["principalStore"];
     idcService: TriggerAssignmentProcessingServices["idcService"];
     logger: TriggerAssignmentProcessingServices["logger"];
   },
 ): Promise<EnrichedAssignment[]> {
-  const { desiredAssignments, userEmail } = props;
+  const {
+    desiredAssignments,
+    userEmail,
+    defaultPermissionSetArn,
+    resolvedOwner,
+  } = props;
   const { principalStore, idcService, logger } = services;
 
   if (!principalStore) {
@@ -289,33 +339,72 @@ async function enrichWithOwner(
     );
   }
 
-  const ownerPrincipal = await idcService.getCachedPrincipalByAttr(
-    "USER",
-    userEmail,
-    principalStore,
-    logger,
-  );
-  if (!ownerPrincipal) {
-    throw new Error(
-      "Unable to resolve the lease owner's identity. The owner may not exist in the identity store.",
-    );
+  const ownerPrincipal =
+    resolvedOwner ??
+    (await idcService.getCachedPrincipalByAttr(
+      "USER",
+      userEmail,
+      principalStore,
+      logger,
+    ));
+  if (ownerPrincipal?.principalType !== "USER" || !ownerPrincipal.email) {
+    throw new IneligibleLeaseOwnerError(userEmail);
   }
 
-  const ownerAlreadyIncluded = desiredAssignments.some(
-    (a) => a.principalId === ownerPrincipal.principalId,
-  );
-  const desiredAssignmentsWithOwner: DesiredAssignment[] = ownerAlreadyIncluded
-    ? desiredAssignments
-    : [
-        ...desiredAssignments,
-        { principalId: ownerPrincipal.principalId, principalType: "USER" },
-      ];
+  const resolvedDefaultPermissionSetArn =
+    defaultPermissionSetArn ??
+    (await idcService.getBuiltInUserPermissionSetArn());
+  const desiredAssignmentsWithOwner = normalizeAssignmentsWithOwner({
+    assignments: desiredAssignments,
+    ownerPrincipalId: ownerPrincipal.principalId,
+    defaultPermissionSetArn: resolvedDefaultPermissionSetArn,
+  });
 
   return enrichDesiredAssignments(desiredAssignmentsWithOwner, {
     principalStore,
     idcService,
     logger,
+    resolvedPrincipals: [ownerPrincipal],
   });
+}
+
+/**
+ * Converts the flexible API input into the canonical assignment set:
+ * omitted owner means one default-profile owner assignment, while an explicit
+ * owner assignment is preserved. The owner counts toward MAX_ASSIGNMENTS.
+ */
+export function normalizeAssignmentsWithOwner(props: {
+  assignments: DesiredAssignment[];
+  ownerPrincipalId: string;
+  defaultPermissionSetArn: string;
+}): DesiredAssignment[] {
+  const { assignments, ownerPrincipalId, defaultPermissionSetArn } = props;
+  let ownerAssignmentPresent = false;
+  const normalizedAssignments = assignments.map((assignment) => {
+    if (
+      assignment.principalType !== "USER" ||
+      assignment.principalId !== ownerPrincipalId
+    ) {
+      return assignment;
+    }
+
+    ownerAssignmentPresent = true;
+    return {
+      ...assignment,
+      permissionSetArn: assignment.permissionSetArn ?? defaultPermissionSetArn,
+    };
+  });
+
+  if (!ownerAssignmentPresent) {
+    normalizedAssignments.push({
+      principalId: ownerPrincipalId,
+      principalType: "USER",
+      permissionSetArn: defaultPermissionSetArn,
+    });
+  }
+
+  validateAssignmentCount(normalizedAssignments);
+  return normalizedAssignments;
 }
 
 /**
@@ -413,14 +502,190 @@ function statusForUnassigned(props: {
   return "grantFailed";
 }
 
-/** Builds an AssignmentView for a desired principal that has no live assignment yet. */
-function viewFromDesiredAssignment(props: {
+interface AssignmentProjectionState {
+  operationInProgress?: LeaseLockIntent;
+  isInFlight: boolean;
+  noAccessExpected: boolean;
+}
+
+interface IndexedPersistedAssignment {
+  assignment: PersistedUserAssignment | PersistedGroupAssignment;
+  principalId: string;
+  isTupleKeyed: boolean;
+  effectivePermissionSetArn?: string;
+}
+
+/**
+ * Normalizes the pre-1.3 implicit-owner model into the explicit desired-state
+ * shape used by the assignment projection. This is projection-only and maps
+ * an omitted legacy ARN to the built-in permission set when context is present.
+ */
+function resolveDesiredAssignmentsForProjection(props: {
+  lease: PersistedLease;
+  assignments: Array<PersistedUserAssignment | PersistedGroupAssignment>;
+  builtInPermissionSetArn?: string;
+}): DesiredAssignmentWithDisplay[] {
+  const { lease, assignments, builtInPermissionSetArn } = props;
+  const desiredAssignments = lease.desiredAssignments ?? [];
+  if (desiredAssignments.length > 0) {
+    return desiredAssignments;
+  }
+
+  return assignments
+    .filter(
+      (assignment): assignment is PersistedUserAssignment =>
+        assignment.principalType === "USER" &&
+        assignment.assigneeEmail === lease.userEmail,
+    )
+    .map((assignment) => ({
+      principalId: assignment.userId,
+      principalType: "USER",
+      displayName: assignment.displayName,
+      email: assignment.assigneeEmail,
+      permissionSetArn: assignment.permissionSetArn ?? builtInPermissionSetArn,
+    }));
+}
+
+function resolveDesiredPermissionSetArn(props: {
+  assignment: DesiredAssignmentWithDisplay;
+  leaseDefaultPermissionSetArn?: string;
+  fallbackPermissionSetArn?: string;
+}): string | undefined {
+  const { assignment, leaseDefaultPermissionSetArn, fallbackPermissionSetArn } =
+    props;
+  return (
+    assignment.permissionSetArn ??
+    leaseDefaultPermissionSetArn ??
+    fallbackPermissionSetArn
+  );
+}
+
+function resolvePersistedPermissionSetArn(props: {
+  assignment: PersistedUserAssignment | PersistedGroupAssignment;
+  builtInPermissionSetArn?: string;
+}): string | undefined {
+  const { assignment, builtInPermissionSetArn } = props;
+  return assignment.permissionSetArn ?? builtInPermissionSetArn;
+}
+
+function principalIdForAssignment(
+  assignment: PersistedUserAssignment | PersistedGroupAssignment,
+): string {
+  return assignment.principalType === "USER"
+    ? assignment.userId
+    : assignment.groupId;
+}
+
+function isTupleKeyedAssignment(
+  assignment: PersistedUserAssignment | PersistedGroupAssignment,
+): boolean {
+  return parseAssignmentSk(assignment.sk)?.permissionSetId !== undefined;
+}
+
+function deriveAssignmentProjectionState(
+  lease: PersistedLease,
+): AssignmentProjectionState {
+  const { resourceLock } = lease;
+  const operationInProgress =
+    resourceLock && parseDatetime(resourceLock.expiresAt) > now()
+      ? resourceLock.meta?.intent
+      : undefined;
+
+  return {
+    operationInProgress,
+    isInFlight: operationInProgress !== undefined,
+    noAccessExpected:
+      operationInProgress === "FREEZE" ||
+      operationInProgress === "TERMINATE" ||
+      (isFrozenLease(lease) && operationInProgress !== "UNFREEZE") ||
+      isExpiredLease(lease),
+  };
+}
+
+function indexDesiredAssignments(
+  props: DeriveAssignmentProjectionProps,
+): Map<AssignmentTupleKey, DesiredAssignmentWithDisplay> {
+  const { lease, assignments, builtInPermissionSetArn } = props;
+  const desiredAssignments = resolveDesiredAssignmentsForProjection({
+    lease,
+    assignments,
+    builtInPermissionSetArn,
+  });
+
+  return new Map(
+    desiredAssignments.map((assignment) => [
+      assignmentTupleKey({
+        principalType: assignment.principalType,
+        principalId: assignment.principalId,
+        permissionSetArn: resolveDesiredPermissionSetArn({
+          assignment,
+          leaseDefaultPermissionSetArn: lease.defaultPermissionSetArn,
+          fallbackPermissionSetArn: builtInPermissionSetArn,
+        }),
+      }),
+      assignment,
+    ]),
+  );
+}
+
+/**
+ * During tuple-key rollout or repair, both physical key formats may be
+ * observed for the same effective built-in assignment. Collapse them,
+ * preferring the explicit tuple-keyed record.
+ */
+function indexPersistedAssignments(props: {
+  assignments: Array<PersistedUserAssignment | PersistedGroupAssignment>;
+  builtInPermissionSetArn?: string;
+}): Map<AssignmentTupleKey, IndexedPersistedAssignment> {
+  const { assignments, builtInPermissionSetArn } = props;
+  const assignmentsByTuple = new Map<
+    AssignmentTupleKey,
+    IndexedPersistedAssignment
+  >();
+
+  for (const assignment of assignments) {
+    const principalId = principalIdForAssignment(assignment);
+    const effectivePermissionSetArn = resolvePersistedPermissionSetArn({
+      assignment,
+      builtInPermissionSetArn,
+    });
+    const key = assignmentTupleKey({
+      principalType: assignment.principalType,
+      principalId,
+      permissionSetArn: effectivePermissionSetArn,
+    });
+    const candidate = {
+      assignment,
+      principalId,
+      isTupleKeyed: isTupleKeyedAssignment(assignment),
+      effectivePermissionSetArn,
+    };
+    const existing = assignmentsByTuple.get(key);
+
+    if (
+      existing === undefined ||
+      (candidate.isTupleKeyed && !existing.isTupleKeyed)
+    ) {
+      assignmentsByTuple.set(key, candidate);
+    }
+  }
+
+  return assignmentsByTuple;
+}
+
+/** Builds a projection row for a desired principal with no live assignment. */
+function projectionFromDesiredAssignment(props: {
   lease: PersistedLease;
   desiredAssignment: DesiredAssignmentWithDisplay;
-  noAccessExpected: boolean;
-  isInFlight: boolean;
-}): AssignmentView {
-  const { desiredAssignment: d, lease, noAccessExpected, isInFlight } = props;
+  effectivePermissionSetArn?: string;
+  state: AssignmentProjectionState;
+}): UnhydratedAssignmentProjection {
+  const {
+    desiredAssignment: d,
+    effectivePermissionSetArn,
+    lease,
+    state,
+  } = props;
   return {
     principalId: d.principalId,
     principalType: d.principalType,
@@ -428,31 +693,30 @@ function viewFromDesiredAssignment(props: {
     assigneeEmail: d.principalType === "USER" ? d.email : undefined,
     isOwner: d.principalType === "USER" && d.email === lease.userEmail,
     isDesired: true,
-    syncStatus: statusForUnassigned({ noAccessExpected, isInFlight }),
+    syncStatus: statusForUnassigned({
+      noAccessExpected: state.noAccessExpected,
+      isInFlight: state.isInFlight,
+    }),
+    permissionSetArn: effectivePermissionSetArn,
   };
 }
 
-/** Builds an AssignmentView for a principal that currently holds a live assignment. */
-function viewFromAssignment(props: {
+/** Builds a projection row for a principal with a live assignment. */
+function projectionFromAssignment(props: {
   lease: PersistedLease;
-  assignment: PersistedUserAssignment | PersistedGroupAssignment;
+  current: IndexedPersistedAssignment;
   desiredAssignment?: DesiredAssignmentWithDisplay;
-  noAccessExpected: boolean;
-  isInFlight: boolean;
-}): AssignmentView {
-  const { assignment, lease, desiredAssignment, noAccessExpected, isInFlight } =
-    props;
-  const principalId =
-    assignment.principalType === "USER"
-      ? assignment.userId
-      : assignment.groupId;
+  state: AssignmentProjectionState;
+}): UnhydratedAssignmentProjection {
+  const { current, lease, desiredAssignment, state } = props;
+  const { assignment, principalId } = current;
   const assigneeEmail =
     "assigneeEmail" in assignment ? assignment.assigneeEmail : undefined;
   const isOwner =
     assignment.principalType === "USER" && assigneeEmail === lease.userEmail;
-  const isDesired = !!desiredAssignment || isOwner;
+  const isDesired = desiredAssignment !== undefined;
 
-  const shouldNotBeAssigned = noAccessExpected || (!isDesired && !isOwner);
+  const shouldNotBeAssigned = state.noAccessExpected || !isDesired;
 
   return {
     principalId,
@@ -467,13 +731,17 @@ function viewFromAssignment(props: {
     addedDate: assignment.addedDate,
     isOwner,
     isDesired,
-    syncStatus: statusForAssigned({ shouldNotBeAssigned, isInFlight }),
+    syncStatus: statusForAssigned({
+      shouldNotBeAssigned,
+      isInFlight: state.isInFlight,
+    }),
+    permissionSetArn: current.effectivePermissionSetArn,
   };
 }
 
 /**
- * Builds the assignments view for a lease: the union of its desired set and its
- * live access assignments, each annotated with a reconciliation status.
+ * Builds the assignments projection for a lease: the union of its desired set
+ * and its live access assignments, each annotated with a reconciliation status.
  *
  * Status depends on the direction of the in-flight operation, not just on
  * presence/absence: a missing assignment is a pending grant during
@@ -481,53 +749,46 @@ function viewFromAssignment(props: {
  * mirrors resolveAssignmentAction, which applies the same rule when the worker
  * acts.
  */
-export function deriveAssignmentView(
-  lease: PersistedLease,
-  assignments: Array<PersistedUserAssignment | PersistedGroupAssignment>,
-): LeaseAssignmentsView {
-  const { resourceLock } = lease;
-  const operationInProgress =
-    resourceLock && parseDatetime(resourceLock.expiresAt) > now()
-      ? resourceLock.meta?.intent
-      : undefined;
-
-  const isInFlight = operationInProgress !== undefined;
-
-  const noAccessExpected =
-    operationInProgress === "FREEZE" ||
-    operationInProgress === "TERMINATE" ||
-    (isFrozenLease(lease) && operationInProgress !== "UNFREEZE") ||
-    isExpiredLease(lease);
-
-  const desired = lease.desiredAssignments ?? [];
-  const desiredByPrincipalId = new Map(desired.map((d) => [d.principalId, d]));
-  const assignedPrincipalIds = new Set(
-    assignments.map((a) => (a.principalType === "USER" ? a.userId : a.groupId)),
-  );
-
-  const views: AssignmentView[] = assignments.map((a) => {
-    const principalId = a.principalType === "USER" ? a.userId : a.groupId;
-    return viewFromAssignment({
-      assignment: a,
-      lease,
-      desiredAssignment: desiredByPrincipalId.get(principalId),
-      noAccessExpected,
-      isInFlight,
-    });
+export function deriveAssignmentProjection(
+  props: DeriveAssignmentProjectionProps,
+): UnhydratedLeaseAssignmentsProjection {
+  const { lease, assignments, builtInPermissionSetArn } = props;
+  const state = deriveAssignmentProjectionState(lease);
+  const desiredByTuple = indexDesiredAssignments(props);
+  const assignedByTuple = indexPersistedAssignments({
+    assignments,
+    builtInPermissionSetArn,
   });
 
-  const desiredOnlyViews = desired
-    .filter((d) => !assignedPrincipalIds.has(d.principalId))
-    .map((d) =>
-      viewFromDesiredAssignment({
-        desiredAssignment: d,
+  // Preserve current-assignment order, then append desired-only tuples in the
+  // order persisted on the lease.
+  const assignedProjections = [...assignedByTuple].map(([key, current]) =>
+    projectionFromAssignment({
+      current,
+      lease,
+      desiredAssignment: desiredByTuple.get(key),
+      state,
+    }),
+  );
+  const desiredOnlyProjections = [...desiredByTuple]
+    .filter(([key]) => !assignedByTuple.has(key))
+    .map(([, desiredAssignment]) =>
+      projectionFromDesiredAssignment({
+        desiredAssignment,
+        effectivePermissionSetArn: resolveDesiredPermissionSetArn({
+          assignment: desiredAssignment,
+          leaseDefaultPermissionSetArn: lease.defaultPermissionSetArn,
+          fallbackPermissionSetArn: builtInPermissionSetArn,
+        }),
         lease,
-        noAccessExpected,
-        isInFlight,
+        state,
       }),
     );
 
-  return { assignments: [...views, ...desiredOnlyViews], operationInProgress };
+  return {
+    assignments: [...assignedProjections, ...desiredOnlyProjections],
+    operationInProgress: state.operationInProgress,
+  };
 }
 
 /**
@@ -582,18 +843,14 @@ async function assignmentRecordExists(
   principalStore: PrincipalStore,
   props: ResolveAssignmentActionInput,
 ): Promise<boolean> {
-  if (props.principalType === "USER") {
-    const existing = await principalStore.getUserAssignment(
-      props.principalId,
-      props.leaseId,
-    );
-    return existing.result !== undefined;
-  }
-  const existing = await principalStore.getGroupAssignment(
-    props.principalId,
-    props.leaseId,
-  );
-  return existing.result !== undefined;
+  const existing = await principalStore.findAssignment({
+    principalId: props.principalId,
+    principalType: props.principalType,
+    leaseId: props.leaseId,
+    permissionSetArn: props.permissionSetArn,
+    builtInPermissionSetArn: props.builtInPermissionSetArn,
+  });
+  return existing !== undefined;
 }
 
 async function shouldPrincipalHaveAccess(
@@ -606,10 +863,13 @@ async function shouldPrincipalHaveAccess(
     return false;
   }
 
-  const leaseResult = await leaseStore.get({
-    userEmail: props.leaseOwnerEmail,
-    uuid: props.leaseId,
-  });
+  const leaseResult = await leaseStore.get(
+    {
+      userEmail: props.leaseOwnerEmail,
+      uuid: props.leaseId,
+    },
+    { consistentRead: true },
+  );
   const lease = leaseResult.result;
 
   if (!lease || isFrozenLease(lease) || isExpiredLease(lease)) {
@@ -617,7 +877,23 @@ async function shouldPrincipalHaveAccess(
   }
 
   const desiredAssignments = lease.desiredAssignments ?? [];
-  return desiredAssignments.some((d) => d.principalId === props.principalId);
+  return desiredAssignments.some((desired) => {
+    if (
+      desired.principalId !== props.principalId ||
+      desired.principalType !== props.principalType
+    ) {
+      return false;
+    }
+    if (props.permissionSetArn === undefined) {
+      return true;
+    }
+    const effectivePermissionSetArn = resolveDesiredPermissionSetArn({
+      assignment: desired,
+      leaseDefaultPermissionSetArn: lease.defaultPermissionSetArn,
+      fallbackPermissionSetArn: props.defaultPermissionSetArn,
+    });
+    return effectivePermissionSetArn === props.permissionSetArn;
+  });
 }
 
 /**
@@ -626,16 +902,23 @@ async function shouldPrincipalHaveAccess(
  */
 async function persistGrantRecord(
   input: ProcessAssignmentInput,
+  permissionSetId: string,
   principalStore: PrincipalStore,
   logger: ProcessAssignmentServices["logger"],
 ): Promise<void> {
   const { leaseId, principalId, principalType } = input;
   const timestamp = nowAsIsoDatetimeString();
+  const sk = assignmentSk(leaseId, permissionSetId);
+  const meta = {
+    createdTime: timestamp,
+    lastEditTime: timestamp,
+    schemaVersion: PrincipalSchemaVersion,
+  };
   try {
     if (principalType === "USER") {
       await principalStore.createUserAssignment({
         pk: `user#${principalId}`,
-        sk: `lease#${leaseId}`,
+        sk,
         userId: principalId,
         principalType: "USER",
         leaseId,
@@ -646,16 +929,12 @@ async function persistGrantRecord(
         permissionSetArn: input.permissionSetArn,
         addedBy: input.requestedBy ?? "",
         addedDate: timestamp,
-        meta: {
-          createdTime: timestamp,
-          lastEditTime: timestamp,
-          schemaVersion: 1,
-        },
+        meta,
       });
     } else {
       await principalStore.createGroupAssignment({
         pk: `group#${principalId}`,
-        sk: `lease#${leaseId}`,
+        sk,
         leaseId,
         groupId: principalId,
         principalType: "GROUP",
@@ -665,11 +944,7 @@ async function persistGrantRecord(
         permissionSetArn: input.permissionSetArn,
         addedBy: input.requestedBy ?? "",
         addedDate: timestamp,
-        meta: {
-          createdTime: timestamp,
-          lastEditTime: timestamp,
-          schemaVersion: 1,
-        },
+        meta,
       });
     }
   } catch (error: unknown) {
@@ -702,7 +977,13 @@ export async function processAssignment(
     context;
 
   if (action === "GRANT") {
-    await executeGrant(input, ssoAdminClient, idcStackConfigStore);
+    const permissionSetId = resolvePermissionSetId(input);
+    await executeGrant(
+      input,
+      ssoAdminClient,
+      idcStackConfigStore,
+      principalStore,
+    );
     logger.info("IDC CreateAccountAssignment succeeded", {
       leaseId,
       principalId,
@@ -711,7 +992,7 @@ export async function processAssignment(
 
     // After IDC success, write the record to Principal Table.
     // ItemAlreadyExists is treated as success (idempotent).
-    await persistGrantRecord(input, principalStore, logger);
+    await persistGrantRecord(input, permissionSetId, principalStore, logger);
   } else {
     await executeRevoke(
       input,
@@ -730,11 +1011,21 @@ export async function processAssignment(
   return { status: "SUCCEEDED", principalId, principalType, action };
 }
 
+function resolvePermissionSetId(input: ProcessAssignmentInput): string {
+  const permissionSetId = permissionSetIdFromArn(input.permissionSetArn);
+  if (!permissionSetId) {
+    throw new Error(
+      `Unable to derive permission set ID from ARN ${input.permissionSetArn}`,
+    );
+  }
+  return permissionSetId;
+}
+
 /**
- * Enriches desired assignments with displayName and email from the principal cache.
- * Uses a read-through strategy: batch cache check first, then JIT-resolves any
- * misses via IDC (when idcService is provided) and writes them through to cache.
- * Hard-fails if a required field is still missing after resolution.
+ * Enriches desired assignments with displayName and email. Reuses
+ * already-resolved principals, batch-checks the cache, then JIT-resolves
+ * misses. USER misses must be current ISB members; GROUP misses may be any IDC
+ * group. Hard-fails if a required field is still missing after resolution.
  */
 export async function enrichDesiredAssignments(
   assignments: DesiredAssignment[],
@@ -743,72 +1034,114 @@ export async function enrichDesiredAssignments(
   if (assignments.length === 0) return [];
 
   const { principalStore, idcService, logger } = services;
+  const principalKey = (principal: {
+    principalId: string;
+    principalType: PrincipalType;
+  }) => `${principal.principalType}#${principal.principalId}`;
 
-  // 1. Batch cache check
-  const cacheItems = await principalStore.batchGetCacheItems(
-    assignments.map((a) => ({
-      principalId: a.principalId,
-      principalType: a.principalType,
-    })),
-  );
+  const uniquePrincipals = [
+    ...new Map(
+      assignments.map((assignment) => {
+        const principal = {
+          principalId: assignment.principalId,
+          principalType: assignment.principalType,
+        };
+        return [principalKey(principal), principal] as const;
+      }),
+    ).values(),
+  ];
 
   const cacheMap = new Map(
-    cacheItems.map((item) => [
-      item.principalId,
-      { email: item.email, displayName: item.displayName },
+    (services.resolvedPrincipals ?? []).map((principal) => [
+      principalKey(principal),
+      { email: principal.email, displayName: principal.displayName },
     ]),
   );
 
-  // 2. Identify cache misses and JIT-resolve via IDC (parallel)
-  const misses = assignments.filter((a) => !cacheMap.has(a.principalId));
+  // 1. Batch cache check only for identities not already resolved by the caller.
+  const unresolved = uniquePrincipals.filter(
+    (principal) => !cacheMap.has(principalKey(principal)),
+  );
+  if (unresolved.length > 0) {
+    const cacheItems = await principalStore.batchGetCacheItems(unresolved);
+    for (const item of cacheItems) {
+      if (!cacheMap.has(principalKey(item))) {
+        cacheMap.set(principalKey(item), {
+          email: item.email,
+          displayName: item.displayName,
+        });
+      }
+    }
+  }
 
-  const resolved = await Promise.all(
-    misses.map((miss) =>
-      idcService.getCachedPrincipalById(
+  // 2. Identify cache misses and JIT-resolve via IDC.
+  const misses = uniquePrincipals.filter(
+    (principal) => !cacheMap.has(principalKey(principal)),
+  );
+
+  // A USER miss makes at least a DescribeUser and membership request. Bound
+  // per-request concurrency to protect the shared IDC quota; this is not a
+  // global rate limit.
+  const resolved = await pMap(
+    misses,
+    async (miss) => ({
+      miss,
+      principal: await idcService.getCachedPrincipalById(
         miss.principalType,
         miss.principalId,
         principalStore,
         logger,
       ),
-    ),
+    }),
+    { concurrency: IDC_ASSIGNMENT_RESOLUTION_CONCURRENCY },
   );
 
-  for (const principal of resolved) {
-    if (principal) {
-      cacheMap.set(principal.principalId, {
-        email: principal.email,
-        displayName: principal.displayName,
-      });
+  for (const { miss, principal } of resolved) {
+    if (!principal) {
+      throw new IneligibleAssignmentPrincipalError(miss.principalType);
     }
+    cacheMap.set(principalKey(principal), {
+      email: principal.email,
+      displayName: principal.displayName,
+    });
   }
 
   // 3. Enrich assignments from the (now-populated) cache map
-  return assignments.map((a) => {
-    const cached = cacheMap.get(a.principalId);
-    if (a.principalType === "USER" && !cached?.email) {
-      throw new Error(
-        `Principal cache missing email for user ${a.principalId}`,
-      );
+  return assignments.map((a): EnrichedAssignment => {
+    const cached = cacheMap.get(principalKey(a));
+    const metadata = {
+      ...(cached?.displayName ? { displayName: cached.displayName } : {}),
+      ...(a.permissionSetArn ? { permissionSetArn: a.permissionSetArn } : {}),
+    };
+    if (a.principalType === "USER") {
+      if (!cached?.email) {
+        throw new Error(
+          `Principal cache missing email for user ${a.principalId}`,
+        );
+      }
+      return {
+        principalId: a.principalId,
+        principalType: a.principalType,
+        email: cached.email,
+        ...metadata,
+      };
     }
-    if (a.principalType === "GROUP" && !cached) {
+    if (!cached) {
       throw new Error(
         `Principal cache missing entry for group ${a.principalId}`,
       );
     }
-    // The assertion narrows the union literal (principalType: "USER" | "GROUP")
-    // to the discriminated EnrichedAssignment type; TypeScript cannot infer this
-    // from conditional spreads alone.
     return {
       principalId: a.principalId,
       principalType: a.principalType,
-      ...(cached?.email ? { email: cached.email } : {}),
-      ...(cached?.displayName ? { displayName: cached.displayName } : {}),
-    } as EnrichedAssignment; // NOSONAR
+      ...(cached.email ? { email: cached.email } : {}),
+      ...metadata,
+    };
   });
 }
 
 /**
- * Validates that the total number of assignments (including the owner)
+ * Validates that the total number of principals (including the owner)
  * does not exceed MAX_ASSIGNMENTS.
  */
 export function validateAssignmentCount(
@@ -825,8 +1158,18 @@ async function executeGrant(
   input: ProcessAssignmentInput,
   ssoAdminClient: SSOAdminClient,
   idcStackConfigStore: IdcStackConfigStore,
+  principalStore: PrincipalStore,
 ): Promise<void> {
   const config = await idcStackConfigStore.get();
+  // Executed inside the worker throttle: do not authorize from an earlier API,
+  // queue, or warm-container snapshot. Revokes never depend on this cache.
+  const cacheItem =
+    input.permissionSetArn === config.userPermissionSetArn
+      ? undefined
+      : await principalStore.getPermissionSetCacheItem(
+          resolvePermissionSetId(input),
+        );
+  assertPermissionSetGrantAllowed(input.permissionSetArn, config, cacheItem);
   await ssoAdminClient.send(
     new CreateAccountAssignmentCommand({
       InstanceArn: config.ssoInstanceArn,
@@ -867,19 +1210,178 @@ async function executeRevoke(
       throw error;
     });
 
-  if (input.principalType === "USER") {
-    await principalStore.deleteUserAssignment(input.principalId, input.leaseId);
-  } else {
-    await principalStore.deleteGroupAssignment(
-      input.principalId,
-      input.leaseId,
-    );
-  }
+  await principalStore.deleteAssignmentsByLeasePrincipal({
+    principalId: input.principalId,
+    principalType: input.principalType,
+    leaseId: input.leaseId,
+    permissionSetArn: input.permissionSetArn,
+    builtInPermissionSetArn: config.userPermissionSetArn,
+  });
 }
 
 const DEFAULT_LEASES_FOR_USER_PAGE_SIZE = 50;
 
-/** DIRECT shared leases — native DynamoDB pagination on `pk = user#<id>`. */
+interface DirectLeasePageAccumulator {
+  entriesByLease: Map<string, SharedLeaseInput>;
+  resumePageIdentifier: string | null;
+  rawAssignmentCount: number;
+  leaseIdAtPreviousPageBoundary?: string;
+}
+
+interface DirectLeaseDiscoveryPage {
+  entries: SharedLeaseInput[];
+  nextPageIdentifier: string | null;
+  rawAssignmentCount: number;
+}
+
+function directLeaseInput(
+  assignment: PersistedUserAssignment,
+): SharedLeaseInput {
+  return {
+    key: {
+      userEmail: assignment.leaseOwnerEmail,
+      uuid: assignment.leaseId,
+    },
+    accessType: "direct",
+  };
+}
+
+function directLeaseIdentity(entry: SharedLeaseInput): string {
+  return JSON.stringify([entry.key.userEmail, entry.key.uuid]);
+}
+
+function pageIdentifierAfterAssignment(
+  assignment: PersistedUserAssignment,
+): string | null {
+  return base64EncodeCompositeKey({
+    pk: assignment.pk,
+    sk: assignment.sk,
+  });
+}
+
+function leaseIdAtPreviousPageBoundary(props: {
+  userId: string;
+  pageIdentifier: string | undefined;
+}): string | undefined {
+  const { userId, pageIdentifier } = props;
+  if (pageIdentifier === undefined) {
+    return undefined;
+  }
+
+  try {
+    const encodedKey = base64DecodeCompositeKey(pageIdentifier, (decoded) =>
+      PersistedUserAssignmentKeySchema.parse(decoded),
+    );
+    const parsedSk = parseAssignmentSk(encodedKey.sk);
+    const isCanonical = base64EncodeCompositeKey(encodedKey) === pageIdentifier;
+
+    if (
+      encodedKey.pk !== userPk(userId) ||
+      parsedSk === undefined ||
+      !isCanonical
+    ) {
+      throw new InvalidDirectLeasePageIdentifierError();
+    }
+    return parsedSk.leaseId;
+  } catch {
+    throw new InvalidDirectLeasePageIdentifierError();
+  }
+}
+
+/**
+ * Consumes one physical assignment page. Returns true without consuming the
+ * first assignment belonging to the next unique lease when the result is full.
+ */
+function consumeDirectAssignmentPage(props: {
+  assignments: PersistedUserAssignment[];
+  accumulator: DirectLeasePageAccumulator;
+  pageSize: number;
+}): boolean {
+  const { assignments, accumulator, pageSize } = props;
+
+  for (const assignment of assignments) {
+    if (accumulator.leaseIdAtPreviousPageBoundary !== undefined) {
+      if (assignment.leaseId === accumulator.leaseIdAtPreviousPageBoundary) {
+        accumulator.rawAssignmentCount += 1;
+        accumulator.resumePageIdentifier =
+          pageIdentifierAfterAssignment(assignment);
+        continue;
+      }
+      accumulator.leaseIdAtPreviousPageBoundary = undefined;
+    }
+
+    const entry = directLeaseInput(assignment);
+    const identity = directLeaseIdentity(entry);
+    const alreadySeen = accumulator.entriesByLease.has(identity);
+
+    if (!alreadySeen && accumulator.entriesByLease.size === pageSize) {
+      return true;
+    }
+
+    accumulator.rawAssignmentCount += 1;
+    accumulator.resumePageIdentifier =
+      pageIdentifierAfterAssignment(assignment);
+    if (!alreadySeen) {
+      accumulator.entriesByLease.set(identity, entry);
+    }
+  }
+
+  return false;
+}
+
+async function discoverDirectLeasePage(props: {
+  userId: string;
+  pageIdentifier?: string;
+  pageSize: number;
+  principalStore: PrincipalStore;
+}): Promise<DirectLeaseDiscoveryPage> {
+  const { userId, pageIdentifier, pageSize, principalStore } = props;
+  const accumulator: DirectLeasePageAccumulator = {
+    entriesByLease: new Map(),
+    resumePageIdentifier: pageIdentifier ?? null,
+    rawAssignmentCount: 0,
+    leaseIdAtPreviousPageBoundary: leaseIdAtPreviousPageBoundary({
+      userId,
+      pageIdentifier,
+    }),
+  };
+  let physicalPageIdentifier = pageIdentifier;
+
+  // Read a bounded physical page, then continue until enough unique leases
+  // have been collected. MAX_ASSIGNMENTS avoids a query per tuple for small
+  // logical pages without multiplying large client page sizes by the cap.
+  const physicalPageSize = Math.max(pageSize, MAX_ASSIGNMENTS);
+
+  while (true) {
+    const queryResult = await principalStore.getDirectAssignmentsForUser({
+      userId,
+      pageIdentifier: physicalPageIdentifier,
+      pageSize: physicalPageSize,
+    });
+    const resultIsFull = consumeDirectAssignmentPage({
+      assignments: queryResult.result,
+      accumulator,
+      pageSize,
+    });
+
+    if (resultIsFull || queryResult.nextPageIdentifier === null) {
+      return {
+        entries: [...accumulator.entriesByLease.values()],
+        nextPageIdentifier: resultIsFull
+          ? accumulator.resumePageIdentifier
+          : null,
+        rawAssignmentCount: accumulator.rawAssignmentCount,
+      };
+    }
+
+    physicalPageIdentifier = queryResult.nextPageIdentifier;
+  }
+}
+
+/**
+ * DIRECT shared leases — tuple assignment records are collapsed to one lease
+ * while retaining the Principal Table's opaque DynamoDB cursor.
+ */
 export async function getLeasesForUserDirect(
   props: GetLeasesForUserProps,
   services: GetLeasesForUserDirectServices,
@@ -895,24 +1397,28 @@ export async function getLeasesForUserDirect(
     throw new Error(`pageSize must be > 0, got ${pageSize}`);
   }
 
-  const queryResult = await principalStore.getDirectAssignmentsForUser({
+  const discoveryPage = await discoverDirectLeasePage({
     userId,
     pageIdentifier,
     pageSize,
+    principalStore,
   });
 
   const sharedLeases = await fetchAndShapeSharedLeases(
-    queryResult.result.map((a) => ({
-      key: { userEmail: a.leaseOwnerEmail, uuid: a.leaseId },
-      accessType: "direct" as const,
-    })),
+    discoveryPage.entries,
     leaseStore,
     logger,
   );
 
+  logger.debug("Direct shared leases discovery", {
+    userId,
+    rawAssignmentCount: discoveryPage.rawAssignmentCount,
+    dedupedLeaseCount: discoveryPage.entries.length,
+  });
+
   return {
     result: sharedLeases,
-    nextPageIdentifier: queryResult.nextPageIdentifier,
+    nextPageIdentifier: discoveryPage.nextPageIdentifier,
   };
 }
 
@@ -943,7 +1449,9 @@ export async function getLeasesForUserViaGroups(
   }
 
   const lastKey = pageIdentifier
-    ? (base64DecodeCompositeKey(pageIdentifier) as LeaseKey | undefined)
+    ? base64DecodeCompositeKey(pageIdentifier, (decoded) =>
+        LeaseKeySchema.parse(decoded),
+      )
     : undefined;
 
   // 1. Resolve user's group memberships.
@@ -959,14 +1467,16 @@ export async function getLeasesForUserViaGroups(
 
   // 4. Single BatchGetItem hydrates the matching assignment records.
   //    Empty input is short-circuited by the store.
-  const allGroupAssignments =
-    await principalStore.batchGetGroupAssignments(matchingKeys);
+  const allGroupAssignments = await principalStore.batchGetGroupAssignments(
+    matchingKeys.map(({ groupId, sk }) => ({ groupId, sk })),
+  );
 
   // 5. Sort by groupId so that cross-group duplicates resolve
   //    deterministically (alphabetically first group wins).
-  allGroupAssignments.sort((a, b) =>
-    a.groupId < b.groupId ? -1 : a.groupId > b.groupId ? 1 : 0,
-  );
+  allGroupAssignments.sort((a, b) => {
+    if (a.groupId === b.groupId) return 0;
+    return a.groupId < b.groupId ? -1 : 1;
+  });
   const dedupedByLease = new Map<string, GroupSharedLeaseEntry>();
   for (const a of allGroupAssignments) {
     const key: LeaseKey = { userEmail: a.leaseOwnerEmail, uuid: a.leaseId };
@@ -1048,9 +1558,9 @@ async function fetchAndShapeSharedLeases(
     result.push({
       ...lease,
       accessType: input.accessType,
-      ...(input.sourceGroupName !== undefined
-        ? { sourceGroupName: input.sourceGroupName }
-        : {}),
+      ...(input.sourceGroupName === undefined
+        ? {}
+        : { sourceGroupName: input.sourceGroupName }),
     });
   }
   return result;

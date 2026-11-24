@@ -3,6 +3,7 @@
 import { z } from "zod";
 
 import { BaseLambdaEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/base-lambda-environment.js";
+import { AwsAccountIdSchema } from "@amzn/innovation-sandbox-commons/utils/zod.js";
 
 export const AccountLifecycleManagementEnvironmentSchema =
   BaseLambdaEnvironmentSchema.extend({
@@ -19,8 +20,9 @@ export const AccountLifecycleManagementEnvironmentSchema =
     SANDBOX_ACCOUNT_ROLE_NAME: z.string(),
     ACCOUNT_POOL_CONFIG_PARAM_ARN: z.string(),
     IDC_CONFIG_PARAM_ARN: z.string(),
-    ORG_MGT_ACCOUNT_ID: z.string(),
-    HUB_ACCOUNT_ID: z.string(),
+    ORG_MGT_ACCOUNT_ID: AwsAccountIdSchema,
+    HUB_ACCOUNT_ID: AwsAccountIdSchema,
+    SANDBOX_SPACES_USAGE_TABLE_NAME: z.string(),
   });
 
 export type AccountLifecycleManagementEnvironment = z.infer<

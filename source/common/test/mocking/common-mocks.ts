@@ -11,6 +11,7 @@ import { LeaseStore } from "@amzn/innovation-sandbox-commons/data/lease/lease-st
 import { PersistedLease } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
 import { SandboxAccountStore } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account-store.js";
 import { PersistedSandboxAccount } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account.js";
+import { SandboxSpacesUsageStore } from "@amzn/innovation-sandbox-commons/data/sandbox-spaces-usage/sandbox-spaces-usage-store.js";
 import { BlueprintDeploymentService } from "@amzn/innovation-sandbox-commons/isb-services/blueprint-deployment-service.js";
 import { IdcService } from "@amzn/innovation-sandbox-commons/isb-services/idc-service.js";
 import { OrganizationsTaggingService } from "@amzn/innovation-sandbox-commons/isb-services/organizations-tagging-service.js";
@@ -18,7 +19,7 @@ import { SandboxOuService } from "@amzn/innovation-sandbox-commons/isb-services/
 import { IsbEventBridgeClient } from "@amzn/innovation-sandbox-commons/sdk-clients/event-bridge-client.js";
 import { createMockOf } from "@amzn/innovation-sandbox-commons/test/mocking/mock-utils.js";
 import { Transaction } from "@amzn/innovation-sandbox-commons/utils/transactions.js";
-import { MockProxy } from "vitest-mock-extended";
+import { mock, MockProxy } from "vitest-mock-extended";
 
 export function mockedLeaseStore() {
   const mockLeaseStore: MockProxy<LeaseStore> = createMockOf(LeaseStore, {
@@ -120,4 +121,12 @@ export function mockTransaction<T>(returnValue: T): Transaction<T> {
 
 export function mockedOrganizationsTaggingService() {
   return createMockOf(OrganizationsTaggingService);
+}
+export function mockedSandboxSpacesUsageStore(): MockProxy<SandboxSpacesUsageStore> {
+  // SandboxSpacesUsageStore is a plain interface (not an abstract class), so
+  // mock<T>() from vitest-mock-extended is used instead of createMockOf.
+  const store = mock<SandboxSpacesUsageStore>();
+  store.stampLeaseTtl.mockResolvedValue(undefined);
+  store.listLeaseUserUsage.mockResolvedValue({ usage: [] });
+  return store;
 }

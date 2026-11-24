@@ -5,6 +5,7 @@ import {
   PersistedMonitoredLeaseSchema,
   PersistedPendingLeaseSchema,
 } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
+import { assignmentSk } from "@amzn/innovation-sandbox-commons/data/principal/principal-dynamodb-keys.js";
 import {
   PersistedGroupAssignmentSchema,
   PersistedUserAssignmentSchema,
@@ -13,6 +14,8 @@ import { AssignmentProcessorEnvironmentSchema } from "@amzn/innovation-sandbox-c
 import { generateSchemaData } from "@amzn/innovation-sandbox-commons/test/generate-schema-data.js";
 import { mockContext } from "@amzn/innovation-sandbox-commons/test/lambdas/fixtures.js";
 import { bulkStubEnv } from "@amzn/innovation-sandbox-commons/test/lambdas/utils.js";
+import { permissionSetIdFromArn } from "@amzn/innovation-sandbox-shared/types/permission-set.js";
+import { Logger } from "@aws-lambda-powertools/logger";
 import {
   afterAll,
   beforeAll,
@@ -31,10 +34,12 @@ const TEST_OWNER_EMAIL = "owner@example.com";
 const TEST_REQUESTER_EMAIL = "admin@example.com";
 const TEST_LOCK_OWNER_ID = "lock-owner-abc-123";
 const TEST_ACCOUNT_ID = "999888777666";
-const TEST_PERMISSION_SET_ARN =
-  "arn:aws:sso:::permissionSet/ssoins-123/ps-user";
-const TEST_IDC_PERMISSION_SET_ARN =
-  "arn:aws:sso:::permissionSet/ssoins-123/ps-from-idc-config";
+const TEST_BUILT_IN_PERMISSION_SET_ARN =
+  "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-1111111111111111";
+const TEST_DEFAULT_PERMISSION_SET_ARN =
+  "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-2222222222222222";
+const TEST_CUSTOM_PERMISSION_SET_ARN =
+  "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-3333333333333333";
 const TEST_EXECUTION_ARN =
   "arn:aws:states:us-east-1:123456789012:execution:AssignmentProcessor:abc123";
 const TEST_USER_ID = "a1b2c3d4e5-550e8400-e29b-41d4-a716-446655440000";
@@ -89,7 +94,7 @@ afterAll(() => {
 beforeEach(() => {
   vi.clearAllMocks();
   mockIdcConfigGet.mockResolvedValue({
-    userPermissionSetArn: TEST_IDC_PERMISSION_SET_ARN,
+    userPermissionSetArn: TEST_BUILT_IN_PERMISSION_SET_ARN,
   });
 });
 
@@ -103,8 +108,6 @@ function createFanOutInput(overrides: Partial<Record<string, unknown>> = {}) {
     lockOwnerId: TEST_LOCK_OWNER_ID,
     leaseOwnerEmail: TEST_OWNER_EMAIL,
     requestedBy: TEST_REQUESTER_EMAIL,
-    accountId: TEST_ACCOUNT_ID,
-    permissionSetArn: TEST_PERMISSION_SET_ARN,
     executionArn: TEST_EXECUTION_ARN,
     ...overrides,
   };
@@ -126,30 +129,67 @@ function createHandleCompletionInput(
   };
 }
 
-function createUserAssignmentRecord(userId: string, leaseId: string) {
+function createFannedOutTuple(
+  principalId: string,
+  principalType: "USER" | "GROUP",
+  permissionSetArn = TEST_DEFAULT_PERMISSION_SET_ARN,
+) {
+  return { principalId, principalType, permissionSetArn };
+}
+
+function createUserAssignmentRecord(
+  userId: string,
+  leaseId: string,
+  permissionSetArn?: string,
+) {
+  const persistedPermissionSetArn =
+    permissionSetArn ?? TEST_BUILT_IN_PERMISSION_SET_ARN;
+  const permissionSetId =
+    permissionSetArn === undefined
+      ? undefined
+      : permissionSetIdFromArn(permissionSetArn);
   return generateSchemaData(PersistedUserAssignmentSchema, {
     pk: `user#${userId}`,
-    sk: `lease#${leaseId}`,
+    sk: assignmentSk(leaseId, permissionSetId),
     userId,
     principalType: "USER",
     leaseId,
     assigneeEmail: `${userId.slice(0, 5)}@example.com`,
     leaseOwnerEmail: TEST_OWNER_EMAIL,
     accountId: TEST_ACCOUNT_ID,
+    permissionSetArn: persistedPermissionSetArn,
   });
 }
 
-function createGroupAssignmentRecord(groupId: string, leaseId: string) {
+function createGroupAssignmentRecord(
+  groupId: string,
+  leaseId: string,
+  permissionSetArn?: string,
+) {
+  const persistedPermissionSetArn =
+    permissionSetArn ?? TEST_BUILT_IN_PERMISSION_SET_ARN;
+  const permissionSetId =
+    permissionSetArn === undefined
+      ? undefined
+      : permissionSetIdFromArn(permissionSetArn);
   return generateSchemaData(PersistedGroupAssignmentSchema, {
     pk: `group#${groupId}`,
-    sk: `lease#${leaseId}`,
+    sk: assignmentSk(leaseId, permissionSetId),
     groupId,
     principalType: "GROUP",
     leaseId,
     displayName: "Test Group",
     leaseOwnerEmail: TEST_OWNER_EMAIL,
     accountId: TEST_ACCOUNT_ID,
+    permissionSetArn: persistedPermissionSetArn,
   });
+}
+
+function withoutPermissionSetArn<T extends { permissionSetArn?: string }>(
+  record: T,
+): Omit<T, "permissionSetArn"> {
+  const { permissionSetArn: _permissionSetArn, ...legacyRecord } = record;
+  return legacyRecord;
 }
 
 /** A leaseStore.get() result wrapping a schema-valid MonitoredLease. */
@@ -161,6 +201,7 @@ function monitoredLeaseResult(
       userEmail: TEST_OWNER_EMAIL,
       uuid: TEST_LEASE_ID,
       awsAccountId: TEST_ACCOUNT_ID,
+      defaultPermissionSetArn: TEST_DEFAULT_PERMISSION_SET_ARN,
       desiredAssignments: [],
       ...overrides,
     }),
@@ -190,7 +231,13 @@ describe("FAN_OUT action", () => {
     );
 
     mockPrincipalStoreGetAssignmentsForLease.mockResolvedValue({
-      result: [createUserAssignmentRecord(TEST_USER_ID, TEST_LEASE_ID)],
+      result: [
+        createUserAssignmentRecord(
+          TEST_USER_ID,
+          TEST_LEASE_ID,
+          TEST_DEFAULT_PERMISSION_SET_ARN,
+        ),
+      ],
     });
 
     const result = await handler(createFanOutInput(), testContext);
@@ -207,15 +254,16 @@ describe("FAN_OUT action", () => {
         }),
       ]),
       accountId: TEST_ACCOUNT_ID,
-      preExistingPrincipalIds: expect.any(Array),
+      preExistingPrincipals: expect.any(Array),
     });
     expect(result.workItems).toHaveLength(2);
-    // permissionSetArn must be resolved from IDC config, not echoed from input
-    expect(mockIdcConfigGet).toHaveBeenCalled();
+    // Omitted assignment ARNs resolve to the persisted lease default without
+    // loading IDC configuration.
+    expect(mockIdcConfigGet).not.toHaveBeenCalled();
     expect(
       result.workItems.every(
         (item: { permissionSetArn: string }) =>
-          item.permissionSetArn === TEST_IDC_PERMISSION_SET_ARN,
+          item.permissionSetArn === TEST_DEFAULT_PERMISSION_SET_ARN,
       ),
     ).toBe(true);
   });
@@ -238,7 +286,11 @@ describe("FAN_OUT action", () => {
 
     mockPrincipalStoreGetAssignmentsForLease.mockResolvedValue({
       result: [
-        createUserAssignmentRecord(TEST_USER_ID, TEST_LEASE_ID),
+        createUserAssignmentRecord(
+          TEST_USER_ID,
+          TEST_LEASE_ID,
+          TEST_DEFAULT_PERMISSION_SET_ARN,
+        ),
         createUserAssignmentRecord(revokedUserId, TEST_LEASE_ID),
       ],
     });
@@ -299,8 +351,59 @@ describe("FAN_OUT action", () => {
     expect(result).toEqual({
       workItems: [],
       accountId: expect.any(String),
-      preExistingPrincipalIds: [],
+      preExistingPrincipals: [],
     });
+  });
+
+  it("falls back to the built-in ARN for legacy desired state without a persisted lease default", async () => {
+    mockLeaseStoreGet.mockResolvedValue(
+      monitoredLeaseResult({
+        defaultPermissionSetArn: undefined,
+        desiredAssignments: [
+          {
+            principalId: TEST_USER_ID,
+            principalType: "USER",
+          },
+        ],
+      }),
+    );
+    mockPrincipalStoreGetAssignmentsForLease.mockResolvedValue({ result: [] });
+
+    const result = await handler(createFanOutInput(), testContext);
+
+    expect(mockIdcConfigGet).toHaveBeenCalledOnce();
+    expect(result.workItems).toEqual([
+      expect.objectContaining({
+        principalId: TEST_USER_ID,
+        permissionSetArn: TEST_BUILT_IN_PERMISSION_SET_ARN,
+      }),
+    ]);
+  });
+
+  it("maps an ARN-less legacy record to the built-in permission set", async () => {
+    mockLeaseStoreGet.mockResolvedValue(
+      monitoredLeaseResult({
+        defaultPermissionSetArn: TEST_DEFAULT_PERMISSION_SET_ARN,
+        desiredAssignments: [],
+      }),
+    );
+    mockPrincipalStoreGetAssignmentsForLease.mockResolvedValue({
+      result: [
+        withoutPermissionSetArn(
+          createUserAssignmentRecord(TEST_USER_ID, TEST_LEASE_ID),
+        ),
+      ],
+    });
+
+    const result = await handler(createFanOutInput(), testContext);
+
+    expect(mockIdcConfigGet).toHaveBeenCalledOnce();
+    expect(result.workItems).toEqual([
+      expect.objectContaining({
+        principalId: TEST_USER_ID,
+        permissionSetArn: TEST_BUILT_IN_PERMISSION_SET_ARN,
+      }),
+    ]);
   });
 
   it("should deduplicate principals appearing in both desired and current", async () => {
@@ -318,7 +421,13 @@ describe("FAN_OUT action", () => {
     );
 
     mockPrincipalStoreGetAssignmentsForLease.mockResolvedValue({
-      result: [createUserAssignmentRecord(TEST_USER_ID, TEST_LEASE_ID)],
+      result: [
+        createUserAssignmentRecord(
+          TEST_USER_ID,
+          TEST_LEASE_ID,
+          TEST_DEFAULT_PERMISSION_SET_ARN,
+        ),
+      ],
     });
 
     const result = await handler(createFanOutInput(), testContext);
@@ -329,6 +438,142 @@ describe("FAN_OUT action", () => {
     // record's assigneeEmail-derived values.
     expect(result.workItems[0].displayName).toBe("User A");
     expect(result.workItems[0].email).toBe("usera@example.com");
+  });
+
+  it("fans out one work item per principal and permission set tuple", async () => {
+    mockLeaseStoreGet.mockResolvedValue(
+      monitoredLeaseResult({
+        desiredAssignments: [
+          {
+            principalId: TEST_USER_ID,
+            principalType: "USER",
+            permissionSetArn: TEST_DEFAULT_PERMISSION_SET_ARN,
+          },
+          {
+            principalId: TEST_USER_ID,
+            principalType: "USER",
+            permissionSetArn: TEST_CUSTOM_PERMISSION_SET_ARN,
+          },
+        ],
+      }),
+    );
+    mockPrincipalStoreGetAssignmentsForLease.mockResolvedValue({ result: [] });
+
+    const result = await handler(createFanOutInput(), testContext);
+
+    expect(result.workItems).toHaveLength(2);
+    expect(
+      result.workItems.map(
+        (item: { permissionSetArn: string }) => item.permissionSetArn,
+      ),
+    ).toEqual([
+      TEST_DEFAULT_PERMISSION_SET_ARN,
+      TEST_CUSTOM_PERMISSION_SET_ARN,
+    ]);
+    for (const item of result.workItems) {
+      expect(typeof item.permissionSetArn).toBe("string");
+    }
+  });
+
+  it("emits revoke and grant work items when a principal changes permission sets", async () => {
+    mockLeaseStoreGet.mockResolvedValue(
+      monitoredLeaseResult({
+        desiredAssignments: [
+          {
+            principalId: TEST_USER_ID,
+            principalType: "USER",
+            permissionSetArn: TEST_CUSTOM_PERMISSION_SET_ARN,
+          },
+        ],
+      }),
+    );
+    mockPrincipalStoreGetAssignmentsForLease.mockResolvedValue({
+      result: [
+        createUserAssignmentRecord(
+          TEST_USER_ID,
+          TEST_LEASE_ID,
+          TEST_DEFAULT_PERMISSION_SET_ARN,
+        ),
+      ],
+    });
+
+    const result = await handler(createFanOutInput(), testContext);
+
+    expect(result.workItems).toHaveLength(2);
+    expect(
+      new Set(
+        result.workItems.map(
+          (item: { permissionSetArn: string }) => item.permissionSetArn,
+        ),
+      ),
+    ).toEqual(
+      new Set([
+        TEST_DEFAULT_PERMISSION_SET_ARN,
+        TEST_CUSTOM_PERMISSION_SET_ARN,
+      ]),
+    );
+  });
+
+  it("does not collapse USER and GROUP tuples with the same principal ID", async () => {
+    mockLeaseStoreGet.mockResolvedValue(
+      monitoredLeaseResult({
+        desiredAssignments: [
+          {
+            principalId: TEST_USER_ID,
+            principalType: "USER",
+            permissionSetArn: TEST_DEFAULT_PERMISSION_SET_ARN,
+          },
+          {
+            principalId: TEST_USER_ID,
+            principalType: "GROUP",
+            permissionSetArn: TEST_DEFAULT_PERMISSION_SET_ARN,
+          },
+        ],
+      }),
+    );
+    mockPrincipalStoreGetAssignmentsForLease.mockResolvedValue({ result: [] });
+
+    const result = await handler(createFanOutInput(), testContext);
+
+    expect(result.workItems).toHaveLength(2);
+    expect(
+      result.workItems.map(
+        (item: { principalType: string }) => item.principalType,
+      ),
+    ).toEqual(["USER", "GROUP"]);
+  });
+
+  it("returns exact type-aware pre-existing principals without tuple duplicates", async () => {
+    mockLeaseStoreGet.mockResolvedValue(
+      monitoredLeaseResult({ desiredAssignments: [] }),
+    );
+    mockPrincipalStoreGetAssignmentsForLease.mockResolvedValue({
+      result: [
+        createUserAssignmentRecord(
+          TEST_USER_ID,
+          TEST_LEASE_ID,
+          TEST_DEFAULT_PERMISSION_SET_ARN,
+        ),
+        createUserAssignmentRecord(
+          TEST_USER_ID,
+          TEST_LEASE_ID,
+          TEST_CUSTOM_PERMISSION_SET_ARN,
+        ),
+        createGroupAssignmentRecord(
+          TEST_USER_ID,
+          TEST_LEASE_ID,
+          TEST_DEFAULT_PERMISSION_SET_ARN,
+        ),
+      ],
+    });
+
+    const result = await handler(createFanOutInput(), testContext);
+
+    expect(result.preExistingPrincipals).toEqual([
+      { principalId: TEST_USER_ID, principalType: "USER" },
+      { principalId: TEST_USER_ID, principalType: "GROUP" },
+    ]);
+    expect(mockIdcConfigGet).not.toHaveBeenCalled();
   });
 
   it("should handle TERMINATE with only current records (desired is empty)", async () => {
@@ -409,6 +654,7 @@ describe("FAN_OUT action", () => {
     for (const item of result.workItems) {
       expect(typeof item.displayName).toBe("string");
       expect(typeof item.email).toBe("string");
+      expect(typeof item.permissionSetArn).toBe("string");
       expect(item.displayName).not.toBeNull();
       expect(item.email).not.toBeNull();
     }
@@ -424,7 +670,13 @@ describe("HANDLE_COMPLETION action", () => {
   it("should clear resourceLock and publish events for successful grants", async () => {
     mockLeaseStoreReleaseLock.mockResolvedValue(undefined);
     mockPrincipalStoreGetAssignmentsForLease.mockResolvedValue({
-      result: [createUserAssignmentRecord(TEST_USER_ID, TEST_LEASE_ID)],
+      result: [
+        createUserAssignmentRecord(
+          TEST_USER_ID,
+          TEST_LEASE_ID,
+          TEST_DEFAULT_PERMISSION_SET_ARN,
+        ),
+      ],
     });
     mockLeaseStoreGet.mockResolvedValue(
       monitoredLeaseResult({
@@ -437,9 +689,7 @@ describe("HANDLE_COMPLETION action", () => {
 
     const result = await handler(
       createHandleCompletionInput({
-        fannedOutPrincipals: [
-          { principalId: TEST_USER_ID, principalType: "USER" },
-        ],
+        fannedOutPrincipals: [createFannedOutTuple(TEST_USER_ID, "USER")],
       }),
       testContext,
     );
@@ -461,10 +711,147 @@ describe("HANDLE_COMPLETION action", () => {
     expect(result).toEqual({ status: "SUCCESS", eventsPublished: 1 });
   });
 
+  it("publishes one principal-level event for multiple successful permission set tuples", async () => {
+    const loggerInfoSpy = vi.spyOn(Logger.prototype, "info");
+    mockLeaseStoreReleaseLock.mockResolvedValue(undefined);
+    mockPrincipalStoreGetAssignmentsForLease.mockResolvedValue({
+      result: [
+        createUserAssignmentRecord(
+          TEST_USER_ID,
+          TEST_LEASE_ID,
+          TEST_DEFAULT_PERMISSION_SET_ARN,
+        ),
+        createUserAssignmentRecord(
+          TEST_USER_ID,
+          TEST_LEASE_ID,
+          TEST_CUSTOM_PERMISSION_SET_ARN,
+        ),
+      ],
+    });
+    mockLeaseStoreGet.mockResolvedValue(
+      monitoredLeaseResult({
+        desiredAssignments: [
+          {
+            principalId: TEST_USER_ID,
+            principalType: "USER",
+            permissionSetArn: TEST_DEFAULT_PERMISSION_SET_ARN,
+          },
+          {
+            principalId: TEST_USER_ID,
+            principalType: "USER",
+            permissionSetArn: TEST_CUSTOM_PERMISSION_SET_ARN,
+          },
+        ],
+      }),
+    );
+    mockEventBridgeSendIsbEvents.mockResolvedValue(undefined);
+
+    const result = await handler(
+      createHandleCompletionInput({
+        fannedOutPrincipals: [
+          createFannedOutTuple(
+            TEST_USER_ID,
+            "USER",
+            TEST_DEFAULT_PERMISSION_SET_ARN,
+          ),
+          createFannedOutTuple(
+            TEST_USER_ID,
+            "USER",
+            TEST_CUSTOM_PERMISSION_SET_ARN,
+          ),
+        ],
+      }),
+      testContext,
+    );
+
+    expect(result).toEqual({ status: "SUCCESS", eventsPublished: 1 });
+    const publishedEvents = mockEventBridgeSendIsbEvents.mock.calls[0]!;
+    expect(publishedEvents.slice(1)).toHaveLength(1);
+    expect(publishedEvents[1].Detail.principalId).toBe(TEST_USER_ID);
+    expect(publishedEvents[1].Detail.principalType).toBe("USER");
+    expect(loggerInfoSpy).toHaveBeenCalledWith(
+      "Assignment execution completed",
+      expect.objectContaining({
+        principalsProcessed: 1,
+        succeeded: 1,
+        failed: 0,
+      }),
+    );
+    loggerInfoSpy.mockRestore();
+  });
+
+  it("reports a principal as failed when any permission set tuple remains unreconciled", async () => {
+    const loggerInfoSpy = vi.spyOn(Logger.prototype, "info");
+    mockLeaseStoreReleaseLock.mockResolvedValue(undefined);
+    mockPrincipalStoreGetAssignmentsForLease.mockResolvedValue({
+      result: [
+        createUserAssignmentRecord(
+          TEST_USER_ID,
+          TEST_LEASE_ID,
+          TEST_DEFAULT_PERMISSION_SET_ARN,
+        ),
+        createUserAssignmentRecord(
+          TEST_USER_ID,
+          TEST_LEASE_ID,
+          TEST_CUSTOM_PERMISSION_SET_ARN,
+        ),
+      ],
+    });
+    mockLeaseStoreGet.mockResolvedValue(
+      monitoredLeaseResult({
+        desiredAssignments: [
+          {
+            principalId: TEST_USER_ID,
+            principalType: "USER",
+            permissionSetArn: TEST_CUSTOM_PERMISSION_SET_ARN,
+          },
+        ],
+      }),
+    );
+    mockEventBridgeSendIsbEvents.mockResolvedValue(undefined);
+
+    await handler(
+      createHandleCompletionInput({
+        fannedOutPrincipals: [
+          createFannedOutTuple(
+            TEST_USER_ID,
+            "USER",
+            TEST_DEFAULT_PERMISSION_SET_ARN,
+          ),
+          createFannedOutTuple(
+            TEST_USER_ID,
+            "USER",
+            TEST_CUSTOM_PERMISSION_SET_ARN,
+          ),
+        ],
+        preExistingPrincipals: [
+          { principalId: TEST_USER_ID, principalType: "USER" },
+        ],
+      }),
+      testContext,
+    );
+
+    expect(loggerInfoSpy).toHaveBeenCalledWith(
+      "Assignment execution completed",
+      expect.objectContaining({
+        principalsProcessed: 1,
+        succeeded: 0,
+        failed: 1,
+      }),
+    );
+    loggerInfoSpy.mockRestore();
+  });
+
   it("should continue with event publishing even if lock release fails", async () => {
     mockLeaseStoreReleaseLock.mockRejectedValue(new Error("Lock error"));
     mockPrincipalStoreGetAssignmentsForLease.mockResolvedValue({
-      result: [createUserAssignmentRecord(TEST_USER_ID, TEST_LEASE_ID)],
+      result: [
+        createUserAssignmentRecord(
+          TEST_USER_ID,
+          TEST_LEASE_ID,
+          TEST_DEFAULT_PERMISSION_SET_ARN,
+        ),
+      ],
     });
     mockLeaseStoreGet.mockResolvedValue(
       monitoredLeaseResult({
@@ -477,9 +864,7 @@ describe("HANDLE_COMPLETION action", () => {
 
     const result = await handler(
       createHandleCompletionInput({
-        fannedOutPrincipals: [
-          { principalId: TEST_USER_ID, principalType: "USER" },
-        ],
+        fannedOutPrincipals: [createFannedOutTuple(TEST_USER_ID, "USER")],
       }),
       testContext,
     );
@@ -505,7 +890,10 @@ describe("HANDLE_COMPLETION action", () => {
     const result = await handler(
       createHandleCompletionInput({
         fannedOutPrincipals: [
-          { principalId: TEST_USER_ID, principalType: "USER" },
+          createFannedOutTuple(TEST_USER_ID, "USER"),
+          createFannedOutTuple(TEST_GROUP_ID, "GROUP"),
+        ],
+        preExistingPrincipals: [
           { principalId: TEST_GROUP_ID, principalType: "GROUP" },
         ],
       }),
@@ -536,8 +924,16 @@ describe("HANDLE_COMPLETION action", () => {
     // Both principals now have records (both granted / already present)
     mockPrincipalStoreGetAssignmentsForLease.mockResolvedValue({
       result: [
-        createUserAssignmentRecord(TEST_USER_ID, TEST_LEASE_ID),
-        createUserAssignmentRecord(newUserId, TEST_LEASE_ID),
+        createUserAssignmentRecord(
+          TEST_USER_ID,
+          TEST_LEASE_ID,
+          TEST_DEFAULT_PERMISSION_SET_ARN,
+        ),
+        createUserAssignmentRecord(
+          newUserId,
+          TEST_LEASE_ID,
+          TEST_DEFAULT_PERMISSION_SET_ARN,
+        ),
       ],
     });
     mockLeaseStoreGet.mockResolvedValue(
@@ -553,11 +949,13 @@ describe("HANDLE_COMPLETION action", () => {
     const result = await handler(
       createHandleCompletionInput({
         fannedOutPrincipals: [
-          { principalId: TEST_USER_ID, principalType: "USER" },
-          { principalId: newUserId, principalType: "USER" },
+          createFannedOutTuple(TEST_USER_ID, "USER"),
+          createFannedOutTuple(newUserId, "USER"),
         ],
         // TEST_USER_ID already had a record before this execution
-        preExistingPrincipalIds: [TEST_USER_ID],
+        preExistingPrincipals: [
+          { principalId: TEST_USER_ID, principalType: "USER" },
+        ],
       }),
       testContext,
     );
@@ -573,6 +971,52 @@ describe("HANDLE_COMPLETION action", () => {
     expect(eventDetails.some((d) => d.principalId === TEST_USER_ID)).toBe(
       false,
     );
+  });
+
+  it("keeps USER and GROUP pre-existing state distinct when IDs collide", async () => {
+    mockLeaseStoreReleaseLock.mockResolvedValue(undefined);
+    mockPrincipalStoreGetAssignmentsForLease.mockResolvedValue({
+      result: [
+        createUserAssignmentRecord(
+          TEST_USER_ID,
+          TEST_LEASE_ID,
+          TEST_DEFAULT_PERMISSION_SET_ARN,
+        ),
+        createGroupAssignmentRecord(
+          TEST_USER_ID,
+          TEST_LEASE_ID,
+          TEST_DEFAULT_PERMISSION_SET_ARN,
+        ),
+      ],
+    });
+    mockLeaseStoreGet.mockResolvedValue(
+      monitoredLeaseResult({
+        desiredAssignments: [
+          { principalId: TEST_USER_ID, principalType: "USER" },
+          { principalId: TEST_USER_ID, principalType: "GROUP" },
+        ],
+      }),
+    );
+    mockEventBridgeSendIsbEvents.mockResolvedValue(undefined);
+
+    const result = await handler(
+      createHandleCompletionInput({
+        fannedOutPrincipals: [
+          createFannedOutTuple(TEST_USER_ID, "USER"),
+          createFannedOutTuple(TEST_USER_ID, "GROUP"),
+        ],
+        preExistingPrincipals: [
+          { principalId: TEST_USER_ID, principalType: "USER" },
+        ],
+      }),
+      testContext,
+    );
+
+    expect(result.eventsPublished).toBe(1);
+    const publishedEvents = mockEventBridgeSendIsbEvents.mock.calls[0]!;
+    expect(publishedEvents.slice(1)).toHaveLength(1);
+    expect(publishedEvents[1].Detail.principalId).toBe(TEST_USER_ID);
+    expect(publishedEvents[1].Detail.principalType).toBe("GROUP");
   });
 
   it("should emit OrphanedAccessDetected warning for TERMINATE with lingering records", async () => {
@@ -621,6 +1065,10 @@ describe("HANDLE_COMPLETION action", () => {
       createHandleCompletionInput({
         intent: "TERMINATE",
         fannedOutPrincipals: [
+          createFannedOutTuple(TEST_USER_ID, "USER"),
+          createFannedOutTuple(TEST_GROUP_ID, "GROUP"),
+        ],
+        preExistingPrincipals: [
           { principalId: TEST_USER_ID, principalType: "USER" },
           { principalId: TEST_GROUP_ID, principalType: "GROUP" },
         ],
@@ -634,6 +1082,30 @@ describe("HANDLE_COMPLETION action", () => {
     expect(mockEventBridgeSendIsbEvents).toHaveBeenCalled();
     expect(result.eventsPublished).toBe(2);
     expect(mockLeaseStoreReleaseLock).toHaveBeenCalled();
+  });
+
+  it("does not publish AssignmentRemoved for desired-only principals during a critical intent", async () => {
+    mockLeaseStoreReleaseLock.mockResolvedValue(undefined);
+    mockPrincipalStoreGetAssignmentsForLease.mockResolvedValue({ result: [] });
+    mockLeaseStoreGet.mockResolvedValue(
+      monitoredLeaseResult({
+        desiredAssignments: [
+          { principalId: TEST_USER_ID, principalType: "USER" },
+        ],
+      }),
+    );
+
+    const result = await handler(
+      createHandleCompletionInput({
+        intent: "TERMINATE",
+        fannedOutPrincipals: [createFannedOutTuple(TEST_USER_ID, "USER")],
+        preExistingPrincipals: [],
+      }),
+      testContext,
+    );
+
+    expect(mockEventBridgeSendIsbEvents).not.toHaveBeenCalled();
+    expect(result.eventsPublished).toBe(0);
   });
 
   it("should not publish events when no changes detected", async () => {
@@ -654,7 +1126,13 @@ describe("HANDLE_COMPLETION action", () => {
   it("should handle group records in AssignmentCreated events", async () => {
     mockLeaseStoreReleaseLock.mockResolvedValue(undefined);
     mockPrincipalStoreGetAssignmentsForLease.mockResolvedValue({
-      result: [createGroupAssignmentRecord(TEST_GROUP_ID, TEST_LEASE_ID)],
+      result: [
+        createGroupAssignmentRecord(
+          TEST_GROUP_ID,
+          TEST_LEASE_ID,
+          TEST_DEFAULT_PERMISSION_SET_ARN,
+        ),
+      ],
     });
     mockLeaseStoreGet.mockResolvedValue(
       monitoredLeaseResult({
@@ -667,9 +1145,7 @@ describe("HANDLE_COMPLETION action", () => {
 
     const result = await handler(
       createHandleCompletionInput({
-        fannedOutPrincipals: [
-          { principalId: TEST_GROUP_ID, principalType: "GROUP" },
-        ],
+        fannedOutPrincipals: [createFannedOutTuple(TEST_GROUP_ID, "GROUP")],
       }),
       testContext,
     );

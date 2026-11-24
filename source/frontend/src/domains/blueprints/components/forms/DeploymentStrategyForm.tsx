@@ -113,14 +113,7 @@ export function DeploymentStrategyForm() {
           />
         </FormField>
 
-        {deploymentStrategy !== "Custom" ? (
-          <Box variant="p" color="text-body-secondary">
-            Deploys to one region at a time. If any region fails, the deployment
-            stops immediately. This is the safest approach for new blueprints.
-            For multiple regions, consider increasing the timeout below. Choose
-            Custom to configure deployment parameters manually.
-          </Box>
-        ) : (
+        {deploymentStrategy === "Custom" ? (
           <SpaceBetween size="l">
             <SliderField<
               DeploymentStrategyFormValues,
@@ -130,7 +123,7 @@ export function DeploymentStrategyForm() {
               formFieldProps={{
                 label: `Concurrent deployments: ${watch("maxConcurrentPercentage")}%`,
                 description:
-                  "Choose how many regions to deploy to at the same time",
+                  "Percentage of target accounts to deploy concurrently in each Region",
               }}
               sliderProps={{
                 min: CONCURRENT_PERCENTAGE_CONSTRAINTS.MIN,
@@ -150,7 +143,7 @@ export function DeploymentStrategyForm() {
               formFieldProps={{
                 label: `Failure tolerance: ${watch("failureTolerancePercentage")}%`,
                 description:
-                  "Stop deployment if this percentage of regions fail",
+                  "Percentage of target accounts that can fail in each Region before deployment stops",
               }}
               sliderProps={{
                 min: FAILURE_TOLERANCE_CONSTRAINTS.MIN,
@@ -197,6 +190,13 @@ export function DeploymentStrategyForm() {
               }}
             />
           </SpaceBetween>
+        ) : (
+          <Box variant="p" color="text-body-secondary">
+            Deploys to one region at a time. If any region fails, the deployment
+            stops immediately. This is the safest approach for new blueprints.
+            For multiple regions, consider increasing the timeout below. Choose
+            Custom to configure deployment parameters manually.
+          </Box>
         )}
       </ColumnLayout>
     </Container>

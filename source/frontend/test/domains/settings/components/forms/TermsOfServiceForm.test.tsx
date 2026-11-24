@@ -2,12 +2,28 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { TermsOfServiceForm } from "@amzn/innovation-sandbox-frontend/domains/settings/components/forms/TermsOfServiceForm";
-import { CONFIG_CONSTRAINTS } from "@amzn/innovation-sandbox-frontend/domains/settings/validation";
+import { TermsOfServiceForm as TermsOfServiceFormFields } from "@amzn/innovation-sandbox-frontend/domains/settings/components/forms/TermsOfServiceForm";
+import type { ConfigurationSectionView } from "@amzn/innovation-sandbox-frontend/domains/settings/model";
 import { mockAdminConfig } from "@amzn/innovation-sandbox-frontend/mocks/handlers/configurationHandlers";
 import { createQueryClientWrapper } from "@amzn/innovation-sandbox-frontend/setupTests";
+import { CONFIG_BOUNDS } from "@amzn/innovation-sandbox-shared/types/configuration.js";
+
+import { ConfigurationFormHarness } from "./ConfigurationFormHarness";
+
+function TermsOfServiceForm({
+  data,
+}: {
+  data: ConfigurationSectionView<"termsOfService">;
+}) {
+  return (
+    <ConfigurationFormHarness section="termsOfService" data={data}>
+      <TermsOfServiceFormFields />
+    </ConfigurationFormHarness>
+  );
+}
 
 const adminUser = {
   status: "authenticated",
@@ -64,23 +80,25 @@ describe("TermsOfServiceForm", () => {
     // The count reflects the current content length over the schema max.
     expect(
       screen.getByText(
-        `${content.length} / ${CONFIG_CONSTRAINTS.MAX_TERMS_OF_SERVICE_LENGTH} characters`,
+        `${content.length} / ${CONFIG_BOUNDS.MAX_TERMS_OF_SERVICE_LENGTH} characters`,
       ),
     ).toBeInTheDocument();
   });
 
-  it("renders a read-only summary for a manager (no Save button)", async () => {
+  it("renders the terms textarea read-only for a manager", async () => {
     getCurrentUser.mockResolvedValue(managerUser);
 
     render(<TermsOfServiceForm data={mockAdminConfig.termsOfService} />, {
       wrapper: createQueryClientWrapper(),
     });
 
-    // Read-only KeyValuePairs label, no Save button and no editable textbox.
-    expect(await screen.findByText(/terms of service/i)).toBeInTheDocument();
+    const input = await screen.findByRole("textbox");
+    expect(input).toHaveAttribute("readonly");
+    expect(input).toHaveValue(mockAdminConfig.termsOfService.content);
+    await userEvent.type(input, "Changed terms");
+    expect(input).toHaveValue(mockAdminConfig.termsOfService.content);
     expect(
       screen.queryByRole("button", { name: /save/i }),
     ).not.toBeInTheDocument();
-    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
   });
 });

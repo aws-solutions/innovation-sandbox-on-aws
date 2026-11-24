@@ -1,0 +1,4 @@
+{
+  "sources": ["source/api-model/src/main/smithy"],
+  "dependencies": []
+}

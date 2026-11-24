@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
+# shellcheck source-path=SCRIPTDIR
 #
 # M2M client role revocation tool — emergency access control for per-client
 # M2M IAM roles. Provides immediate revocation of M2M access without

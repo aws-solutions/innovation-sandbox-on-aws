@@ -41,7 +41,8 @@ export const SolutionContextSchema = z
     distOutputBucket: z.string().optional(),
     publicEcrRegistry: z.string().default("public.ecr.aws/aws-solutions"),
     publicEcrTag: z.string().default(solutionManifest.version),
-    privateEcrRepo: z.string().optional(),
+    privateAccountCleanerEcrRepo: z.string().optional(),
+    privateSandboxAgentRuntimeEcrRepo: z.string().optional(),
     nukeConfigFilePath: z.string().optional(),
     scpDirectoryPath: z.string().optional(),
     deploymentMode: z.string().default("prod"),
@@ -94,17 +95,15 @@ export function getSolutionContext(node: Node) {
 }
 
 export class IsbMapping {
-  private static instances: { [key: string]: CfnMapping } = {};
+  private static readonly instances: { [key: string]: CfnMapping } = {};
   public static getCfnMapping(scope: Construct): CfnMapping {
     const stack = Stack.of(scope);
     const stackName = stack.stackName;
-    if (!IsbMapping.instances[stackName]) {
-      IsbMapping.instances[stackName] = new CfnMapping(stack, "Mapping", {
-        mapping: {
-          context: getSolutionContext(stack.node),
-        },
-      });
-    }
+    IsbMapping.instances[stackName] ??= new CfnMapping(stack, "Mapping", {
+      mapping: {
+        context: getSolutionContext(stack.node),
+      },
+    });
     return IsbMapping.instances[stackName];
   }
 }

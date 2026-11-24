@@ -4,7 +4,7 @@ import { Aws, Duration } from "aws-cdk-lib";
 import { EventBus } from "aws-cdk-lib/aws-events";
 import { Role } from "aws-cdk-lib/aws-iam";
 import { Construct } from "constructs";
-import path from "path";
+import path from "node:path";
 
 import { AccountLifecycleManagementEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/account-lifecycle-management-lambda-environment.js";
 import { EventsToSqsToLambda } from "@amzn/innovation-sandbox-infrastructure/components/events-to-sqs-to-lambda";
@@ -46,6 +46,7 @@ export class AccountLifecycleManagementLambda extends Construct {
       leaseTable,
       blueprintTable,
       principalTable,
+      sandboxSpacesUsageTable,
     } = IsbComputeStack.sharedSpokeConfig.data;
 
     const lambda = new IsbLambdaFunction(this, id, {
@@ -88,6 +89,7 @@ export class AccountLifecycleManagementLambda extends Construct {
           IsbComputeStack.sharedSpokeConfig.parameterArns.idcConfigParamArn,
         ORG_MGT_ACCOUNT_ID: props.orgManagementAccountId,
         HUB_ACCOUNT_ID: Aws.ACCOUNT_ID,
+        SANDBOX_SPACES_USAGE_TABLE_NAME: sandboxSpacesUsageTable,
       },
       logGroup: IsbComputeResources.globalLogGroup,
       envSchema: AccountLifecycleManagementEnvironmentSchema,
@@ -109,6 +111,7 @@ export class AccountLifecycleManagementLambda extends Construct {
       accountTable,
       blueprintTable,
       principalTable,
+      sandboxSpacesUsageTable,
     );
     grantIsbDbReadOnly(scope, lambda, configTableName);
     props.isbEventBus.grantPutEventsTo(lambda.lambdaFunction);
@@ -119,8 +122,10 @@ export class AccountLifecycleManagementLambda extends Construct {
 
     new EventsToSqsToLambda(scope, "AccountLifeCycleEventsToSqsToLambda", {
       namespace: props.namespace,
-      eventBus: props.isbEventBus,
+      name: "AccountLifeCycleEvents",
       lambdaFunction: lambda.lambdaFunction,
+      visibilityTimeout: Duration.minutes(2), // the lambda timout is 1 min
+      retentionPeriod: Duration.hours(4),
       sqsQueueProps: {
         maxEventAge: Duration.hours(4),
         retryAttempts: 3,

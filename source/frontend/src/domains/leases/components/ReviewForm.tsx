@@ -10,12 +10,14 @@ import {
   StatusIndicator,
 } from "@cloudscape-design/components";
 
+import { AccessSettingsSummary } from "@amzn/innovation-sandbox-frontend/components/AccessSettingsSummary";
 import { BlueprintName } from "@amzn/innovation-sandbox-frontend/components/BlueprintName";
 import { BudgetStatus } from "@amzn/innovation-sandbox-frontend/components/BudgetStatus";
 import { DurationStatus } from "@amzn/innovation-sandbox-frontend/components/DurationStatus";
+import { FeatureStatusIndicator } from "@amzn/innovation-sandbox-frontend/components/FeatureStatusIndicator";
 import { Loader } from "@amzn/innovation-sandbox-frontend/components/Loader";
-import { SharingStatusIndicator } from "@amzn/innovation-sandbox-frontend/components/SharingStatusIndicator";
 import { useGetLeaseTemplateById } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/hooks";
+import { useGetConfigurations } from "@amzn/innovation-sandbox-frontend/domains/settings/hooks";
 
 type ReviewStepProps = {
   data: {
@@ -31,6 +33,9 @@ export const ReviewForm = (props: ReviewStepProps) => {
     isError,
     error,
   } = useGetLeaseTemplateById(props.data.leaseTemplateUuid);
+  const { data: config } = useGetConfigurations();
+  const leaseSharingEnabled = !!config?.leases.leaseSharingEnabled;
+  const sandboxSpacesEnabled = !!config?.agent.sandboxSpacesEnabled;
 
   if (isLoading) {
     return <Loader data-testid="loader" />;
@@ -105,14 +110,25 @@ export const ReviewForm = (props: ReviewStepProps) => {
             },
             { label: "Approval", value: renderApprovalStatus() },
             {
-              label: "Sharing",
+              label: "Sandbox Spaces",
               value: (
-                <SharingStatusIndicator
-                  allowOwnerToShareLease={leaseTemplate.allowOwnerToShareLease}
+                <FeatureStatusIndicator
+                  featureName="Sandbox Spaces"
+                  enabled={leaseTemplate.sandboxSpacesEnabled}
+                  globallyEnabled={sandboxSpacesEnabled}
                 />
               ),
             },
           ]}
+        />
+      </Container>
+
+      <Container header={<Header variant="h2">Access settings</Header>}>
+        <AccessSettingsSummary
+          allowOwnerToShareLease={leaseTemplate.allowOwnerToShareLease}
+          leaseSharingEnabled={leaseSharingEnabled}
+          defaultPermissionSet={leaseTemplate.defaultPermissionSet}
+          allowedPermissionSets={leaseTemplate.allowedPermissionSets}
         />
       </Container>
     </SpaceBetween>

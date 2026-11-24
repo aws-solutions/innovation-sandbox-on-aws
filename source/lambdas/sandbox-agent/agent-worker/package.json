@@ -1,0 +1,11 @@
+{
+  "name": "@amzn/innovation-sandbox-agent-worker",
+  "description": "Sandbox Agent Worker Lambda - Innovation Sandbox on AWS (SO0284)",
+  "version": "1.4.0",
+  "scripts": {
+    "build": "tsc --incremental --noEmit",
+    "test": "vitest run"
+  },
+  "type": "module",
+  "license": "Apache-2.0"
+}

@@ -2,10 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 export {
   acquireAssignmentProcessingLock,
-  deriveAssignmentView,
+  deriveAssignmentProjection,
   enrichDesiredAssignments,
   getLeasesForUserDirect,
   getLeasesForUserViaGroups,
+  normalizeAssignmentsWithOwner,
   processAssignment,
   publishAssignmentProcessingRequest,
   releaseAssignmentProcessingLock,
@@ -13,12 +14,18 @@ export {
   triggerAssignmentProcessing,
   validateAssignmentCount,
 } from "./lease-assignment.service.js";
-export { MaxAssignmentsExceededError } from "./lease-assignment.types.js";
+export {
+  IneligibleAssignmentPrincipalError,
+  IneligibleLeaseOwnerError,
+  InvalidDirectLeasePageIdentifierError,
+  MaxAssignmentsExceededError,
+} from "./lease-assignment.types.js";
 export type {
   AssignmentAction,
   AssignmentProcessingLock,
+  AssignmentProjection,
   AssignmentSyncStatus,
-  AssignmentView,
+  DeriveAssignmentProjectionProps,
   DesiredAssignment,
   EnrichDesiredAssignmentsServices,
   EnrichedAssignment,
@@ -27,7 +34,7 @@ export type {
   GetLeasesForUserDirectServices,
   GetLeasesForUserProps,
   GetLeasesForUserViaGroupsServices,
-  LeaseAssignmentsView,
+  LeaseAssignmentsProjection,
   LeaseLockIntent,
   ProcessAssignmentInput,
   ProcessAssignmentResult,
@@ -38,6 +45,8 @@ export type {
   SharedLeaseAccessType,
   TriggerAssignmentProcessingProps,
   TriggerAssignmentProcessingServices,
+  UnhydratedAssignmentProjection,
+  UnhydratedLeaseAssignmentsProjection,
   UpdateAssignmentsResult,
   UpdateAssignmentsServices,
 } from "./lease-assignment.types.js";

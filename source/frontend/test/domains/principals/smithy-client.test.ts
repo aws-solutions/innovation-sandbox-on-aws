@@ -4,15 +4,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
-  MOCK_ID_TOKEN,
-  mockCognitoCredentials,
-} from "@amzn/innovation-sandbox-frontend-test/utils/cognitoFixtures";
-import {
   createPrincipalClient,
   SmithyPrincipalClient,
 } from "@amzn/innovation-sandbox-frontend/domains/principals/smithy-client";
 import { ApiError } from "@amzn/innovation-sandbox-frontend/helpers/apiError";
 import type { ConfigData } from "@amzn/innovation-sandbox-frontend/helpers/config";
+import {
+  MOCK_ID_TOKEN,
+  mockCognitoCredentials,
+} from "@amzn/innovation-sandbox-frontend-test/utils/cognitoFixtures";
 
 const mockGetIdToken = vi.fn();
 const mockGetCredentials = vi.fn();
@@ -34,6 +34,8 @@ const config: ConfigData = {
   AwsAccessPortalUrl: "https://test.awsapps.com/start",
   ApiGatewayHost: "test1234.execute-api.us-east-1.amazonaws.com",
   ApiGatewayStage: "prod",
+  SandboxAgentWebSocketUrl: "wss://agent.example.com",
+  SandboxAgentMcpGatewayUrl: "https://agent.example.com/mcp",
 };
 
 const PRINCIPAL_ID = "00000000-0000-4000-8000-000000000001";

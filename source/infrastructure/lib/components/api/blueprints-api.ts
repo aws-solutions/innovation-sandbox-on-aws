@@ -4,7 +4,7 @@ import { Aws } from "aws-cdk-lib";
 import { Role } from "aws-cdk-lib/aws-iam";
 import { IFunction } from "aws-cdk-lib/aws-lambda";
 import { Construct } from "constructs";
-import path from "path";
+import path from "node:path";
 
 import { BlueprintLambdaEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/blueprint-lambda-environment.js";
 import type { RestApiProps } from "@amzn/innovation-sandbox-infrastructure/components/api/rest-api-all";
@@ -32,6 +32,7 @@ export class BlueprintsApi {
       blueprintTable,
       cognitoUserPoolId,
       cognitoAppClientId,
+      cognitoMcpClientId,
     } = IsbComputeStack.sharedSpokeConfig.data;
 
     const blueprintsLambdaFunction = new IsbApiLambdaFunction(
@@ -65,6 +66,7 @@ export class BlueprintsApi {
           HUB_ACCOUNT_ID: Aws.ACCOUNT_ID,
           COGNITO_USER_POOL_ID: cognitoUserPoolId,
           COGNITO_APP_CLIENT_ID: cognitoAppClientId,
+          COGNITO_MCP_CLIENT_ID: cognitoMcpClientId,
         },
         envSchema: BlueprintLambdaEnvironmentSchema,
       },

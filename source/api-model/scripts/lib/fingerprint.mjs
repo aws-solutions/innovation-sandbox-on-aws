@@ -39,6 +39,11 @@ const inputFiles = [
  * filtering afterwards matters for `outputFingerprint`, whose root is an npm
  * workspace: `node_modules` there holds tens of thousands of paths that would
  * otherwise be built and discarded on every `smithy:prepare`.
+ *
+ * @param {string} dir
+ * @param {(path: string) => boolean} [prune]
+ * @param {string} [root]
+ * @returns {string[]}
  */
 export function walk(dir, prune = () => false, root = dir) {
   if (!existsSync(dir)) return [];

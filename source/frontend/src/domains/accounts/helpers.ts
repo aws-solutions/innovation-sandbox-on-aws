@@ -31,11 +31,13 @@ export const generateAccountBreadcrumb = ({
   }
 
   if (account) {
-    breadcrumbItems.push({
-      text: account.awsAccountId,
-      href: `/accounts/${account?.awsAccountId}`,
-    });
-    breadcrumbItems.push({ text: "Add Account", href: "#" });
+    breadcrumbItems.push(
+      {
+        text: account.awsAccountId,
+        href: `/accounts/${account?.awsAccountId}`,
+      },
+      { text: "Add Account", href: "#" },
+    );
   }
 
   return breadcrumbItems;

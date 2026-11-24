@@ -29,6 +29,7 @@ export function getSharedSsmParamValues(
   namespace: string,
   idcAccountId: string,
   orgMgtAccountId: string,
+  forceConfigurationUpdate: string,
 ): SharedSpokeConfig {
   const idcConfigParamArn = Stack.of(scope).formatArn({
     service: "ssm",
@@ -58,6 +59,7 @@ export function getSharedSsmParamValues(
       accountPoolConfigParamArn,
       dataConfigParamArn,
       namespace,
+      forceConfigurationUpdate,
     },
   );
 
@@ -75,6 +77,7 @@ export function getSharedSsmParamValues(
       supportedSchemas: sharedJsonParamResolver.idcSupportedSchemas,
     },
     accountPool: {
+      organizationId: sharedJsonParamResolver.organizationId,
       sandboxOuId: sharedJsonParamResolver.sandboxOuId,
       availableOuId: sharedJsonParamResolver.availableOuId,
       activeOuId: sharedJsonParamResolver.activeOuId,
@@ -101,12 +104,15 @@ export function getSharedSsmParamValues(
       blueprintTable: sharedJsonParamResolver.blueprintTable,
       principalTable: sharedJsonParamResolver.principalTable,
       cleanupReportTable: sharedJsonParamResolver.cleanupReportTable,
+      sandboxSpacesUsageTable: sharedJsonParamResolver.sandboxSpacesUsageTable,
+      leaseCostHistoryTable: sharedJsonParamResolver.leaseCostHistoryTable,
       tableKmsKeyId: sharedJsonParamResolver.tableKmsKeyId,
       solutionVersion: sharedJsonParamResolver.dataSolutionVersion,
       supportedSchemas: sharedJsonParamResolver.dataSupportedSchemas,
       cognitoUserPoolId: sharedJsonParamResolver.cognitoUserPoolId,
       cognitoUserPoolArn: sharedJsonParamResolver.cognitoUserPoolArn,
       cognitoAppClientId: sharedJsonParamResolver.cognitoAppClientId,
+      cognitoMcpClientId: sharedJsonParamResolver.cognitoMcpClientId,
       cognitoIdentityPoolId: sharedJsonParamResolver.cognitoIdentityPoolId,
       cognitoDomain: sharedJsonParamResolver.cognitoDomain,
       awsAccessPortalUrl: sharedJsonParamResolver.awsAccessPortalUrl,

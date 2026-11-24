@@ -19,6 +19,7 @@ import {
   mockedLeaseStore,
   mockedOrganizationsTaggingService,
   mockedOrgsService,
+  mockedSandboxSpacesUsageStore,
 } from "@amzn/innovation-sandbox-commons/test/mocking/common-mocks.js";
 import { createMockOf } from "@amzn/innovation-sandbox-commons/test/mocking/mock-utils.js";
 import { ISB_ACCOUNT_TAG_SUFFIXES } from "@amzn/innovation-sandbox-commons/utils/isb-account-tags.js";
@@ -41,6 +42,7 @@ function createMockContext() {
     organizationsTaggingService: mockedOrganizationsTaggingService(),
     blueprintStore: mockedBlueprintStore(),
     blueprintDeploymentService: mockedBlueprintDeploymentService(),
+    sandboxSpacesUsageStore: mockedSandboxSpacesUsageStore(),
     logger: createMockOf(Logger),
     tracer: new Tracer(),
     globalConfig: mockGlobalConfig(),
@@ -145,6 +147,7 @@ describe("InnovationSandbox.ejectAccount()", () => {
       expect.objectContaining({
         ...activeLease,
         status: "Ejected",
+        lifecycleDispatch: null,
       }),
     );
 

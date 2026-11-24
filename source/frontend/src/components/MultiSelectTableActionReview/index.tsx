@@ -10,9 +10,9 @@ import {
   Table,
   TableProps,
 } from "@cloudscape-design/components";
+import { ReactNode, useMemo, useState } from "react";
 
 import { useModal } from "@amzn/innovation-sandbox-frontend/hooks/useModal";
-import { ReactNode, useMemo, useState } from "react";
 
 type RequestStatus = {
   status?: "pending" | "loading" | "success" | "error";

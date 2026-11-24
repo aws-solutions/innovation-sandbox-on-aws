@@ -10,7 +10,7 @@ import { IsbComputeResources } from "@amzn/innovation-sandbox-infrastructure/isb
 import { IsbComputeStack } from "@amzn/innovation-sandbox-infrastructure/isb-compute-stack";
 import { Role, ServicePrincipal } from "aws-cdk-lib/aws-iam";
 import { Construct } from "constructs";
-import path from "path";
+import path from "node:path";
 
 import { CostReportingLambdaEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/cost-reporting-lambda-environment.js";
 import { grantIsbDbReadOnly } from "@amzn/innovation-sandbox-infrastructure/helpers/policy-generators";

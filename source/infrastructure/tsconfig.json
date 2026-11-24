@@ -26,7 +26,8 @@
       ],
       "@amzn/innovation-sandbox-lambda/email-notification/*": [
         "../lambdas/notification/email-notification/src/*"
-      ]
+      ],
+      "@amzn/innovation-sandbox-agent-runtime/*": ["../agent-runtime/src/*"]
     }
   }
 }

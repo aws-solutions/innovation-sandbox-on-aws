@@ -5,6 +5,8 @@ import {
   Alert,
   Box,
   ColumnLayout,
+  Container,
+  Header,
   Input,
   KeyValuePairs,
   Pagination,
@@ -23,6 +25,10 @@ import { useGetBlueprints } from "@amzn/innovation-sandbox-frontend/domains/blue
 import { BlueprintView } from "@amzn/innovation-sandbox-frontend/domains/blueprints/model";
 
 const BLUEPRINTS_PER_PAGE = 12;
+const DEPLOY_BLUEPRINT_DESCRIPTION =
+  "When enabled, every lease created from this template starts with the blueprint's resources already deployed in its sandbox account. When disabled, users get an empty account.";
+const BLUEPRINTS_DESCRIPTION =
+  "The resources deployed into each sandbox account when a lease starts, so users get a ready-to-use environment.";
 
 const BlueprintCardContent = ({ option }: { option: BlueprintView }) => (
   <Box>
@@ -50,7 +56,7 @@ const BlueprintCardContent = ({ option }: { option: BlueprintView }) => (
 /**
  * Reusable form component for blueprint selection.
  * Uses FormContext from parent - no internal state management.
- * Shows a toggle to enable/disable blueprint selection, and conditionally
+ * Shows a toggle to enable/disable blueprint deployment, and conditionally
  * renders the blueprint card selector when enabled.
  *
  * When no blueprints are available, the toggle is automatically disabled
@@ -73,11 +79,11 @@ export const SelectBlueprintForm = () => {
     error: fetchError,
   } = useGetBlueprints();
 
-  const hasBlueprints =
-    !isLoading &&
-    !isError &&
-    response &&
-    (response.blueprints || []).length > 0;
+  const blueprints = useMemo(
+    () => (response?.blueprints ?? []).map((item) => item.blueprint),
+    [response?.blueprints],
+  );
+  const hasBlueprints = !isLoading && !isError && blueprints.length > 0;
 
   // Auto-disable toggle when no blueprints are available
   useEffect(() => {
@@ -95,10 +101,6 @@ export const SelectBlueprintForm = () => {
   }, [blueprintEnabled, resetField, setValue]);
 
   const filteredBlueprints = useMemo(() => {
-    if (!response?.blueprints) return [];
-
-    const blueprints = response.blueprints.map((item) => item.blueprint);
-
     if (!searchTerm.trim()) {
       return blueprints;
     }
@@ -108,7 +110,7 @@ export const SelectBlueprintForm = () => {
     return blueprints.filter((blueprint) =>
       blueprint.name?.toLowerCase().includes(normalizedSearchTerm),
     );
-  }, [response?.blueprints, searchTerm]);
+  }, [blueprints, searchTerm]);
 
   const paginatedBlueprints = useMemo(() => {
     if (!filteredBlueprints.length) return [];
@@ -134,116 +136,135 @@ export const SelectBlueprintForm = () => {
 
   return (
     <SpaceBetween size="l">
-      <ToggleField
-        controllerProps={{ control, name: "blueprintEnabled" }}
-        formFieldProps={{
-          label: "Enable Blueprint Selection",
-          description:
-            toggleDisabled && !isLoading
-              ? "No blueprints are available. Register a blueprint first to enable this option."
-              : "When enabled, leases using this template will deploy a blueprint to the sandbox account",
-        }}
-        toggleProps={{
-          children: `Blueprint selection ${blueprintEnabled ? "enabled" : "disabled"}`,
-          disabled: toggleDisabled,
-        }}
-      />
-
-      {blueprintEnabled && isLoading && (
-        <Loader label="Loading blueprints..." />
-      )}
-
-      {blueprintEnabled && isError && (
-        <ErrorPanel
-          description="Could not load blueprints at the moment."
-          retry={refetch}
-          error={fetchError as Error}
+      <Container
+        header={
+          <Header variant="h2" description={DEPLOY_BLUEPRINT_DESCRIPTION}>
+            Deploy a blueprint
+          </Header>
+        }
+      >
+        <ToggleField
+          controllerProps={{ control, name: "blueprintEnabled" }}
+          formFieldProps={{
+            label: "Deploy a blueprint",
+            description:
+              toggleDisabled && !isLoading
+                ? "No blueprints are available. Register a blueprint first to enable this option."
+                : undefined,
+          }}
+          toggleProps={{
+            ariaLabel: "Deploy a blueprint",
+            children: blueprintEnabled ? "Deploy a blueprint" : "Empty account",
+            disabled: toggleDisabled,
+          }}
         />
-      )}
+      </Container>
 
-      {blueprintEnabled && hasBlueprints && (
-        <SpaceBetween size="m">
-          <ColumnLayout columns={2}>
-            <Box>
-              <Input
-                type="search"
-                placeholder="Search by blueprint name"
-                value={searchTerm}
-                onChange={({ detail }) => setSearchTerm(detail.value)}
-                ariaLabel="Search blueprints"
+      {blueprintEnabled && (
+        <Container
+          header={
+            <Header variant="h2" description={BLUEPRINTS_DESCRIPTION}>
+              Blueprints
+            </Header>
+          }
+        >
+          <SpaceBetween size="m">
+            {isLoading && <Loader label="Loading blueprints..." />}
+
+            {isError && (
+              <ErrorPanel
+                description="Could not load blueprints at the moment."
+                retry={refetch}
+                error={fetchError}
               />
-            </Box>
-
-            {totalPages > 1 && (
-              <Box float="right">
-                <Pagination
-                  currentPageIndex={currentPageIndex}
-                  pagesCount={totalPages}
-                  onChange={({ detail }) =>
-                    setCurrentPageIndex(detail.currentPageIndex)
-                  }
-                  ariaLabels={{
-                    nextPageLabel: "Next page",
-                    previousPageLabel: "Previous page",
-                    pageLabel: (pageNumber) =>
-                      `Page ${pageNumber} of ${totalPages}`,
-                  }}
-                />
-              </Box>
             )}
-          </ColumnLayout>
 
-          {filteredBlueprints.length === 0 && searchTerm.trim() !== "" ? (
-            <Alert type="info" header="No matching blueprints">
-              No blueprints match your search term. Try a different search.
-            </Alert>
-          ) : (
-            <CardsField<
-              BlueprintView,
-              BlueprintSelectionFormValues,
-              "blueprintId"
-            >
-              controllerProps={{
-                control,
-                name: "blueprintId",
-              }}
-              formFieldProps={{
-                stretch: true,
-                label:
-                  "What blueprint would you like to use for this lease template?",
-                description:
-                  "Blueprints provide pre-configured infrastructure to give users ready-to-use environments.",
-              }}
-              cardsProps={{
-                items: paginatedBlueprints,
-                entireCardClickable: true,
-                selectionType: "single",
-                cardsPerRow: [
-                  { cards: 1 },
-                  { minWidth: 500, cards: 2 },
-                  { minWidth: 800, cards: 3 },
-                ],
-                cardDefinition: {
-                  header: (option) => option.name,
-                  sections: [
-                    {
-                      // prettier-ignore
-                      content: (option) => <BlueprintCardContent option={option} />, // NOSONAR typescript:S6478 - the way the card component works requires defining component during render
-                    },
-                  ],
-                },
-                onSelectionChange: ({ detail }) => {
-                  const selected = detail.selectedItems[0];
-                  setValue("blueprintName", selected?.name ?? null);
-                },
-              }}
-              valueExtractor={(blueprint) => blueprint.blueprintId}
-              itemMatcher={(blueprint, blueprintId) =>
-                blueprint.blueprintId === blueprintId
-              }
-            />
-          )}
-        </SpaceBetween>
+            {hasBlueprints && (
+              <SpaceBetween size="m">
+                <ColumnLayout columns={2}>
+                  <Box>
+                    <Input
+                      type="search"
+                      placeholder="Find a blueprint"
+                      value={searchTerm}
+                      onChange={({ detail }) => setSearchTerm(detail.value)}
+                      ariaLabel="Search blueprints"
+                    />
+                  </Box>
+
+                  {totalPages > 1 && (
+                    <Box float="right">
+                      <Pagination
+                        currentPageIndex={currentPageIndex}
+                        pagesCount={totalPages}
+                        onChange={({ detail }) =>
+                          setCurrentPageIndex(detail.currentPageIndex)
+                        }
+                        ariaLabels={{
+                          nextPageLabel: "Next page",
+                          previousPageLabel: "Previous page",
+                          pageLabel: (pageNumber) =>
+                            `Page ${pageNumber} of ${totalPages}`,
+                        }}
+                      />
+                    </Box>
+                  )}
+                </ColumnLayout>
+
+                {filteredBlueprints.length === 0 && searchTerm.trim() !== "" ? (
+                  <Alert type="info" header="No matching blueprints">
+                    No blueprints match your search term. Try a different
+                    search.
+                  </Alert>
+                ) : (
+                  <CardsField<
+                    BlueprintView,
+                    BlueprintSelectionFormValues,
+                    "blueprintId"
+                  >
+                    controllerProps={{
+                      control,
+                      name: "blueprintId",
+                    }}
+                    formFieldProps={{ stretch: true }}
+                    cardsProps={{
+                      items: paginatedBlueprints,
+                      entireCardClickable: true,
+                      selectionType: "single",
+                      ariaLabels: {
+                        selectionGroupLabel: "Blueprints",
+                        itemSelectionLabel: (_selection, blueprint) =>
+                          blueprint.name,
+                      },
+                      cardsPerRow: [
+                        { cards: 1 },
+                        { minWidth: 500, cards: 2 },
+                        { minWidth: 700, cards: 3 },
+                      ],
+                      cardDefinition: {
+                        header: (option) => option.name,
+                        sections: [
+                          {
+                            // prettier-ignore
+                            content: (option) => <BlueprintCardContent option={option} />, // NOSONAR typescript:S6478 - the way the card component works requires defining component during render
+                          },
+                        ],
+                      },
+                      onSelectionChange: ({ detail }) => {
+                        const selected = detail.selectedItems[0];
+                        setValue("blueprintName", selected?.name ?? null);
+                      },
+                    }}
+                    valueExtractor={(blueprint) => blueprint.blueprintId}
+                    itemMatcher={(blueprint, selectedBlueprintId) =>
+                      blueprint.blueprintId === selectedBlueprintId
+                    }
+                  />
+                )}
+              </SpaceBetween>
+            )}
+          </SpaceBetween>
+        </Container>
       )}
     </SpaceBetween>
   );

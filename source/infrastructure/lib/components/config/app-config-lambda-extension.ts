@@ -90,7 +90,7 @@ const layerArns: { [key: string]: string } = {
     "arn:aws-us-gov:lambda:us-gov-west-1:946746059096:layer:AWS-AppConfig-Extension-Arm64:166",
 };
 
-export function addAppConfigExtensionLayer<T extends z.ZodSchema<any>>(
+export function addAppConfigExtensionLayer<T extends z.ZodType<any>>(
   isbLambdaFunction: IsbLambdaFunction<T>,
 ) {
   const appConfigExtensionLayer = LayerVersion.fromLayerVersionArn(
@@ -110,21 +110,19 @@ function getLatestLayerARN(scope: Construct) {
 function getOrCreateMapping(scope: Construct) {
   const stack = Stack.of(scope);
   const stackName = stack.stackName;
-  if (!mappingInstances[stackName]) {
-    mappingInstances[stackName] = new CfnMapping(
-      stack,
-      "AppConfigExtensionArnMap",
-      {
-        mapping: Object.entries(layerArns).reduce(
-          (acc, [region, arn]) => {
-            acc[region] = { arn };
-            return acc;
-          },
-          {} as Record<string, { arn: string }>,
-        ),
-      },
-    );
-  }
+  mappingInstances[stackName] ??= new CfnMapping(
+    stack,
+    "AppConfigExtensionArnMap",
+    {
+      mapping: Object.entries(layerArns).reduce(
+        (acc, [region, arn]) => {
+          acc[region] = { arn };
+          return acc;
+        },
+        {} as Record<string, { arn: string }>,
+      ),
+    },
+  );
   return mappingInstances[stackName];
 }
 

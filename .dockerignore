@@ -1,0 +1,52 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Without this file the Docker build context is the whole repo (~2.7GB), which
+# makes `docker build` hang and can fail with ENAMETOOLONG. Only the workspace
+# manifests and source needed to bundle the agent runtime have to be sent.
+
+# Dependencies — reinstalled inside the image
+node_modules/
+**/node_modules/
+
+# Build output and caches
+.build/
+dist/
+**/dist/
+cdk.out/
+**/cdk.out/
+coverage/
+**/coverage/
+*.tsbuildinfo
+build/
+
+.env
+.env.*
+!.env.example
+.aws/
+
+.git/
+.github/
+.gitignore
+
+internal/
+docs/
+.kiro/
+.claude/
+.temp_redpencil/
+.security-scan/
+.patch-artifacts/
+deployment/global-s3-assets/
+deployment/regional-s3-assets/
+deployment/open-source/
+
+source/frontend/
+source/infrastructure/
+source/lambdas/
+source/layers/
+!source/layers/dependencies/package.json
+
+# Editor and OS noise
+.DS_Store
+*.log
+*.swp

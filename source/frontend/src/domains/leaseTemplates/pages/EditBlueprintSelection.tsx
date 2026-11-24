@@ -4,7 +4,6 @@
 import {
   Box,
   Button,
-  Container,
   Header,
   SpaceBetween,
 } from "@cloudscape-design/components";
@@ -80,7 +79,7 @@ export const EditBlueprintSelection = () => {
       { text: "Home", href: "/" },
       { text: "Lease Templates", href: "/lease_templates" },
       { text: leaseTemplate?.name ?? "...", href: `/lease_templates/${uuid}` },
-      { text: "Edit Blueprint Selection", href: "" },
+      { text: "Blueprint", href: "" },
     ]);
     setTools(<Markdown file="edit-lease-template-blueprint" />);
   }, [leaseTemplate, uuid, setBreadcrumb]);
@@ -130,15 +129,17 @@ export const EditBlueprintSelection = () => {
   }
 
   return (
-    <ContentLayout>
+    <ContentLayout
+      header={
+        <Header variant="h1" description="Resources deployed with the lease">
+          Blueprint
+        </Header>
+      }
+    >
       <FormProvider {...methods}>
         <form onSubmit={handleSubmit(onSubmit)}>
           <SpaceBetween size="l">
-            <Container
-              header={<Header variant="h2">Edit Blueprint Selection</Header>}
-            >
-              <SelectBlueprintForm />
-            </Container>
+            <SelectBlueprintForm />
 
             <Box float="right">
               <SpaceBetween direction="horizontal" size="xs">

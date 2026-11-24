@@ -9,18 +9,29 @@ import {
 } from "@cloudscape-design/components";
 
 interface ThresholdDetailsProps {
-  thresholds: Array<{ action: "ALERT" | "FREEZE_ACCOUNT" }> | undefined;
+  thresholds:
+    | Array<{
+        action: "ALERT" | "FREEZE_ACCOUNT";
+        triggerOn?: "REPORTED" | "PREDICTED";
+      }>
+    | undefined;
   renderValue: (threshold: any) => React.ReactNode;
   valueLabel: string;
+  /**
+   * Show each threshold's trigger figure (budget thresholds only). A threshold
+   * without triggerOn reads as reported cost, today's behavior.
+   */
+  showTriggerOn?: boolean;
 }
 
 export const ThresholdDetails = ({
   thresholds,
   renderValue,
   valueLabel,
+  showTriggerOn = false,
 }: ThresholdDetailsProps) => {
   const formatAction = (action: string) => {
-    return action === "ALERT" ? "Alert" : "Freeze";
+    return action === "ALERT" ? "Send alert" : "Freeze lease";
   };
 
   if (!thresholds || thresholds.length === 0) {
@@ -36,7 +47,7 @@ export const ThresholdDetails = ({
         id: `${index}`,
         content: (
           <KeyValuePairs
-            columns={3}
+            columns={showTriggerOn ? 4 : 3}
             minColumnWidth={100}
             items={[
               {
@@ -55,6 +66,17 @@ export const ThresholdDetails = ({
                   </Badge>
                 ),
               },
+              ...(showTriggerOn
+                ? [
+                    {
+                      label: "Cost basis",
+                      value:
+                        threshold.triggerOn === "PREDICTED"
+                          ? "Estimated cost"
+                          : "Reported cost",
+                    },
+                  ]
+                : []),
             ]}
           />
         ),

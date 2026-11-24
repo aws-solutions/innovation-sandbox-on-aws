@@ -12,13 +12,18 @@ import {
   ListUsersCommand,
   ResourceNotFoundException,
 } from "@aws-sdk/client-identitystore";
+import {
+  GetResourcesCommand,
+  ResourceGroupsTaggingAPIClient,
+} from "@aws-sdk/client-resource-groups-tagging-api";
 import { GetParameterCommand, SSMClient } from "@aws-sdk/client-ssm";
 import {
   CreateAccountAssignmentCommand,
-  DeleteAccountAssignmentCommand,
-  ListAccountAssignmentsCommand,
-  PrincipalType,
+  DescribePermissionSetCommand,
+  ListPermissionSetsProvisionedToAccountCommand,
+  ListTagsForResourceCommand,
   SSOAdminClient,
+  ResourceNotFoundException as SsoAdminResourceNotFoundException,
   TargetType,
 } from "@aws-sdk/client-sso-admin";
 import { mockClient } from "aws-sdk-client-mock";
@@ -36,7 +41,7 @@ const test_env = {
   IDC_CONFIG_PARAM_ARN:
     "arn:aws:ssm:us-east-1:123456789012:parameter/isb_abc_idc_configuration",
   IDENTITY_STORE_ID: "d-111111111111",
-  SSO_INSTANCE_ARN: "arn:aws:sso:::instance/ssoins-111111",
+  SSO_INSTANCE_ARN: "arn:aws:sso:::instance/ssoins-1234567890abcdef",
   USER_AGENT_EXTRA: "test-user-agent",
 };
 
@@ -48,8 +53,16 @@ vi.mock("@amzn/innovation-sandbox-commons/utils/cross-account-roles.js", () => {
   };
 });
 
+// Unit tests validate IDC behavior, not real-time rate limiting.
+vi.mock("p-throttle", () => ({
+  default: () => (fn: any) => fn,
+}));
+
 describe("Idc service api", () => {
   const identityStoreMock = mockClient(IdentitystoreClient);
+  const resourceGroupsTaggingApiMock = mockClient(
+    ResourceGroupsTaggingAPIClient,
+  );
   const ssoAdminMock = mockClient(SSOAdminClient);
   const ssmClientMock = mockClient(SSMClient);
   const testPermissionSetArn =
@@ -80,8 +93,19 @@ describe("Idc service api", () => {
     supportedSchemas: "1",
   };
 
+  const testIsbUserMembershipResponse = {
+    GroupMemberships: [
+      {
+        ...testGroupMembershipMetadata,
+        GroupId: idcConfig.userGroupId,
+        IdentityStoreId: test_env.IDENTITY_STORE_ID,
+      },
+    ],
+  };
+
   beforeEach(() => {
     identityStoreMock.reset();
+    resourceGroupsTaggingApiMock.reset();
     ssoAdminMock.reset();
     ssmClientMock.reset();
     clearCache();
@@ -96,6 +120,12 @@ describe("Idc service api", () => {
   });
 
   const idcService = IsbServices.idcService(test_env);
+
+  it("returns the built-in user permission set ARN", async () => {
+    await expect(idcService.getBuiltInUserPermissionSetArn()).resolves.toBe(
+      testPermissionSetArn,
+    );
+  });
 
   describe("users and assignment", async () => {
     const testIdcUser = {
@@ -257,9 +287,10 @@ describe("Idc service api", () => {
         email: testIdcUser.Emails[0]!.Value,
         roles: ["User"],
       });
+      expect(await idcService.getIsbMemberFromEmail(testEmail)).toEqual(user);
     });
 
-    it("should return an undefined when the user isn't in any of the ISB groups", async () => {
+    it("should return users who aren't in any ISB groups with no roles", async () => {
       const testEmail = "user@example.com";
 
       identityStoreMock.on(GetUserIdCommand).resolves({
@@ -275,34 +306,15 @@ describe("Idc service api", () => {
           },
         ],
       });
-      expect(await idcService.getUserFromEmail(testEmail)).toEqual(undefined);
-    });
-
-    it("should get user from user name", async () => {
-      const userName = "userName1";
-
-      identityStoreMock.on(GetUserIdCommand).resolves({
-        UserId: testIdcUser.UserId,
-      });
-      identityStoreMock.on(DescribeUserCommand).resolves(testIdcUser);
-      identityStoreMock.on(ListGroupMembershipsForMemberCommand).resolves({
-        GroupMemberships: [
-          {
-            ...testGroupMembershipMetadata,
-            GroupId: idcConfig.userGroupId,
-            IdentityStoreId: test_env.IDENTITY_STORE_ID,
-          },
-        ],
-      });
-      const user = await idcService.getUserFromUsername(userName);
-      expect(user).toEqual({
+      expect(await idcService.getUserFromEmail(testEmail)).toEqual({
         type: "user",
         userId: testIdcUser.UserId,
         displayName: testIdcUser.DisplayName,
         userName: testIdcUser.UserName,
         email: testIdcUser.Emails[0]!.Value,
-        roles: ["User"],
+        roles: [],
       });
+      expect(await idcService.getIsbMemberFromEmail(testEmail)).toBeUndefined();
     });
   });
 
@@ -351,88 +363,301 @@ describe("Idc service api", () => {
           .complete(),
       ).rejects.toThrow("Transaction Failed: Error: Unexpected Error");
     });
+  });
 
-    it("should delete account assignment for a user", async () => {
-      ssoAdminMock.on(DeleteAccountAssignmentCommand).resolves({});
+  describe("Permission set discovery", () => {
+    const namespace = "test-namespace";
+    const registeredPermissionSetArn =
+      "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-1234567890abcdef";
+    const secondPermissionSetArn =
+      "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-abcdef1234567890";
+    const registrationTag = {
+      Key: `ISB:${namespace}:ManagedPermissionSet`,
+      Value: "true",
+    };
 
-      ssoAdminMock.on(ListAccountAssignmentsCommand).resolves({
-        AccountAssignments: [
+    it("should query the exact namespace tag and describe matching permission sets", async () => {
+      resourceGroupsTaggingApiMock.on(GetResourcesCommand).resolves({
+        ResourceTagMappingList: [
           {
-            AccountId: testAccountId,
-            PermissionSetArn: testPermissionSetArn,
-            PrincipalId: testUser.userId,
-            PrincipalType: PrincipalType.USER,
+            ResourceARN: registeredPermissionSetArn,
+            Tags: [registrationTag],
           },
         ],
       });
+      ssoAdminMock
+        .on(DescribePermissionSetCommand, {
+          PermissionSetArn: registeredPermissionSetArn,
+        })
+        .resolves({
+          PermissionSet: {
+            Name: "RegisteredProfile",
+            Description: "Registered profile",
+            SessionDuration: "PT4H",
+          },
+        });
 
-      await idcService.revokeAllUserAccess(testAccountId);
-
-      const commandCalls = ssoAdminMock.commandCalls(
-        DeleteAccountAssignmentCommand,
-      );
-      expect(commandCalls.length).toBe(1);
-      const hasMatchingCall = commandCalls.every((call) =>
-        expect(call.args[0].input).toEqual({
-          InstanceArn: test_env.SSO_INSTANCE_ARN,
-          PermissionSetArn: testPermissionSetArn,
-          PrincipalId: testUser.userId,
-          PrincipalType: "USER",
-          TargetId: testAccountId,
-          TargetType: TargetType.AWS_ACCOUNT,
-        }),
-      );
-      expect(hasMatchingCall).toBeTruthy();
+      await expect(
+        idcService.listRegisteredPermissionSets(namespace),
+      ).resolves.toEqual([
+        {
+          permissionSetArn: registeredPermissionSetArn,
+          permissionSetId: "ps-1234567890abcdef",
+          name: "RegisteredProfile",
+          description: "Registered profile",
+          sessionDuration: "PT4H",
+        },
+      ]);
+      expect(
+        resourceGroupsTaggingApiMock.commandCalls(GetResourcesCommand),
+      ).toHaveLength(1);
+      expect(
+        resourceGroupsTaggingApiMock.commandCalls(GetResourcesCommand)[0]!
+          .args[0].input,
+      ).toEqual({
+        TagFilters: [
+          {
+            Key: registrationTag.Key,
+            Values: [registrationTag.Value],
+          },
+        ],
+        ResourcesPerPage: 100,
+      });
+      expect(
+        ssoAdminMock.commandCalls(DescribePermissionSetCommand),
+      ).toHaveLength(1);
     });
 
-    it("should revoke access to all users with ISB User PS", async () => {
-      ssoAdminMock.on(DeleteAccountAssignmentCommand).resolves({});
-      ssoAdminMock.on(ListAccountAssignmentsCommand).resolves({
-        AccountAssignments: [
-          {
-            AccountId: testAccountId,
-            PermissionSetArn: testPermissionSetArn,
-            PrincipalId: testUser.userId,
-            PrincipalType: PrincipalType.USER,
-          },
-          {
-            AccountId: testAccountId,
-            PermissionSetArn: testPermissionSetArn,
-            PrincipalId: testUser.userId,
-            PrincipalType: PrincipalType.USER,
-          },
-          {
-            AccountId: testAccountId,
-            PermissionSetArn: testPermissionSetArn,
-            PrincipalId: testUser.userId,
-            PrincipalType: PrincipalType.GROUP, //won't be removed because a group, not a user
-          },
-          {
-            AccountId: testAccountId,
-            PermissionSetArn: testPermissionSetArn + "SomethingElse", //won't be removed as it is another PS
-            PrincipalId: testUser.userId,
-            PrincipalType: PrincipalType.GROUP,
-          },
+    it("should exhaust tagged-resource pagination", async () => {
+      resourceGroupsTaggingApiMock
+        .on(GetResourcesCommand)
+        .resolvesOnce({
+          ResourceTagMappingList: [{ ResourceARN: registeredPermissionSetArn }],
+          PaginationToken: "page-2",
+        })
+        .resolvesOnce({
+          ResourceTagMappingList: [{ ResourceARN: secondPermissionSetArn }],
+        });
+      ssoAdminMock
+        .on(DescribePermissionSetCommand, {
+          PermissionSetArn: registeredPermissionSetArn,
+        })
+        .resolves({ PermissionSet: { Name: "FirstProfile" } });
+      ssoAdminMock
+        .on(DescribePermissionSetCommand, {
+          PermissionSetArn: secondPermissionSetArn,
+        })
+        .resolves({ PermissionSet: { Name: "SecondProfile" } });
+
+      const result = await idcService.listRegisteredPermissionSets(namespace);
+
+      expect(result.map((permissionSet) => permissionSet.name)).toEqual([
+        "FirstProfile",
+        "SecondProfile",
+      ]);
+      expect(
+        resourceGroupsTaggingApiMock.commandCalls(GetResourcesCommand),
+      ).toHaveLength(2);
+    });
+
+    it("should skip malformed, unrelated, and wrong-instance resources without aborting", async () => {
+      const malformedArn = "not-a-permission-set-arn";
+      const unrelatedArn =
+        "arn:aws:ec2:us-east-1:123456789012:instance/i-1234567890abcdef0";
+      const wrongInstanceArn =
+        "arn:aws:sso:::permissionSet/ssoins-0000000000000000/ps-0000000000000000";
+      resourceGroupsTaggingApiMock.on(GetResourcesCommand).resolves({
+        ResourceTagMappingList: [
+          { ResourceARN: malformedArn },
+          { ResourceARN: unrelatedArn },
+          { ResourceARN: wrongInstanceArn },
+          { ResourceARN: registeredPermissionSetArn },
+          { ResourceARN: secondPermissionSetArn },
         ],
       });
+      ssoAdminMock
+        .on(DescribePermissionSetCommand, {
+          PermissionSetArn: registeredPermissionSetArn,
+        })
+        .resolves({ PermissionSet: {} });
+      ssoAdminMock
+        .on(DescribePermissionSetCommand, {
+          PermissionSetArn: secondPermissionSetArn,
+        })
+        .resolves({ PermissionSet: { Name: "ValidProfile" } });
 
-      await idcService.revokeAllUserAccess(testAccountId);
+      await expect(
+        idcService.listRegisteredPermissionSets(namespace),
+      ).resolves.toEqual([
+        {
+          permissionSetArn: secondPermissionSetArn,
+          permissionSetId: "ps-abcdef1234567890",
+          name: "ValidProfile",
+        },
+      ]);
+      expect(
+        ssoAdminMock
+          .commandCalls(DescribePermissionSetCommand)
+          .map((call) => call.args[0].input.PermissionSetArn),
+      ).toEqual([registeredPermissionSetArn, secondPermissionSetArn]);
+    });
 
-      const commandCalls = ssoAdminMock.commandCalls(
-        DeleteAccountAssignmentCommand,
-      );
-      expect(commandCalls.length).toBe(2);
-      const hasMatchingCall = commandCalls.every((call) =>
-        expect(call.args[0].input).toEqual({
+    it("should continue when a permission set is deleted before it is described", async () => {
+      resourceGroupsTaggingApiMock.on(GetResourcesCommand).resolves({
+        ResourceTagMappingList: [
+          { ResourceARN: registeredPermissionSetArn },
+          { ResourceARN: secondPermissionSetArn },
+        ],
+      });
+      ssoAdminMock
+        .on(DescribePermissionSetCommand, {
+          PermissionSetArn: registeredPermissionSetArn,
+        })
+        .rejects(
+          new SsoAdminResourceNotFoundException({
+            $metadata: {},
+            message: "Permission set was deleted",
+          }),
+        );
+      ssoAdminMock
+        .on(DescribePermissionSetCommand, {
+          PermissionSetArn: secondPermissionSetArn,
+        })
+        .resolves({ PermissionSet: { Name: "SurvivingProfile" } });
+
+      const result = await idcService.listRegisteredPermissionSets(namespace);
+
+      expect(result.map((permissionSet) => permissionSet.name)).toEqual([
+        "SurvivingProfile",
+      ]);
+    });
+
+    it("should propagate tagged-resource discovery errors", async () => {
+      resourceGroupsTaggingApiMock
+        .on(GetResourcesCommand)
+        .rejects(new Error("Access denied"));
+
+      await expect(
+        idcService.listRegisteredPermissionSets(namespace),
+      ).rejects.toThrow("Access denied");
+    });
+
+    it("should propagate describe errors other than deletion races", async () => {
+      resourceGroupsTaggingApiMock.on(GetResourcesCommand).resolves({
+        ResourceTagMappingList: [{ ResourceARN: registeredPermissionSetArn }],
+      });
+      ssoAdminMock
+        .on(DescribePermissionSetCommand)
+        .rejects(new Error("Access denied"));
+
+      await expect(
+        idcService.listRegisteredPermissionSets(namespace),
+      ).rejects.toThrow("Access denied");
+    });
+
+    it("should return an empty list when no resources have the registration tag", async () => {
+      resourceGroupsTaggingApiMock.on(GetResourcesCommand).resolves({});
+
+      await expect(
+        idcService.listRegisteredPermissionSets(namespace),
+      ).resolves.toEqual([]);
+      expect(
+        ssoAdminMock.commandCalls(DescribePermissionSetCommand),
+      ).toHaveLength(0);
+    });
+
+    it("should describe one permission set without requiring a registration tag", async () => {
+      ssoAdminMock
+        .on(DescribePermissionSetCommand, {
           InstanceArn: test_env.SSO_INSTANCE_ARN,
-          PermissionSetArn: testPermissionSetArn,
-          PrincipalId: testUser.userId,
-          PrincipalType: "USER",
-          TargetId: testAccountId,
-          TargetType: TargetType.AWS_ACCOUNT,
-        }),
-      );
-      expect(hasMatchingCall).toBeTruthy();
+          PermissionSetArn: registeredPermissionSetArn,
+        })
+        .resolves({
+          PermissionSet: {
+            Name: "BuiltInProfile",
+            Description: "Built-in profile",
+            SessionDuration: "PT1H",
+          },
+        });
+
+      await expect(
+        idcService.getPermissionSet(registeredPermissionSetArn),
+      ).resolves.toEqual({
+        permissionSetArn: registeredPermissionSetArn,
+        permissionSetId: "ps-1234567890abcdef",
+        name: "BuiltInProfile",
+        description: "Built-in profile",
+        sessionDuration: "PT1H",
+      });
+      expect(
+        resourceGroupsTaggingApiMock.commandCalls(GetResourcesCommand),
+      ).toHaveLength(0);
+    });
+
+    it("should return undefined when a described permission set was deleted", async () => {
+      ssoAdminMock
+        .on(DescribePermissionSetCommand, {
+          PermissionSetArn: registeredPermissionSetArn,
+        })
+        .rejects(
+          new SsoAdminResourceNotFoundException({
+            $metadata: {},
+            message: "Permission set was deleted",
+          }),
+        );
+
+      await expect(
+        idcService.getPermissionSet(registeredPermissionSetArn),
+      ).resolves.toBeUndefined();
+    });
+
+    it("should check the permission set's current registration tag", async () => {
+      ssoAdminMock
+        .on(ListTagsForResourceCommand, {
+          InstanceArn: test_env.SSO_INSTANCE_ARN,
+          ResourceArn: registeredPermissionSetArn,
+        })
+        .resolvesOnce({
+          Tags: [{ Key: "unrelated", Value: "true" }],
+          NextToken: "page-2",
+        })
+        .resolvesOnce({ Tags: [registrationTag] });
+
+      await expect(
+        idcService.isPermissionSetRegistered(
+          registeredPermissionSetArn,
+          namespace,
+        ),
+      ).resolves.toBe(true);
+      expect(
+        ssoAdminMock.commandCalls(ListTagsForResourceCommand),
+      ).toHaveLength(2);
+    });
+
+    it("should exhaust provisioned permission set pagination", async () => {
+      ssoAdminMock
+        .on(ListPermissionSetsProvisionedToAccountCommand)
+        .resolvesOnce({
+          PermissionSets: [registeredPermissionSetArn],
+          NextToken: "page-2",
+        })
+        .resolvesOnce({
+          PermissionSets: [secondPermissionSetArn],
+        });
+
+      await expect(
+        idcService.listPermissionSetsProvisionedToAccount("111111111111"),
+      ).resolves.toEqual([registeredPermissionSetArn, secondPermissionSetArn]);
+    });
+
+    it("should return an empty list when no permission sets are provisioned", async () => {
+      ssoAdminMock
+        .on(ListPermissionSetsProvisionedToAccountCommand)
+        .resolves({});
+
+      await expect(
+        idcService.listPermissionSetsProvisionedToAccount("111111111111"),
+      ).resolves.toEqual([]);
     });
   });
 
@@ -804,6 +1029,10 @@ describe("Idc service api", () => {
 
       const result = await idcService.listGroupsForUser("user-x");
       expect(result.map((m) => m.GroupId)).toEqual(["group-1", "group-2"]);
+      expect(
+        identityStoreMock.commandCalls(ListGroupMembershipsForMemberCommand)[0]
+          ?.args[0].input.MaxResults,
+      ).toBe(100);
     });
 
     it("exhausts pagination across multiple pages", async () => {
@@ -899,9 +1128,15 @@ describe("Idc service api", () => {
       });
       // Should not call IDC on cache hit
       expect(identityStoreMock.commandCalls(GetUserIdCommand)).toHaveLength(0);
+      expect(
+        identityStoreMock.commandCalls(ListGroupMembershipsForMemberCommand),
+      ).toHaveLength(0);
     });
 
     it("resolves a user by email via GetUserId + DescribeUser on cache miss", async () => {
+      identityStoreMock
+        .on(ListGroupMembershipsForMemberCommand)
+        .resolves(testIsbUserMembershipResponse);
       identityStoreMock.on(GetUserIdCommand).resolves({ UserId: "user-123" });
       identityStoreMock.on(DescribeUserCommand).resolves({
         UserId: "user-123",
@@ -926,6 +1161,9 @@ describe("Idc service api", () => {
     });
 
     it("performs write-through on IDC resolution success", async () => {
+      identityStoreMock
+        .on(ListGroupMembershipsForMemberCommand)
+        .resolves(testIsbUserMembershipResponse);
       identityStoreMock.on(GetUserIdCommand).resolves({ UserId: "user-123" });
       identityStoreMock.on(DescribeUserCommand).resolves({
         UserId: "user-123",
@@ -974,6 +1212,78 @@ describe("Idc service api", () => {
       );
 
       expect(result).toBeUndefined();
+    });
+
+    it("does not return or cache a nonmember on a user cache miss", async () => {
+      identityStoreMock.on(GetUserIdCommand).resolves({ UserId: "user-123" });
+      identityStoreMock.on(DescribeUserCommand).resolves({
+        UserId: "user-123",
+        DisplayName: "Alice Smith",
+        Emails: [{ Value: "alice@example.com", Primary: true }],
+      });
+      identityStoreMock.on(ListGroupMembershipsForMemberCommand).resolves({
+        GroupMemberships: [
+          {
+            ...testGroupMembershipMetadata,
+            GroupId: "not-an-isb-group",
+            IdentityStoreId: test_env.IDENTITY_STORE_ID,
+          },
+        ],
+      });
+
+      const result = await idcService.getCachedPrincipalByAttr(
+        "USER",
+        "alice@example.com",
+        mockPrincipalStore,
+        mockLogger,
+      );
+
+      expect(result).toBeUndefined();
+      expect(mockPrincipalStore.batchPutCacheItems).not.toHaveBeenCalled();
+    });
+
+    it("returns undefined for a nonmember without a primary email", async () => {
+      identityStoreMock.on(GetUserIdCommand).resolves({ UserId: "user-123" });
+      identityStoreMock.on(DescribeUserCommand).resolves({
+        UserId: "user-123",
+        DisplayName: "Alice Smith",
+        Emails: [{ Value: "alice@example.com", Primary: false }],
+      });
+      identityStoreMock.on(ListGroupMembershipsForMemberCommand).resolves({
+        GroupMemberships: [],
+      });
+
+      const result = await idcService.getCachedPrincipalByAttr(
+        "USER",
+        "alice@example.com",
+        mockPrincipalStore,
+        mockLogger,
+      );
+
+      expect(result).toBeUndefined();
+      expect(mockPrincipalStore.batchPutCacheItems).not.toHaveBeenCalled();
+    });
+
+    it("throws a data-integrity error for a member without a primary email", async () => {
+      identityStoreMock.on(GetUserIdCommand).resolves({ UserId: "user-123" });
+      identityStoreMock.on(DescribeUserCommand).resolves({
+        UserId: "user-123",
+        DisplayName: "Alice Smith",
+        Emails: [{ Value: "alice@example.com", Primary: false }],
+      });
+      identityStoreMock
+        .on(ListGroupMembershipsForMemberCommand)
+        .resolves(testIsbUserMembershipResponse);
+
+      await expect(
+        idcService.getCachedPrincipalByAttr(
+          "USER",
+          "alice@example.com",
+          mockPrincipalStore,
+          mockLogger,
+        ),
+      ).rejects.toThrow("IDC user has no primary email");
+      expect(mockPrincipalStore.batchPutCacheItems).not.toHaveBeenCalled();
     });
 
     it("resolves a group by displayName via GetGroupId on cache miss", async () => {
@@ -1029,6 +1339,9 @@ describe("Idc service api", () => {
     });
 
     it("swallows cache write failures (best-effort)", async () => {
+      identityStoreMock
+        .on(ListGroupMembershipsForMemberCommand)
+        .resolves(testIsbUserMembershipResponse);
       identityStoreMock.on(GetUserIdCommand).resolves({ UserId: "user-999" });
       identityStoreMock.on(DescribeUserCommand).resolves({
         UserId: "user-999",
@@ -1105,6 +1418,9 @@ describe("Idc service api", () => {
       expect(identityStoreMock.commandCalls(DescribeUserCommand)).toHaveLength(
         0,
       );
+      expect(
+        identityStoreMock.commandCalls(ListGroupMembershipsForMemberCommand),
+      ).toHaveLength(0);
     });
 
     it("returns cache hit for GROUP when batchGetCacheItems finds the principal", async () => {
@@ -1138,6 +1454,9 @@ describe("Idc service api", () => {
     });
 
     it("resolves USER via DescribeUser on cache miss", async () => {
+      identityStoreMock
+        .on(ListGroupMembershipsForMemberCommand)
+        .resolves(testIsbUserMembershipResponse);
       identityStoreMock.on(DescribeUserCommand).resolves({
         UserId: "user-123",
         DisplayName: "Alice Smith",
@@ -1158,6 +1477,69 @@ describe("Idc service api", () => {
         displayName: "Alice Smith",
         email: "alice@example.com",
       });
+    });
+
+    it("does not return or cache a nonmember on a USER cache miss", async () => {
+      identityStoreMock.on(DescribeUserCommand).resolves({
+        UserId: "user-123",
+        DisplayName: "Alice Smith",
+        Emails: [{ Value: "alice@example.com", Primary: true }],
+      });
+      identityStoreMock.on(ListGroupMembershipsForMemberCommand).resolves({
+        GroupMemberships: [],
+      });
+
+      const result = await idcService.getCachedPrincipalById(
+        "USER",
+        "user-123",
+        mockPrincipalStore,
+        mockLogger,
+      );
+
+      expect(result).toBeUndefined();
+      expect(mockPrincipalStore.batchPutCacheItems).not.toHaveBeenCalled();
+    });
+
+    it("throws a data-integrity error for a USER without a primary email", async () => {
+      identityStoreMock
+        .on(ListGroupMembershipsForMemberCommand)
+        .resolves(testIsbUserMembershipResponse);
+      identityStoreMock.on(DescribeUserCommand).resolves({
+        UserId: "user-123",
+        DisplayName: "Alice Smith",
+        Emails: [{ Value: "alice@example.com", Primary: false }],
+      });
+
+      await expect(
+        idcService.getCachedPrincipalById(
+          "USER",
+          "user-123",
+          mockPrincipalStore,
+          mockLogger,
+        ),
+      ).rejects.toThrow("IDC user has no primary email");
+      expect(mockPrincipalStore.batchPutCacheItems).not.toHaveBeenCalled();
+    });
+
+    it("returns undefined for a nonmember without a primary email", async () => {
+      identityStoreMock.on(ListGroupMembershipsForMemberCommand).resolves({
+        GroupMemberships: [],
+      });
+      identityStoreMock.on(DescribeUserCommand).resolves({
+        UserId: "user-123",
+        DisplayName: "Alice Smith",
+        Emails: [{ Value: "alice@example.com", Primary: false }],
+      });
+
+      const result = await idcService.getCachedPrincipalById(
+        "USER",
+        "user-123",
+        mockPrincipalStore,
+        mockLogger,
+      );
+
+      expect(result).toBeUndefined();
+      expect(mockPrincipalStore.batchPutCacheItems).not.toHaveBeenCalled();
     });
 
     it("resolves GROUP via DescribeGroup on cache miss", async () => {
@@ -1251,6 +1633,9 @@ describe("Idc service api", () => {
     });
 
     it("performs write-through with correct SK prefix for USER", async () => {
+      identityStoreMock
+        .on(ListGroupMembershipsForMemberCommand)
+        .resolves(testIsbUserMembershipResponse);
       identityStoreMock.on(DescribeUserCommand).resolves({
         UserId: "user-123",
         DisplayName: "Alice Smith",
@@ -1308,6 +1693,9 @@ describe("Idc service api", () => {
     });
 
     it("swallows cache write failures (best-effort)", async () => {
+      identityStoreMock
+        .on(ListGroupMembershipsForMemberCommand)
+        .resolves(testIsbUserMembershipResponse);
       identityStoreMock.on(DescribeUserCommand).resolves({
         UserId: "user-999",
         DisplayName: "Fail Write User",
@@ -1333,6 +1721,9 @@ describe("Idc service api", () => {
     });
 
     it("falls back to principalId when DisplayName and UserName are undefined", async () => {
+      identityStoreMock
+        .on(ListGroupMembershipsForMemberCommand)
+        .resolves(testIsbUserMembershipResponse);
       identityStoreMock.on(DescribeUserCommand).resolves({
         UserId: "user-123",
         DisplayName: undefined,

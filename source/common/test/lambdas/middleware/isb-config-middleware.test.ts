@@ -60,6 +60,9 @@ describe("isbConfigMiddleware", () => {
     expect(globalConfig.costReporting).toEqual(
       ConfigSchemas.costReporting.parse({}),
     );
+    expect(globalConfig.notification).toEqual(
+      ConfigSchemas.notification.parse({}),
+    );
   });
 
   it("uses stored sections when present, stripping lastSavedBy/meta before parsing", async () => {

@@ -28,7 +28,7 @@ import {
 } from "@amzn/innovation-sandbox-commons/data/blueprint/blueprint.js";
 import { type LeaseTemplateStore } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template-store.js";
 import { searchableBlueprintProperties } from "@amzn/innovation-sandbox-commons/observability/logging.js";
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 
 const logger = new Logger();
 

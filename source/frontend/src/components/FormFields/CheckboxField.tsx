@@ -36,7 +36,7 @@ export default function CheckboxField<
   controllerProps,
   formFieldProps,
   checkboxProps,
-}: CheckboxFieldProps<TFieldValues, TName>) {
+}: Readonly<CheckboxFieldProps<TFieldValues, TName>>) {
   const {
     field: {
       onBlur: onFieldBlur,

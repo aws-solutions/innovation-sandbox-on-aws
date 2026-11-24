@@ -2,11 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { screen } from "@testing-library/react";
+import { DateTime } from "luxon";
 import { describe, expect, test } from "vitest";
 
 import { AccountStatusIndicator } from "@amzn/innovation-sandbox-frontend/domains/accounts/components/AccountStatusIndicator";
 import { renderWithQueryClient } from "@amzn/innovation-sandbox-frontend/setupTests";
-import { DateTime } from "luxon";
 describe("AccountStatusIndicator", () => {
   test("renders error status for Quarantine, Frozen, Entry, and Exit", () => {
     renderWithQueryClient(

@@ -9,8 +9,11 @@ import {
   QueryCommand,
   ScanCommand,
   UpdateCommand,
+  type PutCommandInput,
 } from "@aws-sdk/lib-dynamodb";
+import { marshall } from "@aws-sdk/util-dynamodb";
 import { backOff } from "exponential-backoff";
+import { isDeepStrictEqual } from "node:util";
 import pMap from "p-map";
 
 import {
@@ -18,11 +21,10 @@ import {
   PaginatedQueryResult,
   PutResult,
   SingleItemResult,
-  type EmailAddress,
 } from "@amzn/innovation-sandbox-commons/data/common-types.js";
 import {
-  base64DecodeCompositeKey,
   base64EncodeCompositeKey,
+  decodePageIdentifier,
 } from "@amzn/innovation-sandbox-commons/data/encoding.js";
 import {
   BatchUnprocessedItemsError,
@@ -32,18 +34,31 @@ import {
   UnknownItem,
 } from "@amzn/innovation-sandbox-commons/data/errors.js";
 import {
+  getLeaseAssignmentWriteSnapshot,
   LeaseAcquireLockProps,
   LeaseAcquireLockWithDesiredAssignmentsProps,
+  LeaseAssignmentWriteSnapshot,
+  LeaseRecordLifecycleDispatchProps,
   LeaseReleaseLockProps,
   LeaseStore,
+  LeaseUpdateMonitoringCostFieldsProps,
+  LeaseUpdateMonitoringOwnedFieldsProps,
+  LeaseUpdateTokenPollOwnedFieldsProps,
+  MonitoringCostFieldsSchema,
+  MonitoringOwnedFieldsSchema,
+  MonitoringProjectionFieldsSchema,
+  TokenPollOwnedFieldsSchema,
 } from "@amzn/innovation-sandbox-commons/data/lease/lease-store.js";
 import {
   LeaseSchemaVersion,
   PersistedLease,
   PersistedLeaseSchema,
+  PersistedLeaseStatusIndexKeySchema,
 } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
 import {
+  buildExpectedFieldsCondition,
   chunk,
+  matchesExpectedFields,
   parseResults,
   parseSingleItemResult,
   removeNullFieldsForDynamoDB,
@@ -54,11 +69,14 @@ import {
   nowAsIsoDatetimeString,
   parseDatetime,
 } from "@amzn/innovation-sandbox-commons/utils/time-utils.js";
+
 import {
   BlockingLockIntents,
   DesiredAssignmentWithDisplaySchema,
   ExpiredLeaseStatus,
   LeaseKey,
+  LeaseKeySchema,
+  LeaseLifecycleDispatchSchema,
   LeaseLockIntent,
   LeaseResourceLock,
   LeaseResourceLockSchema,
@@ -205,6 +223,7 @@ export class DynamoLeaseStore extends LeaseStore {
       timeoutSeconds,
       meta,
       desiredAssignments,
+      expectedLease,
     } = props;
     const acquiredAt = nowAsIsoDatetimeString();
     const expiresAt = parseDatetime(acquiredAt)
@@ -238,6 +257,15 @@ export class DynamoLeaseStore extends LeaseStore {
         intent: meta?.intent,
       });
 
+    // Compare the state used for assignment validation. Monitoring metadata
+    // does not participate, so scoped monitoring writes cannot invalidate it.
+    const validatedState = expectedLease
+      ? getLeaseAssignmentWriteSnapshot(expectedLease)
+      : undefined;
+    const validationCondition = validatedState
+      ? buildExpectedFieldsCondition(validatedState)
+      : undefined;
+
     try {
       await this.ddbClient.send(
         new UpdateCommand({
@@ -245,9 +273,17 @@ export class DynamoLeaseStore extends LeaseStore {
           Key: { userEmail, uuid: leaseId },
           UpdateExpression:
             "SET resourceLock = :lock, desiredAssignments = :desiredAssignments",
-          ConditionExpression: conditionExpression,
+          ReturnValuesOnConditionCheckFailure: validatedState
+            ? "ALL_OLD"
+            : undefined,
+          ConditionExpression: validationCondition
+            ? `(${conditionExpression}) AND ${validationCondition.conditionExpression}`
+            : conditionExpression,
+          ExpressionAttributeNames:
+            validationCondition?.expressionAttributeNames,
           ExpressionAttributeValues: {
             ...expressionAttributeValues,
+            ...validationCondition?.expressionAttributeValues,
             ":lock": lock,
             ":desiredAssignments": parsedDesired,
           },
@@ -255,14 +291,54 @@ export class DynamoLeaseStore extends LeaseStore {
       );
     } catch (error: unknown) {
       if (error instanceof ConditionalCheckFailedException) {
-        throw new ResourceLockConflictError(
-          `Lock conflict on lease ${leaseId}: held by another owner and not expired`,
-        );
+        // A retry can fail after its first attempt committed. Recover only if
+        // this exact lock and desired set are stored and validation still holds.
+        if (
+          validatedState &&
+          matchesExpectedFields(error.Item, {
+            ...validatedState,
+            resourceLock: lock,
+            desiredAssignments: parsedDesired,
+          })
+        ) {
+          return lock;
+        }
+        throw this.getAssignmentWriteConflict(leaseId, validatedState, error);
       }
       throw error;
     }
 
     return lock;
+  }
+
+  private getAssignmentWriteConflict(
+    leaseId: string,
+    validatedState: LeaseAssignmentWriteSnapshot | undefined,
+    error: ConditionalCheckFailedException,
+  ): Error {
+    if (validatedState) {
+      // Diagnose the rejected write from its own item image. Reading again
+      // could observe a later change and misidentify the failed guard.
+      const storedFields = error.Item;
+      if (!storedFields) {
+        return new UnknownItem(`Lease ${leaseId} no longer exists.`);
+      }
+      const expectedFields = marshall(validatedState, {
+        removeUndefinedValues: true,
+      });
+      const changedFields = Object.keys(validatedState).filter(
+        (field) =>
+          !isDeepStrictEqual(expectedFields[field], storedFields[field]),
+      );
+      if (changedFields.length > 0) {
+        return new ConcurrentDataModificationException(
+          `Assignment validation conflict on lease ${leaseId}: ${changedFields.join(", ")} changed after validation`,
+        );
+      }
+    }
+    return new ResourceLockConflictError(
+      `Lock conflict on lease ${leaseId}: resource lock is unavailable`,
+    );
   }
 
   public override async releaseLock(
@@ -293,58 +369,197 @@ export class DynamoLeaseStore extends LeaseStore {
     }
   }
 
+  public override async updateTokenPollOwnedFields(
+    props: LeaseUpdateTokenPollOwnedFieldsProps,
+  ): Promise<void> {
+    const { leaseId, userEmail, ...scalars } = props;
+    const {
+      lastEvaluatedSpend,
+      lastPredictedSpend,
+      lastEvaluatedHourlySpendRate,
+      lastEvaluatedDailySpendRate,
+    } = TokenPollOwnedFieldsSchema.parse(scalars);
+    await this.updateOwnedFields({
+      leaseId,
+      userEmail,
+      setClauses:
+        "lastEvaluatedSpend = :lastEvaluatedSpend, lastPredictedSpend = :lastPredictedSpend, lastEvaluatedHourlySpendRate = :lastEvaluatedHourlySpendRate, lastEvaluatedDailySpendRate = :lastEvaluatedDailySpendRate",
+      expressionAttributeValues: {
+        ":lastEvaluatedSpend": lastEvaluatedSpend,
+        ":lastPredictedSpend": lastPredictedSpend,
+        ":lastEvaluatedHourlySpendRate": lastEvaluatedHourlySpendRate,
+        ":lastEvaluatedDailySpendRate": lastEvaluatedDailySpendRate,
+      },
+    });
+  }
+
+  public override async updateMonitoringCostFields(
+    props: LeaseUpdateMonitoringCostFieldsProps,
+  ): Promise<void> {
+    const { leaseId, userEmail, ...scalars } = props;
+    const { totalCostAccrued, lastCheckedDate } =
+      MonitoringCostFieldsSchema.parse(scalars);
+    await this.updateOwnedFields({
+      leaseId,
+      userEmail,
+      setClauses:
+        "totalCostAccrued = :totalCostAccrued, lastCheckedDate = :lastCheckedDate",
+      expressionAttributeValues: {
+        ":totalCostAccrued": totalCostAccrued,
+        ":lastCheckedDate": lastCheckedDate,
+      },
+    });
+  }
+
+  public override async recordLifecycleDispatch(
+    props: LeaseRecordLifecycleDispatchProps,
+  ): Promise<void> {
+    const { leaseId, userEmail, intent } = props;
+    await this.updateOwnedFields({
+      leaseId,
+      userEmail,
+      setClauses: "lifecycleDispatch = :lifecycleDispatch",
+      expressionAttributeValues: {
+        ":lifecycleDispatch": LeaseLifecycleDispatchSchema.parse({
+          intent,
+          dispatchedAt: nowAsIsoDatetimeString(),
+        }),
+      },
+    });
+  }
+
+  public override async updateMonitoringOwnedFields(
+    props: LeaseUpdateMonitoringOwnedFieldsProps,
+  ): Promise<void> {
+    const { leaseId, userEmail, projection, ...scalars } = props;
+    const { totalCostAccrued, lastCheckedDate, lastEvaluatedSpend } =
+      MonitoringOwnedFieldsSchema.parse(scalars);
+    const rates =
+      projection === undefined
+        ? undefined
+        : MonitoringProjectionFieldsSchema.parse(projection);
+    await this.updateOwnedFields({
+      leaseId,
+      userEmail,
+      setClauses: [
+        "totalCostAccrued = :totalCostAccrued, lastCheckedDate = :lastCheckedDate, lastEvaluatedSpend = :lastEvaluatedSpend",
+        ...(rates === undefined
+          ? []
+          : [
+              "lastPredictedSpend = :lastPredictedSpend, lastEvaluatedHourlySpendRate = :lastEvaluatedHourlySpendRate, lastEvaluatedDailySpendRate = :lastEvaluatedDailySpendRate",
+            ]),
+      ].join(", "),
+      expressionAttributeValues: {
+        ":totalCostAccrued": totalCostAccrued,
+        ":lastCheckedDate": lastCheckedDate,
+        ":lastEvaluatedSpend": lastEvaluatedSpend,
+        ...(rates === undefined
+          ? {}
+          : {
+              ":lastPredictedSpend": rates.lastPredictedSpend,
+              ":lastEvaluatedHourlySpendRate":
+                rates.lastEvaluatedHourlySpendRate,
+              ":lastEvaluatedDailySpendRate": rates.lastEvaluatedDailySpendRate,
+            }),
+      },
+    });
+  }
+
+  /**
+   * Attribute-scoped write for fields a single writer owns (the cost scalars,
+   * the lifecycle dispatch marker). Appends the meta.lastEditTime stamp to
+   * the caller's SET clauses, requires the lease to exist, and maps a failed
+   * existence check to UnknownItem. Unlike a full-item update, it never
+   * overwrites fields other writers hold, such as the resource lock.
+   */
+  private async updateOwnedFields(props: {
+    leaseId: string;
+    userEmail: string;
+    setClauses: string;
+    expressionAttributeValues: Record<string, unknown>;
+  }): Promise<void> {
+    const { leaseId, userEmail, setClauses, expressionAttributeValues } = props;
+    try {
+      await this.ddbClient.send(
+        new UpdateCommand({
+          TableName: this.tableName,
+          Key: { userEmail, uuid: leaseId },
+          UpdateExpression: `SET ${setClauses}, meta.lastEditTime = :lastEditTime`,
+          ConditionExpression: "attribute_exists(userEmail)",
+          ExpressionAttributeValues: {
+            ...expressionAttributeValues,
+            ":lastEditTime": nowAsIsoDatetimeString(),
+          },
+        }),
+      );
+    } catch (error: unknown) {
+      if (error instanceof ConditionalCheckFailedException) {
+        throw new UnknownItem("Unknown Lease.");
+      }
+      throw error;
+    }
+  }
+
   @validateItem(PersistedLeaseSchema)
   @withMetadata(LeaseSchemaVersion)
   public override async update<T extends PersistedLease>(
     lease: T,
     expected?: T,
   ): Promise<PutResult<T>> {
+    const item = removeNullFieldsForDynamoDB(lease);
+    const input: PutCommandInput = {
+      TableName: this.tableName,
+      Item: item,
+      ReturnValues: "ALL_OLD",
+      ConditionExpression: "attribute_exists(userEmail)",
+    };
+
     if (expected) {
-      try {
-        const result = await this.ddbClient.send(
-          new PutCommand({
-            TableName: this.tableName,
-            Item: removeNullFieldsForDynamoDB(lease),
-            ReturnValues: "ALL_OLD",
-            ConditionExpression: `attribute_exists(userEmail) and meta.lastEditTime = :expectedTime`,
-            ExpressionAttributeValues: {
-              ":expectedTime": expected.meta?.lastEditTime,
-            },
-          }),
-        );
-        return {
-          oldItem: result.Attributes,
-          newItem: lease,
-        };
-      } catch (error: unknown) {
+      // Lock/assignment writes intentionally do not advance lastEditTime.
+      // Checking only that token lets a stale PATCH erase an accepted desired
+      // set, even after its processing lock has already been released.
+      // Whole-item writes strip null locks; stored NULL and absence both mean
+      // no lock. Other fields retain exact comparison semantics.
+      const assignmentCondition = buildExpectedFieldsCondition(
+        {
+          desiredAssignments: expected.desiredAssignments,
+          resourceLock: expected.resourceLock,
+        },
+        { nullMatchesMissing: ["resourceLock"] },
+      );
+      input.ConditionExpression += ` AND meta.lastEditTime = :expectedTime AND ${assignmentCondition.conditionExpression}`;
+      input.ExpressionAttributeNames =
+        assignmentCondition.expressionAttributeNames;
+      input.ExpressionAttributeValues = {
+        ":expectedTime": expected.meta?.lastEditTime,
+        ...assignmentCondition.expressionAttributeValues,
+      };
+      input.ReturnValuesOnConditionCheckFailure = "ALL_OLD";
+    }
+
+    return this.ddbClient
+      .send(new PutCommand(input))
+      .then((result) => ({
+        oldItem: result.Attributes,
+        newItem: lease,
+      }))
+      .catch((error: unknown) => {
         if (error instanceof ConditionalCheckFailedException) {
+          if (!expected) {
+            throw new UnknownItem("Unknown Lease.");
+          }
+          // A committed retry must match the entire replacement, including its
+          // generated metadata. The lost response's old image is unavailable;
+          // retain the caller's original snapshot as the change baseline.
+          if (matchesExpectedFields(error.Item, item, { exact: true })) {
+            return { oldItem: expected, newItem: lease };
+          }
           throw new ConcurrentDataModificationException(
             "The lease has been modified from the expected value.",
           );
         }
-        throw error; // Re-throw other errors
-      }
-    } else {
-      try {
-        const result = await this.ddbClient.send(
-          new PutCommand({
-            TableName: this.tableName,
-            Item: removeNullFieldsForDynamoDB(lease),
-            ReturnValues: "ALL_OLD",
-            ConditionExpression: "attribute_exists(userEmail)", //PK -- ensures item exists
-          }),
-        );
-        return {
-          oldItem: result.Attributes,
-          newItem: lease,
-        };
-      } catch (error: unknown) {
-        if (error instanceof ConditionalCheckFailedException) {
-          throw new UnknownItem("Unknown Lease.");
-        }
-        throw error; // Re-throw other errors
-      }
-    }
+        throw error;
+      });
   }
 
   @validateItem(PersistedLeaseSchema)
@@ -457,7 +672,9 @@ export class DynamoLeaseStore extends LeaseStore {
     const result = await this.ddbClient.send(
       new ScanCommand({
         TableName: this.tableName,
-        ExclusiveStartKey: base64DecodeCompositeKey(pageIdentifier),
+        ExclusiveStartKey: decodePageIdentifier(pageIdentifier, (decoded) =>
+          LeaseKeySchema.parse(decoded),
+        ),
         Limit: pageSize,
       }),
     );
@@ -486,7 +703,11 @@ export class DynamoLeaseStore extends LeaseStore {
         ExpressionAttributeValues: {
           ":leaseStatus": status,
         },
-        ExclusiveStartKey: base64DecodeCompositeKey(pageIdentifier),
+        ExclusiveStartKey: decodePageIdentifier(pageIdentifier, (decoded) =>
+          PersistedLeaseStatusIndexKeySchema.refine(
+            (cursor) => cursor.status === status,
+          ).parse(decoded),
+        ),
         Limit: pageSize,
       }),
     );
@@ -519,7 +740,11 @@ export class DynamoLeaseStore extends LeaseStore {
           ":leaseStatus": status,
           ":awsAccountId": awsAccountId,
         },
-        ExclusiveStartKey: base64DecodeCompositeKey(pageIdentifier),
+        ExclusiveStartKey: decodePageIdentifier(pageIdentifier, (decoded) =>
+          PersistedLeaseStatusIndexKeySchema.refine(
+            (cursor) => cursor.status === status,
+          ).parse(decoded),
+        ),
         Limit: pageSize,
       }),
     );
@@ -531,7 +756,7 @@ export class DynamoLeaseStore extends LeaseStore {
   }
 
   public override async findByUserEmail(props: {
-    userEmail: EmailAddress;
+    userEmail: string;
     pageIdentifier?: string;
     pageSize?: number;
   }): Promise<PaginatedQueryResult<PersistedLease>> {
@@ -547,7 +772,11 @@ export class DynamoLeaseStore extends LeaseStore {
         ExpressionAttributeValues: {
           ":userEmail": userEmail,
         },
-        ExclusiveStartKey: base64DecodeCompositeKey(pageIdentifier),
+        ExclusiveStartKey: decodePageIdentifier(pageIdentifier, (decoded) =>
+          LeaseKeySchema.refine(
+            (cursor) => cursor.userEmail === userEmail,
+          ).parse(decoded),
+        ),
         Limit: pageSize,
       }),
     );
@@ -579,7 +808,13 @@ export class DynamoLeaseStore extends LeaseStore {
           ":leaseStatus": status,
           ":templateUuid": uuid,
         },
-        ExclusiveStartKey: base64DecodeCompositeKey(pageIdentifier),
+        ExclusiveStartKey: decodePageIdentifier(pageIdentifier, (decoded) =>
+          PersistedLeaseStatusIndexKeySchema.refine(
+            (cursor) =>
+              cursor.status === status &&
+              cursor.originalLeaseTemplateUuid === uuid,
+          ).parse(decoded),
+        ),
         Limit: pageSize,
       }),
     );

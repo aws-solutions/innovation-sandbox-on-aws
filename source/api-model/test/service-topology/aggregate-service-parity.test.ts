@@ -45,7 +45,8 @@ function serviceShapes(): Map<string, ServiceShape> {
     const servicePattern = /service\s+(\w+)\s*\{([\s\S]*?)\n\}/g;
     let match: RegExpExecArray | null;
     while ((match = servicePattern.exec(text)) !== null) {
-      const [, name, body] = match;
+      const name = match[1]!;
+      const body = match[2]!;
       services.set(name, {
         operations: names(/operations:\s*\[([\s\S]*?)\]/.exec(body)?.[1]),
         errors: names(/errors:\s*\[([\s\S]*?)\]/.exec(body)?.[1]),
@@ -115,10 +116,30 @@ describe("aggregate service topology", () => {
     }
   });
 
-  it("wires each domain service to a server-<domain> SSDK projection", () => {
-    expect(
-      [...serverProjectionServiceNames()].sort((a, b) => a.localeCompare(b)),
-    ).toEqual([...domainServices.keys()].sort((a, b) => a.localeCompare(b)));
+  it("wires each server-<domain> SSDK projection to a domain service, and every domain service without a projection to a hand-written Lambda", () => {
+    // SandboxAgentApi's Lambda stays hand-written (not SSDK-generated), so it
+    // has no server-<domain> projection even though it still feeds the
+    // aggregate client and OpenAPI. An orphan projection (naming a domain
+    // service that doesn't exist) is still a drift; a domain service simply
+    // lacking one is expected only for entries in this set.
+    // TODO: remove "SandboxAgentApi" once its Lambda handler is migrated to a
+    // generated SSDK server (adding a server-sandbox-agent projection).
+    const serverlessDomainServices = new Set<string>();
+
+    const projectionServices = serverProjectionServiceNames();
+    for (const serviceName of projectionServices) {
+      expect(
+        domainServices.has(serviceName),
+        `server projection targets ${serviceName}, which is not a domain service`,
+      ).toBe(true);
+    }
+
+    const domainsExpectingProjection = [...domainServices.keys()].filter(
+      (name) => !serverlessDomainServices.has(name),
+    );
+    expect([...projectionServices].sort((a, b) => a.localeCompare(b))).toEqual(
+      domainsExpectingProjection.sort((a, b) => a.localeCompare(b)),
+    );
   });
 
   it("exports each registered domain from the committed server package", () => {

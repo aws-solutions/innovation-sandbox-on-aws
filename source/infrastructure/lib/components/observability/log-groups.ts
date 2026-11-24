@@ -27,7 +27,7 @@ export class IsbLogGroups {
       IsbLogGroups.logGroups[logGroupId] = logGroup;
       addCfnGuardSuppression(logGroup, ["CW_LOGGROUP_RETENTION_PERIOD_CHECK"]); // Retention period is defined in CfnMapping and evades the CFN Guard check
     }
-    return IsbLogGroups.logGroups[logGroupId]!;
+    return IsbLogGroups.logGroups[logGroupId];
   }
 
   public static cleanupLogGroup(scope: Construct, namespace: string): LogGroup {
@@ -46,7 +46,7 @@ export class IsbLogGroups {
       IsbLogGroups.logGroups[logGroupId] = logGroup;
       addCfnGuardSuppression(logGroup, ["CW_LOGGROUP_RETENTION_PERIOD_CHECK"]); // Retention period is defined in CfnMapping and evades the CFN Guard check
     }
-    return IsbLogGroups.logGroups[logGroupId]!;
+    return IsbLogGroups.logGroups[logGroupId];
   }
 
   public static authLogGroup(scope: Construct, namespace: string): LogGroup {
@@ -65,7 +65,7 @@ export class IsbLogGroups {
       IsbLogGroups.logGroups[logGroupId] = logGroup;
       addCfnGuardSuppression(logGroup, ["CW_LOGGROUP_RETENTION_PERIOD_CHECK"]); // Retention period is defined in CfnMapping and evades the CFN Guard check
     }
-    return IsbLogGroups.logGroups[logGroupId]!;
+    return IsbLogGroups.logGroups[logGroupId];
   }
 
   public static customResourceLogGroup(
@@ -87,7 +87,7 @@ export class IsbLogGroups {
       IsbLogGroups.logGroups[logGroupId] = logGroup;
       addCfnGuardSuppression(logGroup, ["CW_LOGGROUP_RETENTION_PERIOD_CHECK"]); // Retention period is defined in CfnMapping and evades the CFN Guard check
     }
-    return IsbLogGroups.logGroups[logGroupId]!;
+    return IsbLogGroups.logGroups[logGroupId];
   }
 
   public static getAllGroups(scope: Construct, namespace: string): LogGroup[] {

@@ -253,7 +253,7 @@ export const BlueprintTable = () => {
       <ErrorPanel
         retry={refetch}
         description="Could not load blueprints. Please try again."
-        error={getError as Error}
+        error={getError}
       />
     );
   }

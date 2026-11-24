@@ -16,6 +16,10 @@ import { useEffect, useState } from "react";
 
 import { BlueprintName } from "@amzn/innovation-sandbox-frontend/components/BlueprintName";
 import { ErrorPanel } from "@amzn/innovation-sandbox-frontend/components/ErrorPanel";
+import {
+  FEATURE_STATUS_MIN_WIDTH,
+  FeatureStatusIndicator,
+} from "@amzn/innovation-sandbox-frontend/components/FeatureStatusIndicator";
 import { TextLink } from "@amzn/innovation-sandbox-frontend/components/TextLink";
 import { showSuccessToast } from "@amzn/innovation-sandbox-frontend/components/Toast";
 import { VisibilityIndicator } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/components/VisibilityIndicator";
@@ -24,6 +28,7 @@ import {
   useGetLeaseTemplates,
 } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/hooks";
 import { LeaseTemplateView } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/model";
+import { useGetConfigurations } from "@amzn/innovation-sandbox-frontend/domains/settings/hooks";
 import { createDateSortingComparator } from "@amzn/innovation-sandbox-frontend/helpers/date-sorting-comparator";
 import { formatCurrency } from "@amzn/innovation-sandbox-frontend/helpers/util";
 
@@ -66,7 +71,13 @@ const CostReportCell = ({ item }: { item: LeaseTemplateView }) => {
   );
 };
 
-const columnDefinitions = [
+const buildColumnDefinitions = ({
+  leaseSharingEnabled,
+  sandboxSpacesEnabled,
+}: {
+  leaseSharingEnabled: boolean;
+  sandboxSpacesEnabled: boolean;
+}) => [
   {
     id: "name",
     header: "Name",
@@ -101,14 +112,29 @@ const columnDefinitions = [
   },
   {
     id: "allowOwnerToShareLease",
+    minWidth: FEATURE_STATUS_MIN_WIDTH,
     header: "Sharing",
     sortingField: "allowOwnerToShareLease",
-    cell: (item: LeaseTemplateView) =>
-      item.allowOwnerToShareLease ? (
-        <StatusIndicator type="success">Enabled</StatusIndicator>
-      ) : (
-        <StatusIndicator type="stopped">Disabled</StatusIndicator>
-      ),
+    cell: (item: LeaseTemplateView) => (
+      <FeatureStatusIndicator
+        featureName="Lease sharing"
+        enabled={item.allowOwnerToShareLease}
+        globallyEnabled={leaseSharingEnabled}
+      />
+    ),
+  },
+  {
+    id: "sandboxSpaces",
+    minWidth: FEATURE_STATUS_MIN_WIDTH,
+    header: "Sandbox Spaces",
+    sortingField: "sandboxSpacesEnabled",
+    cell: (item: LeaseTemplateView) => (
+      <FeatureStatusIndicator
+        featureName="Sandbox Spaces"
+        enabled={item.sandboxSpacesEnabled}
+        globallyEnabled={sandboxSpacesEnabled}
+      />
+    ),
   },
   {
     id: "maxSpend",
@@ -144,6 +170,11 @@ export const LeaseTemplatesTable = () => {
     refetch,
     error: getError,
   } = useGetLeaseTemplates();
+  const { data: config } = useGetConfigurations();
+  const columnDefinitions = buildColumnDefinitions({
+    leaseSharingEnabled: !!config?.leases.leaseSharingEnabled,
+    sandboxSpacesEnabled: !!config?.agent.sandboxSpacesEnabled,
+  });
 
   // selected items state
   const [selectedItems, setSelectedItems] = useState<LeaseTemplateView[]>([]);
@@ -184,7 +215,7 @@ export const LeaseTemplatesTable = () => {
       <ErrorPanel
         retry={refetch}
         description="Could not load lease templates. Please try again."
-        error={getError as Error}
+        error={getError}
       />
     );
   }

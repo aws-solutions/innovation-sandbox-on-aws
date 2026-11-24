@@ -46,9 +46,7 @@ export function isbConfigMiddleware(): MiddlewareObj<
   ContextWithConfig
 > {
   const isbConfigMiddlewareBefore = async (request: any) => {
-    if (!configStoreInstance) {
-      configStoreInstance = IsbServices.configStore(request.context.env);
-    }
+    configStoreInstance ??= IsbServices.configStore(request.context.env);
     const storedSections = await configStoreInstance.getAllSections();
     Object.assign(request.context, {
       globalConfig: assembleGlobalConfig(storedSections),

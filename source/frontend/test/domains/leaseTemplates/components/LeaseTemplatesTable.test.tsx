@@ -9,6 +9,8 @@ import { describe, expect, test } from "vitest";
 
 import { LeaseTemplatesTable } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/components/LeaseTemplatesTable";
 import { getConfig } from "@amzn/innovation-sandbox-frontend/helpers/config";
+import { createConfiguration } from "@amzn/innovation-sandbox-frontend/mocks/factories/configurationFactory";
+import { adminConfigGetHandler } from "@amzn/innovation-sandbox-frontend/mocks/handlers/configurationHandlers";
 import { mockLeaseTemplates } from "@amzn/innovation-sandbox-frontend/mocks/handlers/leaseTemplateHandlers";
 import { server } from "@amzn/innovation-sandbox-frontend/mocks/server";
 import { renderWithQueryClient } from "@amzn/innovation-sandbox-frontend/setupTests";
@@ -155,5 +157,38 @@ describe("LeaseTemplatesTable", () => {
       "href",
       `/lease_templates/${mockLeaseTemplates[0].uuid}`,
     );
+  });
+
+  test("shows a template's enabled settings as overridden when the features are off globally", async () => {
+    server.use(
+      adminConfigGetHandler(
+        createConfiguration({
+          leases: { leaseSharingEnabled: false },
+          agent: { sandboxSpacesEnabled: false },
+        }),
+      ),
+      http.get(`${getConfig().ApiUrl}/leaseTemplates`, () =>
+        HttpResponse.json({
+          status: "success",
+          data: {
+            result: [
+              {
+                ...mockLeaseTemplates[0],
+                allowOwnerToShareLease: true,
+                sandboxSpacesEnabled: true,
+              },
+            ],
+            nextPageIdentifier: null,
+          },
+        }),
+      ),
+    );
+
+    renderComponent();
+
+    // One for Sharing, one for Sandbox Spaces.
+    await waitFor(() => {
+      expect(screen.getAllByText("Disabled (overridden)")).toHaveLength(2);
+    });
   });
 });

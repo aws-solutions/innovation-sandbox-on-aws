@@ -3,55 +3,79 @@
 
 import { IsbKmsKeys } from "@amzn/innovation-sandbox-infrastructure/components/kms";
 import { Duration } from "aws-cdk-lib";
-import { EventBus, Rule, RuleProps } from "aws-cdk-lib/aws-events";
+import { Rule, RuleProps } from "aws-cdk-lib/aws-events";
 import { SqsQueue, SqsQueueProps } from "aws-cdk-lib/aws-events-targets";
 import { ServicePrincipal } from "aws-cdk-lib/aws-iam";
 import { IFunction } from "aws-cdk-lib/aws-lambda";
 import { SqsEventSource } from "aws-cdk-lib/aws-lambda-event-sources";
-import { IQueue, Queue, QueueEncryption } from "aws-cdk-lib/aws-sqs";
+import { Queue, QueueEncryption } from "aws-cdk-lib/aws-sqs";
 import { Construct } from "constructs";
 
-interface EventsToSqsToLambdaProps {
+export const EVENTS_TO_SQS_MAX_RECEIVE_COUNT = 3;
+
+export interface EventsToSqsToLambdaProps {
   namespace: string;
+  /**
+   * Derives the construct ids (`{name}Queue`, `{name}DLQ`, `{name}Rule`), the
+   * queue names, and the FIFO message group. Changing it on a deployed stack
+   * replaces the queues.
+   */
+  name: string;
   lambdaFunction: IFunction;
-  eventBus: EventBus;
-  sqsQueueProps: SqsQueueProps;
   ruleProps: RuleProps;
-  queueProps?: Partial<IQueue>;
+  /** Must be at least the consumer Lambda's timeout. */
+  visibilityTimeout: Duration;
+  retentionPeriod: Duration;
+  deliveryDelay?: Duration;
+  deadLetterQueueRetentionPeriod?: Duration;
+  /** EventBridge target options, e.g. retry policy. */
+  sqsQueueProps?: SqsQueueProps;
 }
 
+/**
+ * EventBridge rule → encrypted FIFO SQS queue (with FIFO DLQ) → Lambda.
+ *
+ * Every event goes to a single message group, so the Lambda receives one
+ * message at a time and never sees a second while one is in flight.
+ */
 export class EventsToSqsToLambda extends Construct {
-  public readonly queue: IQueue;
+  public readonly queue: Queue;
+  public readonly deadLetterQueue: Queue;
 
   constructor(scope: Construct, id: string, props: EventsToSqsToLambdaProps) {
     super(scope, id);
     const kmsKey = IsbKmsKeys.get(scope, props.namespace);
-    this.queue = new Queue(this, "AccountLifeCycleEventsQueue", {
-      queueName: `Isb-${props.namespace}-AccountLifeCycleEventsQueue.fifo`,
+
+    this.deadLetterQueue = new Queue(this, `${props.name}DLQ`, {
+      queueName: `Isb-${props.namespace}-${props.name}DLQ.fifo`,
+      fifo: true,
+      contentBasedDeduplication: true,
+      encryption: QueueEncryption.KMS,
       encryptionMasterKey: kmsKey,
-      retentionPeriod: Duration.hours(4),
-      visibilityTimeout: Duration.minutes(2), // the lambda timout is 1 min
+      enforceSSL: true,
+      retentionPeriod: props.deadLetterQueueRetentionPeriod,
+    });
+
+    this.queue = new Queue(this, `${props.name}Queue`, {
+      queueName: `Isb-${props.namespace}-${props.name}Queue.fifo`,
+      encryption: QueueEncryption.KMS,
+      encryptionMasterKey: kmsKey,
+      retentionPeriod: props.retentionPeriod,
+      visibilityTimeout: props.visibilityTimeout,
+      deliveryDelay: props.deliveryDelay,
       fifo: true,
       contentBasedDeduplication: true,
       deadLetterQueue: {
-        maxReceiveCount: 3,
-        queue: new Queue(this, "AccountLifeCycleEventsDLQ", {
-          queueName: `Isb-${props.namespace}-AccountLifeCycleEventsDLQ.fifo`,
-          fifo: true,
-          contentBasedDeduplication: true,
-          encryption: QueueEncryption.KMS,
-          encryptionMasterKey: kmsKey,
-          enforceSSL: true,
-        }),
+        maxReceiveCount: EVENTS_TO_SQS_MAX_RECEIVE_COUNT,
+        queue: this.deadLetterQueue,
       },
-      ...props.queueProps,
       enforceSSL: true,
     });
 
-    const rule = new Rule(this, "AccountLifeCycleEventsRule", props.ruleProps);
+    const rule = new Rule(this, `${props.name}Rule`, props.ruleProps);
     rule.addTarget(
       new SqsQueue(this.queue, {
-        messageGroupId: "AccountLifeCycleEvents",
+        messageGroupId: props.name,
         ...props.sqsQueueProps,
       }),
     );

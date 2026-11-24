@@ -39,6 +39,7 @@ export const ConfigurationSectionViewSchemas = {
   costReporting: ConfigWriteSchemas.costReporting.safeExtend(
     configurationSectionAuditShape,
   ),
+  agent: ConfigWriteSchemas.agent.safeExtend(configurationSectionAuditShape),
 } as const;
 
 /** One configuration section normalized for frontend consumers. */
@@ -50,6 +51,7 @@ export type ConfigurationSectionView<T extends ConfigSection> = z.infer<
 export type DeployTimeConfigurationView = {
   isbManagedRegions: string[];
   awsAccessPortalUrl: string;
+  bedrockInferenceProfilePatterns: string[];
 };
 
 /** The complete Admin Settings read model. */

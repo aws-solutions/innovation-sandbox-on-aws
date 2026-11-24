@@ -132,6 +132,7 @@ describe("ListLeases", () => {
       status: "Active",
       awsAccountId: "123456789012",
       totalCostAccrued: 100,
+      lastEvaluatedSpend: null,
       maxSpend: 1000,
     }),
     leaseId: testLeaseId,

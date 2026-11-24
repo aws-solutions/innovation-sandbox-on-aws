@@ -12,16 +12,14 @@ export async function allManagers(idcService: IdcService) {
   const managers = await collect(
     stream(idcService, idcService.listIsbManagers, {}),
   );
-  return Array.from(
-    new Set([...managers.map((manager) => getUserEmail(manager))]),
-  );
+  return Array.from(new Set(managers.map((manager) => getUserEmail(manager))));
 }
 
 export async function allAdmins(idcService: IdcService) {
   const admins = await collect(
     stream(idcService, idcService.listIsbAdmins, {}),
   );
-  return Array.from(new Set([...admins.map((admin) => getUserEmail(admin))]));
+  return Array.from(new Set(admins.map((admin) => getUserEmail(admin))));
 }
 
 export async function union(...recipients: (string[] | Promise<string[]>)[]) {

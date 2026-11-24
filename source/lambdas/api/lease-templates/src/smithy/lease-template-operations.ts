@@ -3,6 +3,7 @@
 import { Logger } from "@aws-lambda-powertools/logger";
 import { DateTime } from "luxon";
 import { randomUUID } from "node:crypto";
+import { z, type RefinementCtx } from "zod";
 
 import type {
   CreateLeaseTemplateServerInput,
@@ -19,21 +20,28 @@ import type {
   UpdateLeaseTemplateServerOutput,
 } from "@amzn/innovation-sandbox-api-server/lease-templates";
 import { JSendStatus } from "@amzn/innovation-sandbox-api-server/lease-templates";
-import { UnknownItem } from "@amzn/innovation-sandbox-commons/data/errors.js";
 import {
+  ConcurrentDataModificationException,
+  UnknownItem,
+} from "@amzn/innovation-sandbox-commons/data/errors.js";
+import {
+  validateBudgetThresholdsBelowMaxSpend,
   validateLeaseTemplateCompliesWithGlobalConfig,
-  ValidationException,
+  validatePredictiveBudgetFields,
+  validateSandboxSpacesFields,
 } from "@amzn/innovation-sandbox-commons/data/global-config/global-config-utils.js";
 import {
   PersistedLeaseTemplate,
   PersistedLeaseTemplateMetadataSchema,
 } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template.js";
 import { validateCostReportGroup } from "@amzn/innovation-sandbox-commons/data/reporting-config/reporting-config-utils.js";
+import { assertSandboxSpacesModelSelection } from "@amzn/innovation-sandbox-commons/isb-services/agent-models/index.js";
 import { IsbServices } from "@amzn/innovation-sandbox-commons/isb-services/index.js";
 import { LeaseTemplateLambdaEnvironment } from "@amzn/innovation-sandbox-commons/lambda/environments/lease-template-lambda-environment.js";
 import {
   createHttpJSendError,
   createHttpJSendValidationError,
+  throwValidationErrorAs400,
 } from "@amzn/innovation-sandbox-commons/lambda/middleware/http-error-handler.js";
 import { withDelegatedErrors } from "@amzn/innovation-sandbox-commons/lambda/smithy/api-gateway-handler.js";
 import { IsbSmithyContext } from "@amzn/innovation-sandbox-commons/lambda/smithy/isb-smithy-context.js";
@@ -48,12 +56,40 @@ import { LeaseTemplateWritableSchema } from "@amzn/innovation-sandbox-shared/typ
 import { getUserEmail } from "@amzn/innovation-sandbox-shared/utils/auth-utils.js";
 
 import {
+  hydratePermissionSets,
+  loadPermissionSetContext,
+  PermissionSetContext,
+  resolvePermissionSetConfig,
+} from "@amzn/innovation-sandbox-commons/isb-services/permission-set/index.js";
+import {
   authorizedToGetPrivateLeaseTemplates,
   resolveBlueprintName,
 } from "@amzn/innovation-sandbox-lease-templates/lease-template-helpers.js";
 
 export type LeaseTemplateSmithyContext =
   IsbSmithyContext<LeaseTemplateLambdaEnvironment>;
+
+/**
+ * Spend-rate limits are evaluated only against a projection, so a non-empty
+ * list sent with predictive controls off could never fire. The PREDICTED
+ * budget-threshold rule is owned by `validatePredictiveBudgetFields`.
+ */
+function requirePredictiveForRateLimits(
+  template: { predictiveBudgetEnabled: boolean; rateLimits?: unknown[] },
+  ctx: RefinementCtx,
+): void {
+  if (
+    !template.predictiveBudgetEnabled &&
+    template.rateLimits !== undefined &&
+    template.rateLimits.length > 0
+  ) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["rateLimits"],
+      message: "rateLimits requires predictiveBudgetEnabled",
+    });
+  }
+}
 
 /**
  * Request bodies keep the pre-Smithy Zod contract. Smithy validates what the model
@@ -64,14 +100,61 @@ export type LeaseTemplateSmithyContext =
  *  - `.gt(0)` positivity on the `Double` amount/duration fields (`maxSpend`,
  *    `leaseDurationInHours`, threshold `dollarsSpent`/`hoursRemaining`) — the
  *    inclusive-only `@range` cannot express `.gt(0)`, so the model leaves them
- *    unconstrained (see `main.smithy`) and Zod owns the bound.
+ *    unconstrained (see `main.smithy`) and Zod owns the bound;
+ *  - a non-empty `rateLimits` list requires `predictiveBudgetEnabled` (the
+ *    `PREDICTED` budget-threshold rule is `validatePredictiveBudgetFields`').
  * `POST` also rejects `meta`; `PUT` accepts it, matching the pre-Smithy `omit` sets.
  */
-const createRequestSchema = LeaseTemplateWritableSchema;
 
+// An omitted flag parses to its `false` default before the gate runs.
+const createRequestSchema = LeaseTemplateWritableSchema.superRefine(
+  requirePredictiveForRateLimits,
+);
+
+// The predictive gate is not applied here: an omitted flag means "keep the
+// stored value", which is only known once the existing template is loaded.
+// `updatePredictiveGateSchema` applies the gate to the resolved flag instead.
 const updateRequestSchema = LeaseTemplateWritableSchema.extend({
   meta: PersistedLeaseTemplateMetadataSchema.optional(),
 });
+
+const updatePredictiveGateSchema = z
+  .object({
+    predictiveBudgetEnabled: z.boolean(),
+    rateLimits: z.array(z.unknown()).optional(),
+  })
+  .superRefine(requirePredictiveForRateLimits);
+
+type PredictiveFields = Pick<
+  PersistedLeaseTemplate,
+  "predictiveBudgetEnabled" | "rateLimits"
+>;
+
+function hasOwnKey(body: unknown, key: string): boolean {
+  return typeof body === "object" && body !== null && Object.hasOwn(body, key);
+}
+
+/**
+ * Reads which keys the raw body carries, since the parsed body cannot tell an
+ * omitted key from a sent default (`predictiveBudgetEnabled` parses to false).
+ * Omission rules are documented on the UpdateLeaseTemplate Smithy operation.
+ */
+function resolveUpdatePredictiveFields(
+  rawBody: unknown,
+  parsed: PredictiveFields,
+  existing: PredictiveFields,
+): PredictiveFields {
+  const predictiveBudgetEnabled = hasOwnKey(rawBody, "predictiveBudgetEnabled")
+    ? parsed.predictiveBudgetEnabled
+    : existing.predictiveBudgetEnabled;
+  if (hasOwnKey(rawBody, "rateLimits")) {
+    return { predictiveBudgetEnabled, rateLimits: parsed.rateLimits };
+  }
+  return {
+    predictiveBudgetEnabled,
+    rateLimits: predictiveBudgetEnabled ? existing.rateLimits : undefined,
+  };
+}
 
 /**
  * Adapts a persisted `PersistedLeaseTemplate` (the commons Zod type, whose `meta`
@@ -79,7 +162,8 @@ const updateRequestSchema = LeaseTemplateWritableSchema.extend({
  * `LeaseTemplate` shape the operations return as their `data`. Both are "a lease
  * template"; the only real change is the two `meta` timestamps, which the generated
  * serializer's `serializeDateTime` requires as JS `Date`s, so the stored ISO strings
- * are parsed to `Date` here. Every other member passes through unchanged.
+ * are parsed to `Date` here. Permission-set ARNs are hydrated into the generated
+ * response references; persistence-only ARN fields are not serialized.
  *
  * On the wire the serializer then alphabetizes members, drops `null`s, and
  * normalizes the timestamp form (`.000Z` → `Z`) — deviations from the pre-Smithy
@@ -88,6 +172,7 @@ const updateRequestSchema = LeaseTemplateWritableSchema.extend({
  */
 function toLeaseTemplateOutput(
   template: PersistedLeaseTemplate,
+  permissionSetContext: PermissionSetContext,
 ): LeaseTemplateOutput {
   // LeaseTemplateOutput validates the transformed values. Requiring every
   // persisted key makes optional members mandatory in this mapping, so adding a
@@ -110,6 +195,17 @@ function toLeaseTemplateOutput(
     blueprintId: template.blueprintId ?? undefined,
     blueprintName: template.blueprintName ?? undefined,
     allowOwnerToShareLease: template.allowOwnerToShareLease,
+    predictiveBudgetEnabled: template.predictiveBudgetEnabled,
+    bedrockTokenMonitoringEnabled: template.bedrockTokenMonitoringEnabled,
+    sandboxSpacesEnabled: template.sandboxSpacesEnabled,
+    allowedModelIds: template.allowedModelIds,
+    defaultModelId: template.defaultModelId,
+    rateLimits: template.rateLimits,
+    // Keep the persistence-only fields explicit for exhaustive mapping. The
+    // generated serializer drops them and emits the hydrated references below.
+    defaultPermissionSetArn: template.defaultPermissionSetArn,
+    allowedPermissionSetArns: template.allowedPermissionSetArns,
+    ...hydratePermissionSets(template, permissionSetContext),
     meta: template.meta
       ? {
           createdTime: template.meta.createdTime
@@ -130,20 +226,6 @@ function toLeaseTemplateOutput(
   return mapped;
 }
 
-/**
- * Rethrows a `ValidationException` as the pre-Smithy 400 JSend error. Any other
- * error is a real fault and rethrown unchanged for `httpErrorHandler`.
- */
-function throwValidationErrorAs400(error: unknown): never {
-  if (error instanceof ValidationException) {
-    throw createHttpJSendError({
-      statusCode: 400,
-      data: { errors: [{ message: error.message }] },
-    });
-  }
-  throw error;
-}
-
 function listLeaseTemplates(logger: Logger) {
   return async (
     input: ListLeaseTemplatesServerInput,
@@ -152,6 +234,10 @@ function listLeaseTemplates(logger: Logger) {
     const { lambdaContext } = context;
     const leaseTemplateStore = IsbServices.leaseTemplateStore(
       lambdaContext.env,
+    );
+    const permissionSetContext = await loadPermissionSetContext(
+      IsbServices.idcStackConfigStore(lambdaContext.env),
+      IsbServices.principalStore(lambdaContext.env),
     );
 
     // No extra Zod parsing is required here: unlike create/update there is no
@@ -180,7 +266,9 @@ function listLeaseTemplates(logger: Logger) {
     return {
       status: JSendStatus.SUCCESS,
       data: {
-        result: result.map(toLeaseTemplateOutput),
+        result: result.map((template) =>
+          toLeaseTemplateOutput(template, permissionSetContext),
+        ),
         nextPageIdentifier: nextPageIdentifier ?? undefined,
       },
     };
@@ -216,6 +304,9 @@ function createLeaseTemplate(logger: Logger) {
         requestData,
         lambdaContext.globalConfig,
       );
+      validatePredictiveBudgetFields(requestData);
+      validateBudgetThresholdsBelowMaxSpend(requestData);
+      validateSandboxSpacesFields(requestData);
       validateCostReportGroup(
         requestData.costReportGroup,
         lambdaContext.globalConfig.costReporting,
@@ -223,6 +314,31 @@ function createLeaseTemplate(logger: Logger) {
     } catch (error) {
       throwValidationErrorAs400(error);
     }
+
+    const permissionSetContext = await loadPermissionSetContext(
+      IsbServices.idcStackConfigStore(lambdaContext.env),
+      IsbServices.principalStore(lambdaContext.env),
+      { consistentRead: true },
+    );
+    let permissionSetConfig;
+    try {
+      permissionSetConfig = resolvePermissionSetConfig(
+        requestData,
+        permissionSetContext,
+      );
+    } catch (error) {
+      throwValidationErrorAs400(error);
+    }
+
+    await assertSandboxSpacesModelSelection({
+      resource: "template",
+      agentConfig: lambdaContext.globalConfig.agent,
+      allowedModelIds: requestData.allowedModelIds,
+      previousAllowedModelIds: undefined,
+      defaultModelId: requestData.defaultModelId,
+      configStore: IsbServices.configStore(lambdaContext.env),
+      logger,
+    }).catch(throwValidationErrorAs400);
 
     const blueprintName = await resolveBlueprintName(
       requestData.blueprintId,
@@ -233,6 +349,7 @@ function createLeaseTemplate(logger: Logger) {
       uuid: randomUUID(),
       createdBy: getUserEmail(lambdaContext.user),
       ...requestData,
+      ...permissionSetConfig,
       blueprintName,
     });
 
@@ -248,7 +365,7 @@ function createLeaseTemplate(logger: Logger) {
 
     return {
       status: JSendStatus.SUCCESS,
-      data: toLeaseTemplateOutput(newLeaseTemplate),
+      data: toLeaseTemplateOutput(newLeaseTemplate, permissionSetContext),
     };
   };
 }
@@ -284,9 +401,14 @@ function getLeaseTemplate(logger: Logger) {
       });
     }
 
+    const permissionSetContext = await loadPermissionSetContext(
+      IsbServices.idcStackConfigStore(lambdaContext.env),
+      IsbServices.principalStore(lambdaContext.env),
+    );
+
     return {
       status: JSendStatus.SUCCESS,
-      data: toLeaseTemplateOutput(leaseTemplate),
+      data: toLeaseTemplateOutput(leaseTemplate, permissionSetContext),
     };
   };
 }
@@ -305,9 +427,8 @@ function updateLeaseTemplate(logger: Logger) {
     // owns what the model cannot express — `strictObject` unknown keys, refined
     // formats (`blueprintId` UUID, `description` FreeText), and `.gt(0)` positivity
     // on the unconstrained `Double` fields (see `updateRequestSchema` above).
-    const parsedBodyResult = updateRequestSchema.safeParse(
-      parseRawJsonBody(event),
-    );
+    const rawBody = parseRawJsonBody(event);
+    const parsedBodyResult = updateRequestSchema.safeParse(rawBody);
     if (!parsedBodyResult.success) {
       throw createHttpJSendValidationError(parsedBodyResult.error);
     }
@@ -328,20 +449,69 @@ function updateLeaseTemplate(logger: Logger) {
       });
     }
 
+    // Gate the list as sent against the flag as it will be stored, so an
+    // omitted flag on a predictive template still accepts it, and an explicit
+    // off switch beside a non-empty list is rejected, not dropped. The
+    // PREDICTED-threshold rule below reads the same effective flag.
+    const predictiveFields = resolveUpdatePredictiveFields(
+      rawBody,
+      parsedBodyResult.data,
+      existingTemplate,
+    );
+    const gateResult = updatePredictiveGateSchema.safeParse({
+      predictiveBudgetEnabled: predictiveFields.predictiveBudgetEnabled,
+      rateLimits: parsedBodyResult.data.rateLimits,
+    });
+    if (!gateResult.success) {
+      throw createHttpJSendValidationError(gateResult.error);
+    }
+    const requestData = { ...parsedBodyResult.data, ...predictiveFields };
+
     try {
       validateLeaseTemplateCompliesWithGlobalConfig(
-        parsedBodyResult.data,
+        requestData,
         lambdaContext.globalConfig,
         { previous: existingTemplate },
       );
+      validatePredictiveBudgetFields(requestData);
+      validateBudgetThresholdsBelowMaxSpend(requestData, {
+        previous: existingTemplate,
+      });
+      validateSandboxSpacesFields(requestData);
       validateCostReportGroup(
-        parsedBodyResult.data.costReportGroup,
+        requestData.costReportGroup,
         lambdaContext.globalConfig.costReporting,
         { previousCostReportGroup: existingTemplate.costReportGroup },
       );
     } catch (error) {
       throwValidationErrorAs400(error);
     }
+
+    const permissionSetContext = await loadPermissionSetContext(
+      IsbServices.idcStackConfigStore(lambdaContext.env),
+      IsbServices.principalStore(lambdaContext.env),
+      { consistentRead: true },
+    );
+    let permissionSetConfig;
+    try {
+      permissionSetConfig = resolvePermissionSetConfig(
+        parsedBodyResult.data,
+        permissionSetContext,
+        existingTemplate,
+      );
+    } catch (error) {
+      throwValidationErrorAs400(error);
+    }
+
+    await assertSandboxSpacesModelSelection({
+      resource: "template",
+      agentConfig: lambdaContext.globalConfig.agent,
+      allowedModelIds: parsedBodyResult.data.allowedModelIds,
+      previousAllowedModelIds: existingTemplate.allowedModelIds,
+      defaultModelId: parsedBodyResult.data.defaultModelId,
+      configStore: IsbServices.configStore(lambdaContext.env),
+      logger,
+    }).catch(throwValidationErrorAs400);
 
     const resolvedBlueprintName = await resolveBlueprintName(
       parsedBodyResult.data.blueprintId,
@@ -352,19 +522,35 @@ function updateLeaseTemplate(logger: Logger) {
     // here from the persisted record.
     const leaseTemplate = {
       uuid: input.leaseTemplateId,
-      ...parsedBodyResult.data,
+      ...requestData,
       createdBy: existingTemplate.createdBy,
+      ...permissionSetConfig,
       blueprintName: resolvedBlueprintName,
     };
 
+    // Conditioned on the record read above: every check here ran against it,
+    // so a concurrent edit is rejected rather than silently replaced or retried.
     let result;
     try {
-      result = await leaseTemplateStore.update(leaseTemplate);
+      result = await leaseTemplateStore.update(leaseTemplate, existingTemplate);
     } catch (error) {
       if (error instanceof UnknownItem) {
         throw createHttpJSendError({
           statusCode: 404,
           data: { errors: [{ message: `Lease Template not found.` }] },
+        });
+      }
+      if (error instanceof ConcurrentDataModificationException) {
+        throw createHttpJSendError({
+          statusCode: 409,
+          data: {
+            errors: [
+              {
+                message:
+                  "The lease template changed while this update was being processed. Refresh the template and retry.",
+              },
+            ],
+          },
         });
       }
       throw error;
@@ -377,7 +563,7 @@ function updateLeaseTemplate(logger: Logger) {
 
     return {
       status: JSendStatus.SUCCESS,
-      data: toLeaseTemplateOutput(result.newItem),
+      data: toLeaseTemplateOutput(result.newItem, permissionSetContext),
     };
   };
 }

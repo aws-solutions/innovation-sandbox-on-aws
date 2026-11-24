@@ -11,6 +11,7 @@ import {
   InnovationSandbox,
   M2mAssigneeNotAllowedError,
 } from "@amzn/innovation-sandbox-commons/innovation-sandbox.js";
+import { IneligibleLeaseOwnerError } from "@amzn/innovation-sandbox-commons/isb-services/lease-assignment/index.js";
 import { searchableLeaseProperties } from "@amzn/innovation-sandbox-commons/observability/logging.js";
 import { generateSchemaData } from "@amzn/innovation-sandbox-commons/test/generate-schema-data.js";
 import {
@@ -28,6 +29,7 @@ import {
 import { Logger } from "@aws-lambda-powertools/logger";
 import { Tracer } from "@aws-lambda-powertools/tracer";
 import { randomUUID } from "crypto";
+import { DateTime, Settings } from "luxon";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 function createMockContext() {
@@ -42,6 +44,9 @@ function createMockContext() {
   };
 }
 
+const builtInUserPermissionSetArn =
+  "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-builtIn123456789";
+
 describe("InnovationSandbox.publishLease()", () => {
   let mockContext: ReturnType<typeof createMockContext>;
   let mockUser: IdcIdentity;
@@ -50,9 +55,13 @@ describe("InnovationSandbox.publishLease()", () => {
     mockContext = createMockContext();
     mockUser = generateSchemaData(IdcIdentitySchema, {
       displayName: "Test Owner",
+      roles: ["User"],
     });
+    mockContext.idcService.getBuiltInUserPermissionSetArn.mockResolvedValue(
+      builtInUserPermissionSetArn,
+    );
 
-    mockContext.idcService.getUserFromEmail.mockImplementation(
+    mockContext.idcService.getIsbMemberFromEmail.mockImplementation(
       async (email) => {
         if (email === mockUser.email) {
           return mockUser;
@@ -119,7 +128,7 @@ describe("InnovationSandbox.publishLease()", () => {
       InnovationSandbox.publishLease({ lease }, mockContext),
     ).rejects.toThrow(M2mAssigneeNotAllowedError);
 
-    expect(mockContext.idcService.getUserFromEmail).not.toHaveBeenCalled();
+    expect(mockContext.idcService.getIsbMemberFromEmail).not.toHaveBeenCalled();
     expect(mockContext.leaseStore.update).not.toHaveBeenCalled();
     expect(
       mockContext.leaseStore.acquireLockWithDesiredAssignments,
@@ -170,6 +179,7 @@ describe("InnovationSandbox.publishLease()", () => {
           {
             principalId: mockUser.userId,
             principalType: "USER",
+            permissionSetArn: builtInUserPermissionSetArn,
             email: lease.userEmail,
             displayName: mockUser.displayName,
           },
@@ -272,6 +282,7 @@ describe("InnovationSandbox.publishLease()", () => {
           expect.objectContaining({
             principalId: mockUser.userId,
             principalType: "USER",
+            permissionSetArn: builtInUserPermissionSetArn,
             email: lease.userEmail,
             ...(mockUser.displayName
               ? { displayName: mockUser.displayName }
@@ -339,10 +350,12 @@ describe("InnovationSandbox.publishLease()", () => {
 
     await InnovationSandbox.publishLease({ lease }, mockContext);
 
-    // triggerAssignmentProcessing enriches the owner-only assignment internally
-    expect(mockContext.principalStore.batchGetCacheItems).toHaveBeenCalledWith([
-      { principalId: mockUser.userId, principalType: "USER" },
-    ]);
+    expect(
+      mockContext.principalStore.batchGetCacheItems,
+    ).not.toHaveBeenCalled();
+    expect(
+      mockContext.idcService.getCachedPrincipalById,
+    ).not.toHaveBeenCalled();
     expect(
       mockContext.leaseStore.acquireLockWithDesiredAssignments,
     ).toHaveBeenCalledWith(
@@ -351,6 +364,7 @@ describe("InnovationSandbox.publishLease()", () => {
           {
             principalId: mockUser.userId,
             principalType: "USER",
+            permissionSetArn: builtInUserPermissionSetArn,
             email: lease.userEmail,
             displayName: mockUser.displayName,
           },
@@ -359,9 +373,13 @@ describe("InnovationSandbox.publishLease()", () => {
     );
   });
 
-  test("propagates an undefined IDC displayName onto the owner assignment", async () => {
-    mockUser = { ...mockUser, displayName: undefined };
-    mockContext.idcService.getUserFromEmail.mockResolvedValue(mockUser);
+  test("falls back to the IDC user name when the display name is missing", async () => {
+    mockUser = {
+      ...mockUser,
+      displayName: undefined,
+      userName: "test-owner",
+    };
+    mockContext.idcService.getIsbMemberFromEmail.mockResolvedValue(mockUser);
     const lease = generateSchemaData(PersistedMonitoredLeaseSchema, {
       status: "Active",
       userEmail: mockUser.email,
@@ -377,8 +395,9 @@ describe("InnovationSandbox.publishLease()", () => {
       {
         principalId: mockUser.userId,
         principalType: "USER",
+        permissionSetArn: builtInUserPermissionSetArn,
         email: lease.userEmail,
-        displayName: undefined,
+        displayName: "test-owner",
       },
     ]);
   });
@@ -493,6 +512,33 @@ describe("InnovationSandbox.publishLease()", () => {
     );
   });
 
+  test("should set expirationDate exactly leaseDurationInHours after startDate", async () => {
+    // Every clock read advances 1 ms, so two separate reads would store a
+    // duration 1 ms longer than the lease's.
+    let clockMillis = DateTime.fromISO("2024-12-20T08:45:00.000Z").toMillis();
+    Settings.now = () => clockMillis++;
+    try {
+      const lease = generateSchemaData(PersistedMonitoredLeaseSchema, {
+        status: "Provisioning",
+        userEmail: mockUser.email,
+        leaseDurationInHours: 168,
+      });
+
+      await InnovationSandbox.publishLease({ lease }, mockContext);
+
+      const updated = PersistedMonitoredLeaseSchema.parse(
+        mockContext.leaseStore.update.mock.calls[0]![0],
+      );
+      expect(
+        DateTime.fromISO(updated.expirationDate!)
+          .diff(DateTime.fromISO(updated.startDate), "hours")
+          .as("hours"),
+      ).toBe(168);
+    } finally {
+      Settings.now = () => Date.now();
+    }
+  });
+
   test("should update lease to set startDate and expirationDate even if already Active", async () => {
     const lease = generateSchemaData(PersistedMonitoredLeaseSchema, {
       status: "Active",
@@ -538,16 +584,16 @@ describe("InnovationSandbox.publishLease()", () => {
     );
   });
 
-  test("should throw error if user not found", async () => {
+  test("rejects when the lease owner is not an ISB member", async () => {
     const lease = generateSchemaData(PersistedMonitoredLeaseSchema, {
       userEmail: "nonexistent@example.com",
     });
 
-    mockContext.idcService.getUserFromEmail.mockResolvedValue(undefined);
+    mockContext.idcService.getIsbMemberFromEmail.mockResolvedValue(undefined);
 
     await expect(
       InnovationSandbox.publishLease({ lease }, mockContext),
-    ).rejects.toThrow("Unable to retrieve user information");
+    ).rejects.toThrow(new IneligibleLeaseOwnerError(lease.userEmail));
   });
 
   test("calls applyLeaseTags with the published lease and the IDC userId", async () => {

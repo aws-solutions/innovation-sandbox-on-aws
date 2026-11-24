@@ -1,29 +1,44 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
+import { ITable } from "aws-cdk-lib/aws-dynamodb";
 import {
   EventBus,
   EventField,
   Rule,
   RuleTargetInput,
 } from "aws-cdk-lib/aws-events";
-import { Effect, PolicyStatement, ServicePrincipal } from "aws-cdk-lib/aws-iam";
+import {
+  AccountPrincipal,
+  Effect,
+  PolicyStatement,
+  ServicePrincipal,
+} from "aws-cdk-lib/aws-iam";
 import { Key } from "aws-cdk-lib/aws-kms";
 import { CfnResourcePolicy } from "aws-cdk-lib/aws-logs";
+import { ITopic } from "aws-cdk-lib/aws-sns";
 import { Queue, QueueEncryption } from "aws-cdk-lib/aws-sqs";
 import { Construct } from "constructs";
 
 import { AccountDriftMonitoringLambda } from "@amzn/innovation-sandbox-infrastructure/components/account-management/account-drift-monitoring-lambda";
 import { AccountLifecycleManagementLambda } from "@amzn/innovation-sandbox-infrastructure/components/account-management/account-lifecycle-management-lambda";
 import { LeaseMonitoringLambda } from "@amzn/innovation-sandbox-infrastructure/components/account-management/lease-monitoring-lambda";
+import { TokenPollLambda } from "@amzn/innovation-sandbox-infrastructure/components/account-management/token-poll-lambda";
 import { EmailNotificationLambda } from "@amzn/innovation-sandbox-infrastructure/components/notification/email-notification";
+import { getIsbEventBusName } from "@amzn/innovation-sandbox-infrastructure/helpers/isb-events";
+import { getPermissionSetEventForwardingRoleArn } from "@amzn/innovation-sandbox-infrastructure/helpers/isb-roles";
 import { IsbComputeResources } from "@amzn/innovation-sandbox-infrastructure/isb-compute-resources";
 
 export type IsbEventBackplaneProps = {
   namespace: string;
   kmsKey: Key;
+  readonly bedrockPriceTable: ITable;
   readonly orgMgtAccountId: string;
   readonly idcAccountId: string;
   readonly webAppUrl: string;
+  /** The observability sinks' region-to-sink-id map, read by the token poll. */
+  readonly sinkIdsJson: string;
+  /** Resolved SesIdentityArn CFN parameter, threaded through to EmailNotificationLambda. */
+  readonly sesIdentityArn: string;
 };
 
 /**
@@ -35,10 +50,11 @@ export class IsbInternalCore {
   readonly leaseMonitoringLambda;
   readonly accountLifecycleManagementLambda;
   readonly accountDriftMonitoringLambda;
+  readonly notificationIntegrationTopic: ITopic;
 
   constructor(scope: Construct, props: IsbEventBackplaneProps) {
     this.eventBus = new EventBus(scope, "ISBEventBus", {
-      eventBusName: `${props.namespace}-ISBEventBus`,
+      eventBusName: getIsbEventBusName(props.namespace),
       description: "core event bus for all ISB activity",
       kmsKey: props.kmsKey,
       deadLetterQueue: new Queue(scope, "ISBEventBusDLQ", {
@@ -48,6 +64,26 @@ export class IsbInternalCore {
         enforceSSL: true,
       }),
     });
+    this.eventBus.addToResourcePolicy(
+      new PolicyStatement({
+        sid: "AllowIdcAccountPermissionSetEvents",
+        actions: ["events:PutEvents"],
+        principals: [new AccountPrincipal(props.idcAccountId)],
+        resources: [this.eventBus.eventBusArn],
+        conditions: {
+          StringEquals: {
+            "aws:PrincipalAccount": props.idcAccountId,
+          },
+          ArnEquals: {
+            "aws:PrincipalArn": getPermissionSetEventForwardingRoleArn(
+              scope,
+              props.namespace,
+              props.idcAccountId,
+            ),
+          },
+        },
+      }),
+    );
 
     IsbComputeResources.globalLogGroup.addToResourcePolicy(
       new PolicyStatement({
@@ -108,6 +144,13 @@ export class IsbInternalCore {
       },
     );
 
+    new TokenPollLambda(scope, "TokenPoll", {
+      isbEventBus: this.eventBus,
+      namespace: props.namespace,
+      bedrockPriceTable: props.bedrockPriceTable,
+      sinkIdsJson: props.sinkIdsJson,
+    });
+
     this.accountLifecycleManagementLambda =
       new AccountLifecycleManagementLambda(
         scope,
@@ -130,11 +173,18 @@ export class IsbInternalCore {
       },
     );
 
-    new EmailNotificationLambda(scope, "EmailNotification", {
-      isbEventBus: this.eventBus,
-      namespace: props.namespace,
-      idcAccountId: props.idcAccountId,
-      webAppUrl: props.webAppUrl,
-    });
+    const emailNotification = new EmailNotificationLambda(
+      scope,
+      "EmailNotification",
+      {
+        isbEventBus: this.eventBus,
+        namespace: props.namespace,
+        idcAccountId: props.idcAccountId,
+        webAppUrl: props.webAppUrl,
+        kmsKey: props.kmsKey,
+        sesIdentityArn: props.sesIdentityArn,
+      },
+    );
+    this.notificationIntegrationTopic = emailNotification.integrationTopic;
   }
 }

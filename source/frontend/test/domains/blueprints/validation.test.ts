@@ -6,11 +6,12 @@
  * Ensures frontend validation matches backend security rules
  */
 
+import { describe, expect, it } from "vitest";
+
 import {
   BasicDetailsValidationSchema,
   createBasicDetailsValidationSchema,
 } from "@amzn/innovation-sandbox-frontend/domains/blueprints/validation";
-import { describe, expect, it } from "vitest";
 
 describe("Blueprint Tags Validation (Frontend)", () => {
   const TagsOnlySchema = BasicDetailsValidationSchema.pick({ tags: true });

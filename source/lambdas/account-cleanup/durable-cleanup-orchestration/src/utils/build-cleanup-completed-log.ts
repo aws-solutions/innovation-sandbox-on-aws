@@ -168,7 +168,7 @@ export function computeStepDurations(
 
     // Enrich cooldown step with metadata
     if (currentStep.name === "account-cooldown" && currentStep.meta) {
-      const meta = currentStep.meta as Record<string, unknown>;
+      const meta = currentStep.meta;
       if (typeof meta.cooldownDurationHours === "number") {
         step.configuredHours = meta.cooldownDurationHours;
       }

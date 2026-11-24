@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import {
-  LeaseTemplateViewSchema,
   type LeaseTemplateView,
+  LeaseTemplateViewSchema,
 } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/model";
 import { generateSchemaData } from "@amzn/innovation-sandbox-shared/test/generate-schema-data.js";
 
@@ -11,10 +11,16 @@ function defaultLeaseTemplate(
   overrides?: Partial<LeaseTemplateView>,
 ): LeaseTemplateView {
   return generateSchemaData(LeaseTemplateViewSchema, {
+    rateLimits: undefined,
+    predictiveBudgetEnabled: false,
+    bedrockTokenMonitoringEnabled: false,
+    sandboxSpacesEnabled: false,
     requiresApproval: false,
     maxSpend: 100,
     leaseDurationInHours: 48,
     costReportGroup: "default-group",
+    defaultPermissionSet: undefined,
+    allowedPermissionSets: undefined,
     ...overrides,
   });
 }

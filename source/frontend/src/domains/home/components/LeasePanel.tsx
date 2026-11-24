@@ -3,12 +3,14 @@
 
 import {
   Badge,
+  Button,
   ColumnLayout,
   Container,
   Header,
   KeyValuePairs,
   SpaceBetween,
 } from "@cloudscape-design/components";
+import { useNavigate } from "react-router-dom";
 
 import { AccountId } from "@amzn/innovation-sandbox-frontend/components/AccountId";
 import { BudgetProgressBar } from "@amzn/innovation-sandbox-frontend/components/BudgetProgressBar";
@@ -20,9 +22,18 @@ import { LeaseStatusBadge } from "@amzn/innovation-sandbox-frontend/domains/leas
 import { isLeaseOwner } from "@amzn/innovation-sandbox-frontend/domains/leases/helpers";
 import { LeaseView } from "@amzn/innovation-sandbox-frontend/domains/leases/model";
 import { useLeaseActions } from "@amzn/innovation-sandbox-frontend/domains/leases/useLeaseActions";
+import {
+  isSandboxSpaceAssignee,
+  isSandboxSpaceAvailable,
+  isSandboxSpacesGloballyUsable,
+  SANDBOX_SPACE_ASSIGNEE_ONLY_REASON,
+  sandboxSpacePath,
+} from "@amzn/innovation-sandbox-frontend/domains/sandbox-agent/helpers";
+import { useGetConfigurations } from "@amzn/innovation-sandbox-frontend/domains/settings/hooks";
 import { getLeaseExpiryInfo } from "@amzn/innovation-sandbox-frontend/helpers/LeaseExpiryInfo";
 import { useUser } from "@amzn/innovation-sandbox-frontend/hooks/useUser";
 import {
+  getCurrentLeaseSpend,
   isExpiredLease,
   isMonitoredLease,
 } from "@amzn/innovation-sandbox-shared/types/lease.js";
@@ -34,14 +45,38 @@ interface LeasePanelProps {
 export const LeasePanel = ({ lease }: LeasePanelProps) => {
   const { hasAnyAction } = useLeaseActions(lease);
   const { user } = useUser();
+  const navigate = useNavigate();
+  const { data: config } = useGetConfigurations();
   const isOwner = isLeaseOwner(lease, user);
+  const showOpenSpaceAction =
+    isSandboxSpaceAvailable(lease) &&
+    isSandboxSpacesGloballyUsable(config?.agent.sandboxSpacesEnabled);
+  const isAssignee = isSandboxSpaceAssignee(lease, user);
 
   return (
     <Container data-shadow>
       <SpaceBetween size="l">
         <Header
           variant="h3"
-          actions={hasAnyAction ? <LeaseActions lease={lease} /> : undefined}
+          actions={
+            showOpenSpaceAction || hasAnyAction ? (
+              <SpaceBetween direction="horizontal" size="xs">
+                {showOpenSpaceAction && (
+                  <Button
+                    iconName="gen-ai"
+                    disabled={!isAssignee}
+                    {...(isAssignee
+                      ? {}
+                      : { disabledReason: SANDBOX_SPACE_ASSIGNEE_ONLY_REASON })}
+                    onClick={() => navigate(sandboxSpacePath(lease.leaseId))}
+                  >
+                    Open Space
+                  </Button>
+                )}
+                {hasAnyAction && <LeaseActions lease={lease} />}
+              </SpaceBetween>
+            ) : undefined
+          }
         >
           <LeaseName
             uuid={lease.uuid}
@@ -106,7 +141,7 @@ export const LeasePanel = ({ lease }: LeasePanelProps) => {
                   <BudgetProgressBar
                     currentValue={
                       isMonitoredLease(lease) || isExpiredLease(lease)
-                        ? lease.totalCostAccrued
+                        ? getCurrentLeaseSpend(lease)
                         : 0
                     }
                     maxValue={lease.maxSpend}

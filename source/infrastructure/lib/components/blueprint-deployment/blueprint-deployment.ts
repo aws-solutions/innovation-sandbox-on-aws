@@ -4,7 +4,7 @@ import { Duration, Stack } from "aws-cdk-lib";
 import { IEventBus } from "aws-cdk-lib/aws-events";
 import { Effect, PolicyStatement, Role } from "aws-cdk-lib/aws-iam";
 import { Construct } from "constructs";
-import path from "path";
+import path from "node:path";
 
 import { BlueprintDeploymentOrchestratorEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/blueprint-deployment-orchestrator-environment.js";
 import { BlueprintDeploymentStepFunction } from "@amzn/innovation-sandbox-infrastructure/components/blueprint-deployment/step-function.js";

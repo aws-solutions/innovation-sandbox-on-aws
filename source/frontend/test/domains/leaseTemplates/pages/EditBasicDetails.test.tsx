@@ -115,6 +115,47 @@ describe("EditBasicDetails", () => {
     });
   });
 
+  test("submits private visibility after disabling requests on a public template", async () => {
+    const submitSpy = vi.fn();
+    server.use(
+      http.get(`${getConfig().ApiUrl}/leaseTemplates/${mockUuid}`, () =>
+        HttpResponse.json({
+          status: "success",
+          data: { ...mockBasicLeaseTemplate, visibility: "PUBLIC" },
+        }),
+      ),
+      http.put(
+        `${getConfig().ApiUrl}/leaseTemplates/${mockUuid}`,
+        async ({ request }) => {
+          const data = await request.json();
+          submitSpy(data);
+          return HttpResponse.json({ status: "success", data });
+        },
+      ),
+    );
+
+    renderComponent();
+    const user = userEvent.setup();
+
+    const requestToggle = await screen.findByRole("checkbox", {
+      name: /requests allowed/i,
+    });
+    expect(requestToggle).toBeChecked();
+
+    await user.click(requestToggle);
+    expect(
+      screen.getByRole("checkbox", { name: /assignment only/i }),
+    ).not.toBeChecked();
+
+    await user.click(screen.getByRole("button", { name: /save changes/i }));
+
+    await waitFor(() => {
+      expect(submitSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ visibility: "PRIVATE" }),
+      );
+    });
+  });
+
   test("displays error toast on submission failure", async () => {
     server.use(
       http.put(`${getConfig().ApiUrl}/leaseTemplates/${mockUuid}`, () => {

@@ -15,11 +15,13 @@ import { MonitoredLeaseView } from "@amzn/innovation-sandbox-frontend/domains/le
 import { EditCostReportSettings } from "@amzn/innovation-sandbox-frontend/domains/leases/pages/EditCostReportSettings";
 import { getConfig } from "@amzn/innovation-sandbox-frontend/helpers/config";
 import { createConfiguration } from "@amzn/innovation-sandbox-frontend/mocks/factories/configurationFactory";
+import { createLeasePermissionProfile } from "@amzn/innovation-sandbox-frontend/mocks/factories/leaseFactory";
 import { server } from "@amzn/innovation-sandbox-frontend/mocks/server";
 import { renderWithQueryClient } from "@amzn/innovation-sandbox-frontend/setupTests";
 import { ApiResponse } from "@amzn/innovation-sandbox-frontend/types";
 
 const mockNavigate = vi.fn();
+const mockSetBreadcrumb = vi.fn();
 
 vi.mock("react-router-dom", async () => {
   const actual = await vi.importActual("react-router-dom");
@@ -31,7 +33,7 @@ vi.mock("react-router-dom", async () => {
 });
 
 vi.mock("@amzn/innovation-sandbox-frontend/hooks/useBreadcrumb", () => ({
-  useBreadcrumb: () => vi.fn(),
+  useBreadcrumb: () => mockSetBreadcrumb,
 }));
 
 vi.mock("@amzn/innovation-sandbox-frontend/components/Toast", () => ({
@@ -52,6 +54,9 @@ const mockLease: MonitoredLeaseView = {
   originalLeaseTemplateName: "Test",
   originalLeaseTemplateUuid: crypto.randomUUID(),
   totalCostAccrued: 0,
+  sandboxSpacesEnabled: false,
+  selectableModels: [],
+  ...createLeasePermissionProfile(),
 };
 
 const mockConfig = createConfiguration({
@@ -92,6 +97,19 @@ describe("EditCostReportSettings", () => {
         return HttpResponse.json(response);
       }),
     );
+  });
+
+  it("uses the canonical lease name in the breadcrumb", async () => {
+    renderComponent();
+
+    await waitFor(() => {
+      expect(mockSetBreadcrumb).toHaveBeenCalledWith([
+        { text: "Home", href: "/" },
+        { text: "Leases", href: "/leases" },
+        { text: "Test (11111111)", href: "/leases/lease-123" },
+        { text: "Edit Cost Report Settings", href: "" },
+      ]);
+    });
   });
 
   it("shows loading state while fetching lease data", () => {
@@ -198,6 +216,16 @@ describe("EditCostReportSettings", () => {
     await waitFor(() => {
       expect(screen.getByText("Edit Cost Report Settings")).toBeInTheDocument();
     });
+  });
+
+  it("describes the lease being edited, not its template", async () => {
+    renderComponent();
+
+    expect(
+      await screen.findByText(
+        "When enabled, this lease will be assigned to a cost report group for billing and reporting purposes",
+      ),
+    ).toBeInTheDocument();
   });
 
   it("initializes form with lease cost report data", async () => {

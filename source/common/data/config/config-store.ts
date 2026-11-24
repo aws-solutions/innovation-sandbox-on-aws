@@ -3,6 +3,11 @@
 import { z } from "zod";
 
 import {
+  AgentModelAdminUpdate,
+  AgentModelCreate,
+  PersistedAgentModelCatalogRow,
+} from "@amzn/innovation-sandbox-commons/data/config/agent-model-catalog.js";
+import {
   PersistedConfigSectionData,
   PersistedLastSavedBy,
 } from "@amzn/innovation-sandbox-commons/data/config/config.js";
@@ -13,9 +18,8 @@ import {
 } from "@amzn/innovation-sandbox-shared/types/configuration.js";
 
 /**
- * Thrown by `putSection` on an optimistic-concurrency conflict
- * (`ConditionalCheckFailedException`). The PUT handler maps this to a static
- * 409 and MUST NOT surface `error.message` to the client.
+ * Thrown by `putSection` on an optimistic-concurrency conflict.
+ * The PUT handler maps this to 409 and MUST NOT surface `error.message` to the client.
  */
 export class ConflictError extends Error {
   constructor(message: string) {
@@ -25,32 +29,29 @@ export class ConflictError extends Error {
 }
 
 /**
- * Read/write contract for the six config sections, backed by the Config
- * DynamoDB table (one item per section, key `{ section, sk: "current" }`).
- * See design doc Section 5.1 (access patterns AP-1..AP-4).
- *
- * Implementations validate stored items against `ConfigSchemas[section]` and
- * apply `checkSchemaVersion` on read (per the sibling DynamoDB stores).
+ * Read/write contract for the config sections and agent-model catalog,
+ * backed by the Config DynamoDB table.
  */
 export interface ConfigStore {
-  /** Returns the section, or `null` if it does not exist in DynamoDB. */
+  /**
+   * Returns the section, or `null` if absent.
+   * @param options.consistentRead - When true, uses a strongly consistent read.
+   */
   getSection<T extends ConfigSection>(
     section: T,
+    options?: { consistentRead?: boolean },
   ): Promise<PersistedConfigSectionData<T> | null>;
 
-  /** Returns only the sections present in DynamoDB; callers default the rest. */
+  /** Returns only sections present in DynamoDB; callers default the rest. */
   getAllSections(): Promise<{
     [K in ConfigSection]?: PersistedConfigSectionData<K>;
   }>;
 
   /**
    * Writes a section with optimistic concurrency. Sets `lastSavedBy`,
-   * `meta.lastEditTime`, and `meta.schemaVersion` server-side. Uses
-   * `meta.lastEditTime = :expected` when `expectedLastEditTime` is given, or
-   * `attribute_not_exists(section) AND attribute_not_exists(sk)` on first save.
+   * `meta.lastEditTime`, and `meta.schemaVersion` server-side.
    *
-   * `PersistedLastSavedBy` structurally widens to `string`, so implementations MUST
-   * `PersistedLastSavedBySchema.parse(editedBy)` before writing.
+   * Implementations MUST call `PersistedLastSavedBySchema.parse(editedBy)` before writing.
    *
    * @throws {ConflictError} when the condition expression fails.
    */
@@ -62,22 +63,59 @@ export interface ConfigStore {
   ): Promise<PersistedConfigSectionData<T>>;
 
   /**
-   * Writes every supplied section atomically as a single DynamoDB transaction,
-   * for one-shot system writers such as the upgrade migrator. Sets `sk`,
-   * `lastSavedBy`, and `meta` (createdTime/lastEditTime/schemaVersion)
-   * server-side; callers pass only the already-validated section fields.
+   * Writes all supplied sections atomically. Idempotent — each section is
+   * guarded with `attribute_not_exists`, so a re-invocation is a no-op
+   * (`{ migrated: false }`) rather than overwriting admin-saved config.
    *
-   * `PersistedLastSavedBy` structurally widens to `string`, so implementations MUST
-   * `PersistedLastSavedBySchema.parse(editedBy)` before writing.
-   *
-   * Idempotent by construction: each section is written under an
-   * `attribute_not_exists` condition, so if the sections are already present
-   * (a re-invocation of the one-time migrator) the write is a no-op and this
-   * resolves to `{ migrated: false }` instead of overwriting admin-saved
-   * config. Returns `{ migrated: true }` when the sections were written.
+   * Implementations MUST call `PersistedLastSavedBySchema.parse(editedBy)` before writing.
    */
   migrateSections(
     sections: { [K in ConfigSection]?: z.infer<(typeof ConfigSchemas)[K]> },
     editedBy: PersistedLastSavedBy,
   ): Promise<{ migrated: boolean }>;
+
+  /**
+   * Returns all catalog rows. Corrupt or version-mismatched rows are dropped.
+   * @param options.consistentRead - When true, uses a strongly consistent read.
+   */
+  getAgentModels(options?: {
+    consistentRead?: boolean;
+  }): Promise<PersistedAgentModelCatalogRow[]>;
+
+  /** Returns one catalog row by modelId, or undefined when absent or invalid. */
+  getAgentModel(
+    modelId: string,
+  ): Promise<PersistedAgentModelCatalogRow | undefined>;
+
+  /**
+   * Returns a page of catalog rows. Corrupt rows are dropped (fail-open).
+   * `nextPageIdentifier` is `null` when the last page has been reached.
+   */
+  getAgentModelsPaginated(props: {
+    pageSize?: number;
+    pageIdentifier?: string;
+  }): Promise<{
+    rows: PersistedAgentModelCatalogRow[];
+    nextPageIdentifier: string | null;
+  }>;
+
+  /**
+   * Add-only discovery write. A re-fetch never overwrites an existing row.
+   * @throws {ConflictError} when the row already exists.
+   */
+  putModelRow(
+    row: AgentModelCreate,
+    addedBy: PersistedLastSavedBy,
+  ): Promise<PersistedAgentModelCatalogRow>;
+
+  /**
+   * Admin enable/disable toggle. OCC-guarded on `meta.lastEditTime`.
+   * @throws {ConflictError} when the condition fails (stale token).
+   */
+  updateModelAdminFields(
+    modelId: string,
+    update: AgentModelAdminUpdate,
+    editedBy: PersistedLastSavedBy,
+    expectedLastEditTime: string,
+  ): Promise<PersistedAgentModelCatalogRow>;
 }

@@ -61,7 +61,7 @@ export const ViewBlueprint = () => {
         <ErrorPanel
           retry={refetch}
           description="We couldn't load the blueprint details. Try refreshing the page."
-          error={error as Error}
+          error={error}
         />
       </ContentLayout>
     );
@@ -83,20 +83,22 @@ export const ViewBlueprint = () => {
 
   const basicDetailsItems: Array<{ label: string; value: string }> = [];
 
-  basicDetailsItems.push({ label: "Name", value: blueprint.name });
-  basicDetailsItems.push({
-    label: "Blueprint ID",
-    value: blueprint.blueprintId,
-  });
-  basicDetailsItems.push({ label: "Created by", value: blueprint.createdBy });
-  basicDetailsItems.push({
-    label: "Created",
-    value: blueprint.meta.createdTime,
-  });
-  basicDetailsItems.push({
-    label: "Last updated",
-    value: blueprint.meta.lastEditTime,
-  });
+  basicDetailsItems.push(
+    { label: "Name", value: blueprint.name },
+    {
+      label: "Blueprint ID",
+      value: blueprint.blueprintId,
+    },
+    { label: "Created by", value: blueprint.createdBy },
+    {
+      label: "Created",
+      value: blueprint.meta.createdTime,
+    },
+    {
+      label: "Last updated",
+      value: blueprint.meta.lastEditTime,
+    },
+  );
 
   const tagsTableItems =
     blueprint.tags && Object.keys(blueprint.tags).length > 0
@@ -127,36 +129,37 @@ export const ViewBlueprint = () => {
   // Build deployment config items imperatively (5 parameters)
   const deploymentConfigItems: Array<{ label: string; value: string }> = [];
 
-  deploymentConfigItems.push({
-    label: "Deployment timeout",
-    value: formatMinutesAsDuration(blueprint.deploymentTimeoutMinutes),
-  });
-
-  deploymentConfigItems.push({
-    label: "Region concurrency type",
-    value:
-      blueprint.regionConcurrencyType === RegionConcurrencyType.SEQUENTIAL
-        ? "Sequential (one region at a time)"
-        : "Parallel (all regions simultaneously)",
-  });
+  deploymentConfigItems.push(
+    {
+      label: "Deployment timeout",
+      value: formatMinutesAsDuration(blueprint.deploymentTimeoutMinutes),
+    },
+    {
+      label: "Region concurrency type",
+      value:
+        blueprint.regionConcurrencyType === RegionConcurrencyType.SEQUENTIAL
+          ? "Sequential (one region at a time)"
+          : "Parallel (all regions simultaneously)",
+    },
+  );
 
   if (stackSets && stackSets.length > 0) {
     const stackSet = stackSets[0];
 
-    deploymentConfigItems.push({
-      label: "Concurrent deployments",
-      value: `${stackSet.maxConcurrentPercentage}%`,
-    });
-
-    deploymentConfigItems.push({
-      label: "Failure tolerance",
-      value: `${stackSet.failureTolerancePercentage}%`,
-    });
-
-    deploymentConfigItems.push({
-      label: "Concurrency mode",
-      value: getConcurrencyModeLabel(stackSet.concurrencyMode),
-    });
+    deploymentConfigItems.push(
+      {
+        label: "Concurrent deployments",
+        value: `${stackSet.maxConcurrentPercentage}%`,
+      },
+      {
+        label: "Failure tolerance",
+        value: `${stackSet.failureTolerancePercentage}%`,
+      },
+      {
+        label: "Concurrency mode",
+        value: getConcurrencyModeLabel(stackSet.concurrencyMode),
+      },
+    );
   }
 
   return (

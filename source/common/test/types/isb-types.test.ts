@@ -67,13 +67,26 @@ describe("getUserEmail", () => {
 });
 
 describe("getUserLabel", () => {
-  it("should return email when displayName is not set", () => {
+  it("should return email when displayName and userName are not set", () => {
     const user = generateSchemaData(IdcIdentitySchema, {
       email: "a@b.com",
       displayName: undefined,
+      userName: undefined,
     });
     expect(getUserLabel(user)).toBe("a@b.com");
   });
+
+  it.each([undefined, ""])(
+    "should return userName when displayName is %s",
+    (displayName) => {
+      const user = generateSchemaData(IdcIdentitySchema, {
+        email: "a@b.com",
+        displayName,
+        userName: "alice",
+      });
+      expect(getUserLabel(user)).toBe("alice");
+    },
+  );
 
   it("should return displayName when set", () => {
     const user = generateSchemaData(IdcIdentitySchema, {

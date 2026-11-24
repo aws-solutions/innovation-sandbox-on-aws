@@ -67,9 +67,13 @@ describe("release metadata consistency", () => {
     );
     const { major, minor } = parseManifestVersion(manifest.version);
     const expectedStableTag = `v${major}.${minor}`;
+    // Only the account cleaner is pulled by its stable tag (UseStableTagging).
+    // The agent runtime always uses the full version tag.
+    const stableTaggedImages = ["innovation-sandbox-on-aws-account-cleaner"];
 
-    expect(Object.keys(ecrImageTags).sort()).toEqual(
-      [...manifest.container_images].sort(),
+    expect(Object.keys(ecrImageTags).sort()).toEqual(stableTaggedImages);
+    expect(manifest.container_images).toEqual(
+      expect.arrayContaining(stableTaggedImages),
     );
 
     for (const [imageName, imageTag] of Object.entries(ecrImageTags)) {

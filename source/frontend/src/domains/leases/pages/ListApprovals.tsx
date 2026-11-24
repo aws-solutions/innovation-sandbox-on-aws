@@ -22,6 +22,7 @@ import {
   showErrorToast,
   showSuccessToast,
 } from "@amzn/innovation-sandbox-frontend/components/Toast";
+import { assignmentPrincipalKey } from "@amzn/innovation-sandbox-frontend/domains/leases/assignments/assignmentPermissionSets";
 import {
   useGetPendingApprovals,
   useReviewLease,
@@ -54,6 +55,21 @@ const DateRequestedCell = ({ lease }: { lease: LeaseView }) =>
 
 const CommentsCell = ({ lease }: { lease: LeaseView }) => <>{lease.comments}</>;
 
+export const getSharedPrincipalCount = (lease: LeaseView): number => {
+  const assignments = lease.desiredAssignments ?? [];
+  const owner = assignments.find(
+    ({ email, principalType }) =>
+      principalType === "USER" &&
+      email?.toLowerCase() === lease.userEmail.toLowerCase(),
+  );
+  const ownerKey = owner ? assignmentPrincipalKey(owner) : undefined;
+  return new Set(
+    assignments
+      .map(assignmentPrincipalKey)
+      .filter((principalKey) => principalKey !== ownerKey),
+  ).size;
+};
+
 const SharedPrincipalsCell = ({
   lease,
   includeLinks,
@@ -61,16 +77,13 @@ const SharedPrincipalsCell = ({
   lease: LeaseView;
   includeLinks: boolean;
 }) => {
-  // desiredAssignments always includes the owner as the first entry,
-  // so subtract 1 to show only additional shared principals.
-  const totalCount = lease.desiredAssignments?.length ?? 0;
-  const sharedCount = Math.max(0, totalCount - 1);
+  const sharedCount = getSharedPrincipalCount(lease);
   if (sharedCount === 0) {
     return "-";
   }
   const label = `${sharedCount} ${sharedCount === 1 ? "principal" : "principals"}`;
   return includeLinks ? (
-    <TextLink to={`/approvals/${lease.leaseId}?tab=sharing`}>{label}</TextLink>
+    <TextLink to={`/approvals/${lease.leaseId}?tab=access`}>{label}</TextLink>
   ) : (
     label
   );
@@ -131,8 +144,7 @@ const createColumnDefinitions = (includeLinks: boolean) => [
     id: "sharedPrincipals",
     header: "Shared with",
     sortingComparator: (a: LeaseView, b: LeaseView) =>
-      Math.max(0, (a.desiredAssignments?.length ?? 0) - 1) -
-      Math.max(0, (b.desiredAssignments?.length ?? 0) - 1),
+      getSharedPrincipalCount(a) - getSharedPrincipalCount(b),
     cell: (lease: LeaseView) => (
       <SharedPrincipalsCell lease={lease} includeLinks={includeLinks} />
     ), // NOSONAR typescript:S6478 - the way the table component works requires defining component during render

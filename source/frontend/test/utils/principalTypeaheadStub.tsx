@@ -18,6 +18,7 @@ export function createPrincipalTypeaheadStub(
     onSelect,
     shouldExclude = () => false,
     type = "all",
+    disabled = false,
   }: PrincipalTypeaheadProps) {
     const principals = getPrincipals();
 
@@ -35,6 +36,7 @@ export function createPrincipalTypeaheadStub(
             <button
               key={principal.principalId}
               type="button"
+              disabled={disabled}
               onClick={() => onSelect(principal)}
             >
               Add {principal.principalId}

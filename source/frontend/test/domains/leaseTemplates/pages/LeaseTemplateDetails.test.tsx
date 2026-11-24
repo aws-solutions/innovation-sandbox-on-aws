@@ -57,6 +57,49 @@ describe("LeaseTemplateDetails", () => {
     expect(screen.getByText(/Duration Settings/i)).toBeInTheDocument();
   });
 
+  test("renders hydrated permission-set details returned by the API", async () => {
+    const defaultPermissionSet = {
+      permissionSetArn:
+        "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-0123456789abcdef",
+      permissionSetId: "ps-0123456789abcdef",
+      name: "DeveloperAccess",
+      description: "Developer sandbox access",
+      availability: "AVAILABLE",
+    };
+    const additionalPermissionSet = {
+      permissionSetArn:
+        "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-1123456789abcdef",
+      permissionSetId: "ps-1123456789abcdef",
+      name: "AuditorAccess",
+      description: "Read-only sandbox access",
+      availability: "AVAILABLE",
+    };
+    server.use(
+      http.get(`${getConfig().ApiUrl}/leaseTemplates/${mockUuid}`, () =>
+        HttpResponse.json({
+          status: "success",
+          data: {
+            ...mockAdvancedLeaseTemplate,
+            defaultPermissionSet,
+            allowedPermissionSets: [
+              defaultPermissionSet,
+              additionalPermissionSet,
+            ],
+          },
+        }),
+      ),
+    );
+
+    renderComponent();
+
+    await waitFor(() => {
+      expect(screen.getByText("DeveloperAccess")).toBeInTheDocument();
+    });
+    expect(screen.getByText("AuditorAccess")).toBeInTheDocument();
+    expect(screen.getByText("Developer sandbox access")).toBeInTheDocument();
+    expect(screen.getByText("Read-only sandbox access")).toBeInTheDocument();
+  });
+
   test("displays error panel when lease template fails to load", async () => {
     server.use(
       http.get(`${getConfig().ApiUrl}/leaseTemplates/${mockUuid}`, () => {
@@ -76,6 +119,48 @@ describe("LeaseTemplateDetails", () => {
     });
   });
 
+  test("displays error panel when global configuration fails to load", async () => {
+    server.use(
+      http.get(`${getConfig().ApiUrl}/configurations`, () =>
+        HttpResponse.json(
+          { status: "error", message: "Configuration unavailable" },
+          { status: 500 },
+        ),
+      ),
+    );
+
+    renderComponent();
+
+    expect(
+      await screen.findByText(
+        /There was a problem loading global configuration settings/i,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  test("navigates to each remaining edit page", async () => {
+    renderComponent();
+    const user = userEvent.setup();
+
+    await screen.findByText(/Budget Settings/i);
+    const editButtons = screen.getAllByRole("button", { name: /^Edit$/ });
+    expect(editButtons).toHaveLength(6);
+    const destinations = [
+      "blueprint",
+      "budget",
+      "duration",
+      "cost-report",
+      "sandbox-spaces",
+    ];
+
+    for (const [index, destination] of destinations.entries()) {
+      await user.click(editButtons[index + 1]!);
+      expect(mockNavigate).toHaveBeenLastCalledWith(
+        `/lease_templates/${mockUuid}/edit/${destination}`,
+      );
+    }
+  });
+
   test("navigates to edit basic details page", async () => {
     renderComponent();
     const user = userEvent.setup();
@@ -91,6 +176,25 @@ describe("LeaseTemplateDetails", () => {
 
     expect(mockNavigate).toHaveBeenCalledWith(
       `/lease_templates/${mockUuid}/edit/basic`,
+    );
+  });
+
+  test("navigates to edit permission profile page", async () => {
+    renderComponent();
+    const user = userEvent.setup();
+
+    await waitFor(() => {
+      expect(
+        screen.getAllByText(mockAdvancedLeaseTemplate.name)[0],
+      ).toBeInTheDocument();
+    });
+
+    await user.click(
+      screen.getByRole("button", { name: "Edit access and sharing" }),
+    );
+
+    expect(mockNavigate).toHaveBeenCalledWith(
+      `/lease_templates/${mockUuid}/edit/access`,
     );
   });
 

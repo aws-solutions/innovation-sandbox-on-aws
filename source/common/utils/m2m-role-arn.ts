@@ -96,6 +96,10 @@ const M2M_ROLE_TIER_PATTERN = IsbRoleSchema.options
   .map((r) => r.toLowerCase())
   .join("|");
 
+function escapeRegExp(value: string): string {
+  return value.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
+}
+
 export interface ParsedM2mAssumedRoleArn {
   /** The role tier as it appears in the ARN — always lowercase. */
   roleTier: string;
@@ -115,14 +119,13 @@ export interface ParsedM2mAssumedRoleArn {
 export function parseM2mAssumedRoleArn(
   arn: string | undefined | null,
   namespace: string,
+  expectedAccountId: string,
 ): ParsedM2mAssumedRoleArn | null {
   if (!arn) return null;
-  const escapedNamespace = namespace.replaceAll(
-    /[.*+?^${}()|[\]\\]/g,
-    String.raw`\$&`,
-  );
+  const escapedNamespace = escapeRegExp(namespace);
+  const escapedAccountId = escapeRegExp(expectedAccountId);
   const regex = new RegExp(
-    String.raw`^arn:[a-z0-9-]+:sts::\d+:assumed-role/${escapedNamespace}-${M2M_ROLE_NAME_INFIX}-(${M2M_ROLE_TIER_PATTERN})-([a-z0-9-]+)/`,
+    String.raw`^arn:[a-z0-9-]+:sts::${escapedAccountId}:assumed-role/${escapedNamespace}-${M2M_ROLE_NAME_INFIX}-(${M2M_ROLE_TIER_PATTERN})-([a-z0-9-]+)/`,
     "i",
   );
   const match = regex.exec(arn);

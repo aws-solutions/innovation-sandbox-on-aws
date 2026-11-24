@@ -56,7 +56,9 @@ accounts:
           value: "%CLEANUP_ROLE_NAME%"
         - type: exact
           value: OrganizationAccountAccessRole
-      # Policies and attachments for the two roles above; protecting the roles
+        - type: exact
+          value: "SandboxAgentRole-%NAMESPACE%"
+      # Policies and attachments for the roles above; protecting the roles
       # without their policies would leave them present but powerless.
       IAMRolePolicy:
         - property: "role:RoleName"
@@ -65,6 +67,9 @@ accounts:
         - property: "role:RoleName"
           type: exact
           value: OrganizationAccountAccessRole
+        - property: "role:RoleName"
+          type: exact
+          value: "SandboxAgentRole-%NAMESPACE%"
       IAMRolePolicyAttachment:
         - property: RoleName
           type: exact
@@ -72,6 +77,9 @@ accounts:
         - property: RoleName
           type: exact
           value: OrganizationAccountAccessRole
+        - property: RoleName
+          type: exact
+          value: "SandboxAgentRole-%NAMESPACE%"
       # Managed by AWS Security Incident Response; cannot be deleted via the
       # DeleteRule API.
       CloudWatchEventsRule:

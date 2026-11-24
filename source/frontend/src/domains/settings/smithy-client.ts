@@ -10,6 +10,7 @@
 import {
   type AdminConfiguration as SmithyAdminConfiguration,
   type ConfigurationResponseMetadata as SmithyConfigurationResponseMetadata,
+  GetAgentConfigurationCommand,
   GetCleanupConfigurationCommand,
   GetConfigurationsCommand,
   GetCostReportingConfigurationCommand,
@@ -18,6 +19,7 @@ import {
   GetNotificationConfigurationCommand,
   GetTermsOfServiceConfigurationCommand,
   IsbClient,
+  UpdateAgentConfigurationCommand,
   UpdateCleanupConfigurationCommand,
   UpdateCostReportingConfigurationCommand,
   UpdateLeasesConfigurationCommand,
@@ -69,6 +71,7 @@ export const GET_SECTION_COMMANDS: Record<ConfigSection, CommandCtor> = {
   maintenance: GetMaintenanceConfigurationCommand,
   termsOfService: GetTermsOfServiceConfigurationCommand,
   costReporting: GetCostReportingConfigurationCommand,
+  agent: GetAgentConfigurationCommand,
 };
 
 // `Update*` inputs are required (unlike the reads' empty input), so the classes
@@ -81,6 +84,7 @@ export const UPDATE_SECTION_COMMANDS = {
   maintenance: UpdateMaintenanceConfigurationCommand,
   termsOfService: UpdateTermsOfServiceConfigurationCommand,
   costReporting: UpdateCostReportingConfigurationCommand,
+  agent: UpdateAgentConfigurationCommand,
 } as unknown as Record<ConfigSection, CommandCtor>; // NOSONAR typescript:S4325 - cast required (tsc); routing guarded by smithy-client.test.ts
 
 /** The audit members a generated section output carries; the remaining keys are
@@ -130,6 +134,8 @@ function toSectionResponse(
       return ConfigurationSectionViewSchemas.termsOfService.parse(response);
     case "costReporting":
       return ConfigurationSectionViewSchemas.costReporting.parse(response);
+    case "agent":
+      return ConfigurationSectionViewSchemas.agent.parse(response);
   }
 }
 
@@ -200,6 +206,10 @@ export class SmithyConfigurationClient implements SmithyConfigurationApi {
           "costReporting",
           requireConfigurationMember(data.costReporting, "costReporting"),
         ),
+        agent: toSectionResponse(
+          "agent",
+          requireConfigurationMember(data.agent, "agent"),
+        ),
         isbManagedRegions: requireConfigurationMember(
           data.isbManagedRegions,
           "isbManagedRegions",
@@ -207,6 +217,10 @@ export class SmithyConfigurationClient implements SmithyConfigurationApi {
         awsAccessPortalUrl: requireConfigurationMember(
           data.awsAccessPortalUrl,
           "awsAccessPortalUrl",
+        ),
+        bedrockInferenceProfilePatterns: requireConfigurationMember(
+          data.bedrockInferenceProfilePatterns,
+          "bedrockInferenceProfilePatterns",
         ),
       } satisfies AdminConfigurationView;
     } catch (error) {

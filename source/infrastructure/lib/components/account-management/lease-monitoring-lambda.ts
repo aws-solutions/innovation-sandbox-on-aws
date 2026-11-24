@@ -5,7 +5,7 @@ import { EventBus } from "aws-cdk-lib/aws-events";
 import { Role, ServicePrincipal } from "aws-cdk-lib/aws-iam";
 import { CfnSchedule } from "aws-cdk-lib/aws-scheduler";
 import { Construct } from "constructs";
-import path from "path";
+import path from "node:path";
 
 import { LeaseMonitoringEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/lease-monitoring-environment.js";
 import { IsbLambdaFunction } from "@amzn/innovation-sandbox-infrastructure/components/isb-lambda-function";
@@ -13,7 +13,10 @@ import {
   IntermediateRole,
   getOrgMgtRoleArn,
 } from "@amzn/innovation-sandbox-infrastructure/helpers/isb-roles";
-import { grantIsbDbReadWrite } from "@amzn/innovation-sandbox-infrastructure/helpers/policy-generators";
+import {
+  grantIsbDbReadOnly,
+  grantIsbDbReadWrite,
+} from "@amzn/innovation-sandbox-infrastructure/helpers/policy-generators";
 import { IsbComputeResources } from "@amzn/innovation-sandbox-infrastructure/isb-compute-resources";
 import { IsbComputeStack } from "@amzn/innovation-sandbox-infrastructure/isb-compute-stack";
 
@@ -27,6 +30,9 @@ export class LeaseMonitoringLambda extends Construct {
   constructor(scope: Construct, id: string, props: LeaseMonitoringLambdaProps) {
     super(scope, id);
 
+    // The config table read added here runs in the middleware, before the scan,
+    // so a config-table read error now aborts the entire scan for every lease.
+    // v1.3's Lease Monitoring had no config-table dependency at all.
     const lambda = new IsbLambdaFunction(this, id, {
       description:
         "Scans active leases periodically to trigger events when alerts or actions need to be taken",
@@ -46,7 +52,11 @@ export class LeaseMonitoringLambda extends Construct {
       namespace: props.namespace,
       environment: {
         ISB_EVENT_BUS: props.isbEventBus.eventBusName,
+        CONFIG_TABLE_NAME:
+          IsbComputeStack.sharedSpokeConfig.data.configTableName,
         LEASE_TABLE_NAME: IsbComputeStack.sharedSpokeConfig.data.leaseTable,
+        LEASE_COST_HISTORY_TABLE_NAME:
+          IsbComputeStack.sharedSpokeConfig.data.leaseCostHistoryTable,
         ISB_NAMESPACE: props.namespace,
         INTERMEDIATE_ROLE_ARN: IntermediateRole.getRoleArn(),
         ORG_MGT_ROLE_ARN: getOrgMgtRoleArn(
@@ -75,6 +85,12 @@ export class LeaseMonitoringLambda extends Construct {
       scope,
       lambda,
       IsbComputeStack.sharedSpokeConfig.data.leaseTable,
+      IsbComputeStack.sharedSpokeConfig.data.leaseCostHistoryTable,
+    );
+    grantIsbDbReadOnly(
+      scope,
+      lambda,
+      IsbComputeStack.sharedSpokeConfig.data.configTableName,
     );
 
     new CfnSchedule(scope, "LeaseMonitoringScheduledEvent", {

@@ -188,6 +188,20 @@ describe("DynamoConfigStore", () => {
   });
 
   describe("getSection()", () => {
+    test("loads an existing configuration with required groups missing so an admin can repair it", async () => {
+      mockDynamoClient.on(GetCommand).resolves({
+        Item: buildStoredItem("costReporting", {
+          requireCostReportGroup: true,
+          costReportGroups: [],
+        }),
+      });
+
+      await expect(store.getSection("costReporting")).resolves.toMatchObject({
+        requireCostReportGroup: true,
+        costReportGroups: [],
+      });
+    });
+
     test("returns the parsed section when the item exists", async () => {
       mockDynamoClient
         .on(GetCommand)
@@ -213,10 +227,40 @@ describe("DynamoConfigStore", () => {
       expect(result?.groupAssignmentMode).toBe("NONE");
     });
 
+    test("defaults the notification channel toggles for records created before the fields existed", async () => {
+      const {
+        sesEnabled: _sesEnabled,
+        snsIntegrationTopicEnabled: _snsIntegrationTopicEnabled,
+        ...storedBeforeToggles
+      } = buildStoredItem("notification", { emailFrom: "ops@example.com" });
+      mockDynamoClient.on(GetCommand).resolves({ Item: storedBeforeToggles });
+
+      const result = await store.getSection("notification");
+
+      expect(result).toMatchObject({
+        emailFrom: "ops@example.com",
+        sesEnabled: true,
+        snsIntegrationTopicEnabled: false,
+      });
+    });
+
     test("returns null when the item does not exist", async () => {
       mockDynamoClient.on(GetCommand).resolves({});
 
       expect(await store.getSection("leases")).toBeNull();
+    });
+
+    test("uses a strongly consistent read only when asked", async () => {
+      mockDynamoClient
+        .on(GetCommand)
+        .resolves({ Item: buildStoredItem("leases") });
+
+      await store.getSection("leases");
+      await store.getSection("leases", { consistentRead: true });
+
+      const calls = mockDynamoClient.commandCalls(GetCommand);
+      expect(calls[0]!.args[0].input.ConsistentRead).toBeUndefined();
+      expect(calls[1]!.args[0].input.ConsistentRead).toBe(true);
     });
 
     test("throws when the stored item is missing meta", async () => {
@@ -246,6 +290,29 @@ describe("DynamoConfigStore", () => {
 
   describe("putSection()", () => {
     const leasesBody = LeasesConfigSchema.parse({});
+
+    test("rejects required cost report groups with an empty list before writing", async () => {
+      const invalidConfig = {
+        requireCostReportGroup: true,
+        costReportGroups: [],
+      };
+      mockDynamoClient.on(UpdateCommand).resolves({
+        Attributes: buildStoredItem("costReporting", invalidConfig),
+      });
+
+      await expect(
+        store.putSection("costReporting", invalidConfig, "admin@example.com"),
+      ).rejects.toMatchObject({
+        issues: [
+          expect.objectContaining({
+            path: ["costReportGroups"],
+            message:
+              "Add at least one cost report group or turn off Require cost report group.",
+          }),
+        ],
+      });
+      expect(mockDynamoClient.commandCalls(UpdateCommand)).toHaveLength(0);
+    });
 
     test("first save uses attribute_not_exists and writes the whole meta map", async () => {
       mockDynamoClient.on(UpdateCommand).resolves({

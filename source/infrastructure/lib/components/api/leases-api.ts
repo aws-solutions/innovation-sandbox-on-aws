@@ -4,7 +4,7 @@ import { Aws, Stack } from "aws-cdk-lib";
 import { Effect, PolicyStatement, Role } from "aws-cdk-lib/aws-iam";
 import { IFunction } from "aws-cdk-lib/aws-lambda";
 import { Construct } from "constructs";
-import path from "path";
+import path from "node:path";
 
 import { LeaseLambdaEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/lease-lambda-environment.js";
 import type { RestApiProps } from "@amzn/innovation-sandbox-infrastructure/components/api/rest-api-all";
@@ -33,10 +33,13 @@ export class LeasesApi {
       configTableName,
       leaseTemplateTable,
       leaseTable,
+      leaseCostHistoryTable,
       accountTable,
       principalTable,
+      sandboxSpacesUsageTable,
       cognitoUserPoolId,
       cognitoAppClientId,
+      cognitoMcpClientId,
     } = IsbComputeStack.sharedSpokeConfig.data;
 
     const leasesLambdaFunction = new IsbApiLambdaFunction(
@@ -64,6 +67,7 @@ export class LeasesApi {
           ISB_NAMESPACE: namespace,
           ACCOUNT_TABLE_NAME: accountTable,
           LEASE_TABLE_NAME: leaseTable,
+          LEASE_COST_HISTORY_TABLE_NAME: leaseCostHistoryTable,
           LEASE_TEMPLATE_TABLE_NAME: leaseTemplateTable,
           PRINCIPAL_TABLE_NAME: principalTable,
           ISB_EVENT_BUS: props.isbEventBus.eventBusName,
@@ -84,8 +88,10 @@ export class LeasesApi {
             IsbComputeStack.sharedSpokeConfig.parameterArns.idcConfigParamArn,
           ORG_MGT_ACCOUNT_ID: props.orgMgtAccountId,
           HUB_ACCOUNT_ID: Aws.ACCOUNT_ID,
+          SANDBOX_SPACES_USAGE_TABLE_NAME: sandboxSpacesUsageTable,
           COGNITO_USER_POOL_ID: cognitoUserPoolId,
           COGNITO_APP_CLIENT_ID: cognitoAppClientId,
+          COGNITO_MCP_CLIENT_ID: cognitoMcpClientId,
         },
         envSchema: LeaseLambdaEnvironmentSchema,
       },
@@ -108,8 +114,14 @@ export class LeasesApi {
       accountTable,
       IsbComputeStack.sharedSpokeConfig.data.blueprintTable,
       principalTable,
+      sandboxSpacesUsageTable,
     );
-    grantIsbDbReadOnly(scope, leasesLambdaFunction, configTableName);
+    grantIsbDbReadOnly(
+      scope,
+      leasesLambdaFunction,
+      configTableName,
+      leaseCostHistoryTable,
+    );
 
     props.isbEventBus.grantPutEventsTo(leasesLambdaFunction.lambdaFunction);
 

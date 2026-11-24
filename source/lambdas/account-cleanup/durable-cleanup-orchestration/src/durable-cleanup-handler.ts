@@ -430,6 +430,7 @@ async function fetchValidatorExclusionConfig(env: {
   APP_CONFIG_APPLICATION_ID: string;
   APP_CONFIG_ENVIRONMENT_ID: string;
   APPCONFIG_VALIDATOR_EXCLUSION_CONFIG_PROFILE_ID: string;
+  ISB_NAMESPACE: string;
   USER_AGENT_EXTRA: string;
 }): Promise<ExclusionConfig> {
   const appConfigDataClient = IsbClients.appConfigData(env);
@@ -471,7 +472,9 @@ async function fetchValidatorExclusionConfig(env: {
   return {
     excludedArnPatterns: [
       ...new Set([
-        ...overlay.validation.excludedArnPatterns,
+        ...overlay.validation.excludedArnPatterns.map((pattern) =>
+          pattern.replaceAll("%NAMESPACE%", env.ISB_NAMESPACE),
+        ),
         ...parsed.validation.excludedArnPatterns,
       ]),
     ],

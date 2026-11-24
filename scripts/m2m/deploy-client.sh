@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
+# shellcheck source-path=SCRIPTDIR
 #
 # Deploy one M2M client stack from the IsbM2mClient template.
 #
@@ -259,7 +260,7 @@ AWS_BASE_ARGS=(--region "$REGION")
 # Resolve the template source: in-tree CDK synth or supplied --template.
 if [[ -z "$TEMPLATE" ]]; then
   log_info "Synthesizing CDK template (${SYNTH_STACK})..."
-  cd "$PROJECT_ROOT"
+  cd "$PROJECT_ROOT" || exit 1
   SYNTH_CMD=(npm run --workspace @amzn/innovation-sandbox-infrastructure cdk -- synth "$SYNTH_STACK" --context "stackPrefix=${STACK_PREFIX}")
   # Skip --quiet under --verbose so the user sees CDK output
   [[ "$VERBOSE" != "true" ]] && SYNTH_CMD+=(--quiet)

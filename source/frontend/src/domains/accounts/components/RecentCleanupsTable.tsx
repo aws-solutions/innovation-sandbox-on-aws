@@ -9,14 +9,11 @@ import {
   Table,
 } from "@cloudscape-design/components";
 
+import { TimePopover } from "@amzn/innovation-sandbox-frontend/components/TimePopover";
 import { getCleanupStatusConfig } from "@amzn/innovation-sandbox-frontend/domains/accounts/helpers";
 import { CleanupReportView } from "@amzn/innovation-sandbox-frontend/domains/accounts/types";
 
-import {
-  formatDuration,
-  formatReason,
-  renderTimePopover,
-} from "./cleanup-report-helpers";
+import { formatDuration, formatReason } from "./cleanup-report-helpers";
 
 interface RecentCleanupsTableProps {
   reports: CleanupReportView[];
@@ -38,6 +35,10 @@ const renderCleanupStatusCell = (report: CleanupReportView) => {
   const config = getCleanupStatusConfig(report.cleanupStatus);
   return <StatusIndicator type={config.type}>{config.label}</StatusIndicator>;
 };
+
+const renderStartedAtCell = (report: CleanupReportView) => (
+  <TimePopover time={report.startedAt} />
+);
 
 export const RecentCleanupsTable = ({
   reports,
@@ -81,8 +82,7 @@ export const RecentCleanupsTable = ({
         {
           id: "started",
           header: "Started",
-          cell: (report: CleanupReportView) =>
-            renderTimePopover(report.startedAt),
+          cell: renderStartedAtCell,
         },
         {
           id: "duration",

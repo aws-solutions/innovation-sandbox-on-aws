@@ -275,6 +275,72 @@ describe("ToggleField", () => {
     expect(screen.queryByText("Disabled")).not.toBeInTheDocument();
   });
 
+  test("maps a non-boolean form value with valueToChecked and checkedToValue", async () => {
+    const user = userEvent.setup();
+
+    type Capability = "ENABLED" | "DISABLED";
+    let latestValue: Capability | undefined;
+
+    function TestMappedValue({
+      defaultValue,
+    }: Readonly<{ defaultValue: Capability }>) {
+      const { control, watch } = useForm<{ capability: Capability }>({
+        defaultValues: { capability: defaultValue },
+      });
+      latestValue = watch("capability");
+      return (
+        <ToggleField
+          controllerProps={{ control, name: "capability" }}
+          formFieldProps={{ label: "Enable Feature" }}
+          stateLabel
+          valueToChecked={(value) => value === "ENABLED"}
+          checkedToValue={(checked) => (checked ? "ENABLED" : "DISABLED")}
+        />
+      );
+    }
+
+    renderWithQueryClient(<TestMappedValue defaultValue="DISABLED" />);
+
+    const toggle = screen.getByRole("checkbox");
+    expect(toggle).not.toBeChecked();
+    expect(screen.getByText("Disabled")).toBeInTheDocument();
+
+    await user.click(toggle);
+
+    await waitFor(() => {
+      expect(toggle).toBeChecked();
+      expect(latestValue).toBe("ENABLED");
+      expect(screen.getByText("Enabled")).toBeInTheDocument();
+    });
+
+    await user.click(toggle);
+
+    await waitFor(() => {
+      expect(toggle).not.toBeChecked();
+      expect(latestValue).toBe("DISABLED");
+    });
+  });
+
+  test("renders checked when valueToChecked maps the default value to true", () => {
+    function TestMappedDefault() {
+      const { control } = useForm<{ capability: "ENABLED" | "DISABLED" }>({
+        defaultValues: { capability: "ENABLED" },
+      });
+      return (
+        <ToggleField
+          controllerProps={{ control, name: "capability" }}
+          formFieldProps={{ label: "Enable Feature" }}
+          valueToChecked={(value) => value === "ENABLED"}
+          checkedToValue={(checked) => (checked ? "ENABLED" : "DISABLED")}
+        />
+      );
+    }
+
+    renderWithQueryClient(<TestMappedDefault />);
+
+    expect(screen.getByRole("checkbox")).toBeChecked();
+  });
+
   test("handles keyboard interaction", async () => {
     const user = userEvent.setup();
     renderWithQueryClient(<TestComponent defaultValue={false} />);
@@ -328,5 +394,41 @@ describe("ToggleField", () => {
     await waitFor(() => {
       expect(customOnChangeCalled).toBe(true);
     });
+  });
+
+  test("renders toggleSuffix beside the toggle without making it part of the toggle", async () => {
+    let suffixClicked = false;
+
+    function TestSuffix() {
+      const { control } = useForm<TestFormValues>({
+        defaultValues: { isEnabled: false },
+      });
+
+      return (
+        <ToggleField
+          controllerProps={{ control, name: "isEnabled" }}
+          formFieldProps={{ label: "Enable Feature" }}
+          toggleProps={{ children: "Toggle" }}
+          toggleSuffix={
+            <button
+              type="button"
+              onClick={() => {
+                suffixClicked = true;
+              }}
+            >
+              Details
+            </button>
+          }
+        />
+      );
+    }
+
+    const user = userEvent.setup();
+    renderWithQueryClient(<TestSuffix />);
+
+    await user.click(screen.getByRole("button", { name: "Details" }));
+
+    expect(suffixClicked).toBe(true);
+    expect(screen.getByRole("checkbox")).not.toBeChecked();
   });
 });

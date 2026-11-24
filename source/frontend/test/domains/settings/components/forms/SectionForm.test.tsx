@@ -12,15 +12,18 @@ import {
   showErrorToast,
   showSuccessToast,
 } from "@amzn/innovation-sandbox-frontend/components/Toast";
-import { SectionForm } from "@amzn/innovation-sandbox-frontend/domains/settings/components/forms/SectionForm";
+import type { ConfigurationSectionView } from "@amzn/innovation-sandbox-frontend/domains/settings/model";
 import { getConfig } from "@amzn/innovation-sandbox-frontend/helpers/config";
 import {
   configurationSectionConflictHandler,
   configurationSectionPutHandler,
   configurationSectionValidationHandler,
+  mockAdminConfig,
 } from "@amzn/innovation-sandbox-frontend/mocks/handlers/configurationHandlers";
 import { server } from "@amzn/innovation-sandbox-frontend/mocks/server";
 import { createQueryClientWrapper } from "@amzn/innovation-sandbox-frontend/setupTests";
+
+import { ConfigurationFormHarness } from "./ConfigurationFormHarness";
 
 const apiUrl = getConfig().ApiUrl;
 
@@ -65,18 +68,15 @@ vi.mock("@amzn/innovation-sandbox-frontend/helpers/CognitoAuthService", () => ({
 
 function renderShell() {
   return render(
-    <SectionForm
+    <ConfigurationFormHarness
       section="maintenance"
-      title="Maintenance Mode"
       data={{ enabled: false, lastSavedBy: "admin@example.com" }}
-      renderFields={() => (
+      renderFields={(readOnly) => (
         <ToggleField
+          toggleProps={{ readOnly }}
           controllerProps={{ name: "enabled" }}
           formFieldProps={{ label: "Maintenance mode" }}
         />
-      )}
-      renderReadOnly={(d) => (
-        <div>maintenance enabled: {String(d.enabled)}</div>
       )}
     />,
     { wrapper: createQueryClientWrapper() },
@@ -85,26 +85,23 @@ function renderShell() {
 
 // The notification section's `emailFrom` validates as a valid email OR an empty
 // string, giving a field that can be made invalid by typing a non-email — used
-// to exercise the Save-disabled-when-invalid behavior.
+// to exercise the Save-disabled-when-invalid behavior. The shared fixture
+// supplies a complete section; callers override only what a test needs.
 function renderNotificationShell(
-  data: {
-    emailFrom: string;
-    lastSavedBy: string | null;
-  } = { emailFrom: "", lastSavedBy: "admin@example.com" },
+  overrides: Partial<ConfigurationSectionView<"notification">> = {},
 ) {
+  const data = { ...mockAdminConfig.notification, ...overrides };
   return render(
-    <SectionForm
+    <ConfigurationFormHarness
       section="notification"
-      title="Notification"
       data={data}
-      renderFields={() => (
+      renderFields={(readOnly) => (
         <InputField
           controllerProps={{ name: "emailFrom" }}
           formFieldProps={{ label: "Email from address" }}
-          inputProps={{ placeholder: "Enter email" }}
+          inputProps={{ readOnly, placeholder: "Enter email" }}
         />
       )}
-      renderReadOnly={(d) => <div>email: {d.emailFrom}</div>}
     />,
     { wrapper: createQueryClientWrapper() },
   );
@@ -112,13 +109,20 @@ function renderNotificationShell(
 
 // Save is disabled on a pristine SAVED section (nothing to save), so tests that
 // exercise a save must first dirty the form — mirroring a real edit-then-save.
-// renderShell's SectionForm has no confirmBeforeSave, so toggling saves directly
-// (no confirmation modal).
+// Page-level sensitive confirmations are covered in AdminSettings.test.tsx.
 const dirtyMaintenanceToggle = async () => {
   await userEvent.click(screen.getByRole("checkbox"));
 };
 
-describe("SectionForm", () => {
+const waitForReloadReady = () =>
+  waitFor(() =>
+    expect(screen.getByRole("button", { name: /reload/i })).not.toHaveAttribute(
+      "aria-disabled",
+      "true",
+    ),
+  );
+
+describe("useConfigurationForm", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     getCurrentUser.mockResolvedValue(adminUser);
@@ -138,7 +142,7 @@ describe("SectionForm", () => {
       expect(showSuccessToast).toHaveBeenCalledWith("Settings saved."),
     );
     expect(
-      screen.queryByText(/modified by another administrator/i),
+      screen.queryByText(/Settings changed by another administrator/i),
     ).not.toBeInTheDocument();
     // After a successful save the form resets to pristine, so Save disables
     // again (nothing to save). With a disabledReason set, Cloudscape marks it
@@ -157,7 +161,7 @@ describe("SectionForm", () => {
     await userEvent.click(save);
 
     expect(
-      await screen.findByText(/modified by another administrator/i),
+      await screen.findByText(/Settings changed by another administrator/i),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /reload/i })).toBeInTheDocument();
     expect(showSuccessToast).not.toHaveBeenCalled();
@@ -189,7 +193,7 @@ describe("SectionForm", () => {
     );
     expect(showSuccessToast).not.toHaveBeenCalled();
     expect(
-      screen.queryByText(/modified by another administrator/i),
+      screen.queryByText(/Settings changed by another administrator/i),
     ).not.toBeInTheDocument();
   });
 
@@ -216,8 +220,24 @@ describe("SectionForm", () => {
     expect(showErrorToast).not.toHaveBeenCalled();
     // It is the validation path, not the 409 conflict path.
     expect(
-      screen.queryByText(/modified by another administrator/i),
+      screen.queryByText(/Settings changed by another administrator/i),
     ).not.toBeInTheDocument();
+  });
+
+  it("surfaces server validation errors for unknown fields instead of swallowing them", async () => {
+    server.use(
+      configurationSectionValidationHandler([
+        { field: "unknownSetting", message: "This setting cannot be saved." },
+      ]),
+    );
+    renderShell();
+    const save = await screen.findByRole("button", { name: /save/i });
+    await dirtyMaintenanceToggle();
+    await userEvent.click(save);
+    expect(
+      await screen.findByText("This setting cannot be saved."),
+    ).toBeInTheDocument();
+    expect(showSuccessToast).not.toHaveBeenCalled();
   });
 
   it("surfaces a 400 non-field error as a form-level alert", async () => {
@@ -319,9 +339,9 @@ describe("SectionForm", () => {
       await screen.findByText(/these settings are inconsistent/i),
     ).toBeInTheDocument();
 
-    // Next save succeeds; the stale form-level alert must clear. The form is
-    // still dirty (a 400 does not reset it), so Save remains enabled.
+    // Recovery on the server must allow retrying the same draft without edits.
     server.use(configurationSectionPutHandler());
+    expect(save).not.toHaveAttribute("aria-disabled", "true");
     await userEvent.click(save);
 
     await waitFor(() =>
@@ -352,17 +372,34 @@ describe("SectionForm", () => {
     expect(showSuccessToast).not.toHaveBeenCalled();
   });
 
-  it("renders read-only content for a Manager (no Save button)", async () => {
+  it("renders the same controls read-only for a Manager without a Save button", async () => {
     getCurrentUser.mockResolvedValue(managerUser);
 
     renderShell();
 
-    expect(
-      await screen.findByText(/maintenance enabled: false/i),
-    ).toBeInTheDocument();
+    const toggle = await screen.findByRole("checkbox");
+    expect(toggle).toHaveAttribute("aria-disabled", "true");
+    await userEvent.click(toggle);
+    expect(toggle).not.toBeChecked();
     expect(
       screen.queryByRole("button", { name: /save/i }),
     ).not.toBeInTheDocument();
+  });
+
+  it("does not submit a Manager's read-only form, including unpersisted defaults", async () => {
+    getCurrentUser.mockResolvedValue(managerUser);
+    const put = vi.fn(() => HttpResponse.json({ status: "success" }));
+    server.use(http.put(`${apiUrl}/configurations/:section`, put));
+    renderNotificationShell({ lastSavedBy: null });
+
+    const input = await screen.findByRole("textbox");
+    expect(input).toHaveAttribute("readonly");
+    await userEvent.type(input, "changed@example.com{Enter}");
+
+    expect(input).toHaveValue(mockAdminConfig.notification.emailFrom);
+    expect(put).not.toHaveBeenCalled();
+    expect(showSuccessToast).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
   it("submits the reloaded concurrency token, not the stale one, after a conflict", async () => {
@@ -371,9 +408,8 @@ describe("SectionForm", () => {
     server.use(configurationSectionConflictHandler());
 
     render(
-      <SectionForm
+      <ConfigurationFormHarness
         section="maintenance"
-        title="Maintenance Mode"
         data={{
           enabled: false,
           lastSavedBy: "admin@example.com",
@@ -382,14 +418,12 @@ describe("SectionForm", () => {
             lastEditTime: "T1-stale",
           },
         }}
-        renderFields={() => (
+        renderFields={(readOnly) => (
           <ToggleField
+            toggleProps={{ readOnly }}
             controllerProps={{ name: "enabled" }}
             formFieldProps={{ label: "Maintenance mode" }}
           />
-        )}
-        renderReadOnly={(d) => (
-          <div>maintenance enabled: {String(d.enabled)}</div>
         )}
       />,
       { wrapper: createQueryClientWrapper() },
@@ -401,9 +435,10 @@ describe("SectionForm", () => {
 
     // Conflict surfaces and success is not toasted.
     expect(
-      await screen.findByText(/modified by another administrator/i),
+      await screen.findByText(/Settings changed by another administrator/i),
     ).toBeInTheDocument();
     expect(showSuccessToast).not.toHaveBeenCalled();
+    await waitForReloadReady();
 
     // Register inline handlers AFTER the conflict handler so they win (later
     // `server.use` wins in MSW): a GET that returns a DIFFERENT, known
@@ -449,7 +484,7 @@ describe("SectionForm", () => {
     // Conflict alert clears after a successful reload.
     await waitFor(() =>
       expect(
-        screen.queryByText(/modified by another administrator/i),
+        screen.queryByText(/Settings changed by another administrator/i),
       ).not.toBeInTheDocument(),
     );
 
@@ -466,6 +501,112 @@ describe("SectionForm", () => {
       expect(showSuccessToast).toHaveBeenCalledWith("Settings saved."),
     );
   });
+
+  it.each(["during", "after"])(
+    "keeps reloaded values and their token when an older prop arrives %s reload",
+    async (arrival) => {
+      const initial: ConfigurationSectionView<"maintenance"> = {
+        enabled: false,
+        lastSavedBy: "admin@example.com",
+        meta: {
+          createdTime: "2026-01-01T00:00:00.000Z",
+          lastEditTime: "2026-01-01T00:00:01.000Z",
+        },
+      };
+      server.use(
+        configurationSectionConflictHandler(),
+        http.get(`${apiUrl}/configurations/maintenance`, () =>
+          HttpResponse.json({ status: "success", data: initial }),
+        ),
+      );
+      const renderFields = (readOnly: boolean) => (
+        <ToggleField
+          toggleProps={{ readOnly }}
+          controllerProps={{ name: "enabled" }}
+          formFieldProps={{ label: "Maintenance mode" }}
+        />
+      );
+      const props = {
+        section: "maintenance" as const,
+        renderFields,
+      };
+      const { rerender } = render(
+        <ConfigurationFormHarness {...props} data={initial} />,
+        {
+          wrapper: createQueryClientWrapper(),
+        },
+      );
+      await screen.findByRole("button", { name: "Save" });
+      await dirtyMaintenanceToggle();
+      await userEvent.click(screen.getByRole("button", { name: "Save" }));
+      await screen.findByText(/Settings changed by another administrator/i);
+      await waitForReloadReady();
+
+      let releaseReload!: () => void;
+      const pendingReload = new Promise<void>((resolve) => {
+        releaseReload = resolve;
+      });
+      let reloadStarted = false;
+      let submittedBody: Record<string, unknown> | undefined;
+      const reloaded = {
+        ...initial,
+        enabled: true,
+        meta: { ...initial.meta!, lastEditTime: "2026-01-01T00:00:03.000Z" },
+      };
+      const older = {
+        ...initial,
+        meta: { ...initial.meta!, lastEditTime: "2026-01-01T00:00:02.000Z" },
+      };
+      server.use(
+        http.get(`${apiUrl}/configurations/maintenance`, async () => {
+          reloadStarted = true;
+          await pendingReload;
+          return HttpResponse.json({ status: "success", data: reloaded });
+        }),
+        http.put(
+          `${apiUrl}/configurations/maintenance`,
+          async ({ request }) => {
+            submittedBody = (await request.json()) as Record<string, unknown>;
+            return HttpResponse.json({
+              status: "success",
+              data: {
+                ...reloaded,
+                enabled: false,
+                meta: {
+                  ...initial.meta!,
+                  lastEditTime: "2026-01-01T00:00:04.000Z",
+                },
+              },
+            });
+          },
+        ),
+      );
+      await userEvent.click(screen.getByRole("button", { name: "Reload" }));
+      try {
+        await waitFor(() => expect(reloadStarted).toBe(true));
+        if (arrival === "during")
+          rerender(<ConfigurationFormHarness {...props} data={older} />);
+      } finally {
+        releaseReload();
+      }
+      await waitFor(() =>
+        expect(
+          screen.queryByText(/Settings changed by another administrator/i),
+        ).not.toBeInTheDocument(),
+      );
+      if (arrival === "after")
+        rerender(<ConfigurationFormHarness {...props} data={older} />);
+      expect(screen.getByRole("checkbox")).toBeChecked();
+      await dirtyMaintenanceToggle();
+      await userEvent.click(screen.getByRole("button", { name: "Save" }));
+      await waitFor(() =>
+        expect(submittedBody).toMatchObject({
+          enabled: false,
+          meta: { lastEditTime: reloaded.meta.lastEditTime },
+        }),
+      );
+    },
+  );
 
   it("keeps the mount-time concurrency token on a DIRTY form when the parent passes fresh data, so a stale save conflicts instead of overwriting", async () => {
     getCurrentUser.mockResolvedValue(adminUser);
@@ -491,20 +632,17 @@ describe("SectionForm", () => {
       }),
     );
 
-    const fields = () => (
+    const fields = (readOnly: boolean) => (
       <ToggleField
+        toggleProps={{ readOnly }}
         controllerProps={{ name: "enabled" }}
         formFieldProps={{ label: "Maintenance mode" }}
       />
     );
-    const readOnly = (d: { enabled: boolean }) => (
-      <div>maintenance enabled: {String(d.enabled)}</div>
-    );
 
     const { rerender } = render(
-      <SectionForm
+      <ConfigurationFormHarness
         section="maintenance"
-        title="Maintenance Mode"
         data={{
           enabled: false,
           lastSavedBy: "admin@example.com",
@@ -514,7 +652,6 @@ describe("SectionForm", () => {
           },
         }}
         renderFields={fields}
-        renderReadOnly={readOnly}
       />,
       { wrapper: createQueryClientWrapper() },
     );
@@ -528,9 +665,8 @@ describe("SectionForm", () => {
     // values are still on screen. A DIRTY section must NOT re-seed from it — the
     // user's edits and the mount-time token are both preserved.
     rerender(
-      <SectionForm
+      <ConfigurationFormHarness
         section="maintenance"
-        title="Maintenance Mode"
         data={{
           enabled: false,
           lastSavedBy: "admin@example.com",
@@ -540,7 +676,6 @@ describe("SectionForm", () => {
           },
         }}
         renderFields={fields}
-        renderReadOnly={readOnly}
       />,
     );
 
@@ -557,20 +692,17 @@ describe("SectionForm", () => {
   it("re-seeds a PRISTINE form when the parent passes fresh data (page refresh)", async () => {
     getCurrentUser.mockResolvedValue(adminUser);
 
-    const fields = () => (
+    const fields = (readOnly: boolean) => (
       <ToggleField
+        toggleProps={{ readOnly }}
         controllerProps={{ name: "enabled" }}
         formFieldProps={{ label: "Maintenance mode" }}
       />
     );
-    const readOnly = (d: { enabled: boolean }) => (
-      <div>maintenance enabled: {String(d.enabled)}</div>
-    );
 
     const { rerender } = render(
-      <SectionForm
+      <ConfigurationFormHarness
         section="maintenance"
-        title="Maintenance Mode"
         data={{
           enabled: false,
           lastSavedBy: "admin@example.com",
@@ -580,7 +712,6 @@ describe("SectionForm", () => {
           },
         }}
         renderFields={fields}
-        renderReadOnly={readOnly}
       />,
       { wrapper: createQueryClientWrapper() },
     );
@@ -591,9 +722,8 @@ describe("SectionForm", () => {
     // A refresh delivers fresh server data (enabled flipped to true) via a new
     // `data` prop. The form is pristine, so it re-seeds to the new value.
     rerender(
-      <SectionForm
+      <ConfigurationFormHarness
         section="maintenance"
-        title="Maintenance Mode"
         data={{
           enabled: true,
           lastSavedBy: "admin@example.com",
@@ -603,7 +733,6 @@ describe("SectionForm", () => {
           },
         }}
         renderFields={fields}
-        renderReadOnly={readOnly}
       />,
     );
 
@@ -613,20 +742,17 @@ describe("SectionForm", () => {
   it("re-seeds deferred fresh data once a dirty form is reverted to pristine", async () => {
     getCurrentUser.mockResolvedValue(adminUser);
 
-    const fields = () => (
+    const fields = (readOnly: boolean) => (
       <ToggleField
+        toggleProps={{ readOnly }}
         controllerProps={{ name: "enabled" }}
         formFieldProps={{ label: "Maintenance mode" }}
       />
     );
-    const readOnly = (d: { enabled: boolean }) => (
-      <div>maintenance enabled: {String(d.enabled)}</div>
-    );
 
     const { rerender } = render(
-      <SectionForm
+      <ConfigurationFormHarness
         section="maintenance"
-        title="Maintenance Mode"
         data={{
           enabled: false,
           lastSavedBy: "admin@example.com",
@@ -636,7 +762,6 @@ describe("SectionForm", () => {
           },
         }}
         renderFields={fields}
-        renderReadOnly={readOnly}
       />,
       { wrapper: createQueryClientWrapper() },
     );
@@ -649,9 +774,8 @@ describe("SectionForm", () => {
     // Fresh server data (enabled=true) arrives while dirty — must NOT clobber
     // the edit, and must NOT be forgotten.
     rerender(
-      <SectionForm
+      <ConfigurationFormHarness
         section="maintenance"
-        title="Maintenance Mode"
         data={{
           enabled: true,
           lastSavedBy: "admin@example.com",
@@ -661,7 +785,6 @@ describe("SectionForm", () => {
           },
         }}
         renderFields={fields}
-        renderReadOnly={readOnly}
       />,
     );
 
@@ -726,12 +849,8 @@ describe("SectionForm", () => {
     expect(save).not.toHaveAttribute("aria-disabled", "true");
   });
 
-  it("keeps Save enabled after a server 400 so the user can retry", async () => {
+  it("allows retrying a server field error but still blocks invalid input", async () => {
     getCurrentUser.mockResolvedValue(adminUser);
-    // A server-side validation error maps onto the form (field error with
-    // type "server"). It must NOT disable Save, or the user could never resubmit
-    // after a server rejection. Gating on client (resolver) errors only avoids
-    // this deadlock.
     server.use(
       configurationSectionValidationHandler([
         { field: "emailFrom", message: "Email rejected by the server." },
@@ -752,10 +871,21 @@ describe("SectionForm", () => {
     expect(
       await screen.findByText(/email rejected by the server/i),
     ).toBeInTheDocument();
-    // Save stays enabled despite the server-injected field error (the form is
-    // still dirty and the server error carries type "server", which does not
-    // gate Save).
     expect(save).not.toHaveAttribute("aria-disabled", "true");
+    await userEvent.clear(screen.getByPlaceholderText("Enter email"));
+    await userEvent.type(
+      screen.getByPlaceholderText("Enter email"),
+      "not-an-email",
+    );
+    await waitFor(() => expect(save).toHaveAttribute("aria-disabled", "true"));
+    await userEvent.clear(screen.getByPlaceholderText("Enter email"));
+    await userEvent.type(
+      screen.getByPlaceholderText("Enter email"),
+      "fixed@example.com",
+    );
+    await waitFor(() =>
+      expect(save).not.toHaveAttribute("aria-disabled", "true"),
+    );
   });
 
   it("shows a loader until the user role resolves, not the read-only view", async () => {
@@ -772,10 +902,9 @@ describe("SectionForm", () => {
 
     renderShell();
 
-    // While the role is pending: a loader, NOT the read-only summary or the
-    // editable Save button.
+    // Wait for the role before rendering controls or save actions.
     expect(await screen.findByText(/loading/i)).toBeInTheDocument();
-    expect(screen.queryByText(/maintenance enabled:/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /save/i }),
     ).not.toBeInTheDocument();
@@ -795,9 +924,8 @@ describe("SectionForm", () => {
     server.use(configurationSectionConflictHandler());
 
     render(
-      <SectionForm
+      <ConfigurationFormHarness
         section="maintenance"
-        title="Maintenance Mode"
         data={{
           enabled: false,
           lastSavedBy: "admin@example.com",
@@ -806,14 +934,12 @@ describe("SectionForm", () => {
             lastEditTime: "T1-stale",
           },
         }}
-        renderFields={() => (
+        renderFields={(readOnly) => (
           <ToggleField
+            toggleProps={{ readOnly }}
             controllerProps={{ name: "enabled" }}
             formFieldProps={{ label: "Maintenance mode" }}
           />
-        )}
-        renderReadOnly={(d) => (
-          <div>maintenance enabled: {String(d.enabled)}</div>
         )}
       />,
       { wrapper: createQueryClientWrapper() },
@@ -824,8 +950,11 @@ describe("SectionForm", () => {
     await userEvent.click(screen.getByRole("checkbox"));
     await userEvent.click(screen.getByRole("button", { name: /save/i }));
     expect(
-      await screen.findByText(/modified by another administrator/i),
+      await screen.findByText(/Settings changed by another administrator/i),
     ).toBeInTheDocument();
+    // The alert renders before the automatic lastSavedBy lookup settles; a
+    // click on the still-loading Reload button would be ignored.
+    await waitForReloadReady();
 
     // Reload #1 SUCCEEDS — this populates the per-section reload query's cache,
     // which is what makes the later failure return stale-but-present `data`.
@@ -847,7 +976,7 @@ describe("SectionForm", () => {
     await userEvent.click(screen.getByRole("button", { name: /reload/i }));
     await waitFor(() =>
       expect(
-        screen.queryByText(/modified by another administrator/i),
+        screen.queryByText(/Settings changed by another administrator/i),
       ).not.toBeInTheDocument(),
     );
 
@@ -856,8 +985,9 @@ describe("SectionForm", () => {
     await userEvent.click(screen.getByRole("checkbox"));
     await userEvent.click(screen.getByRole("button", { name: /save/i }));
     expect(
-      await screen.findByText(/modified by another administrator/i),
+      await screen.findByText(/Settings changed by another administrator/i),
     ).toBeInTheDocument();
+    await waitForReloadReady();
 
     // Reload #2 FAILS. refetch() resolves with `data` still set to the cached
     // T2-fresh value plus an `error`; branching on `data` alone (the bug) would
@@ -874,12 +1004,12 @@ describe("SectionForm", () => {
     await waitFor(() =>
       expect(showErrorToast).toHaveBeenCalledWith(
         "Failed to reload the latest settings.",
-        "Reload Failed",
+        "Reload failed",
       ),
     );
     // The conflict must NOT be cleared by a failed reload.
     expect(
-      screen.getByText(/modified by another administrator/i),
+      screen.getByText(/Settings changed by another administrator/i),
     ).toBeInTheDocument();
   });
 });

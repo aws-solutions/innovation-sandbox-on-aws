@@ -6,6 +6,7 @@ export const EventDetailTypes = {
   LeaseApproved: "LeaseApproved",
   LeaseDenied: "LeaseDenied",
   LeaseBudgetThresholdBreachedAlert: "LeaseBudgetThresholdAlert",
+  LeaseSpendRateThresholdBreachedAlert: "LeaseSpendRateThresholdAlert",
   LeaseDurationThresholdBreachedAlert: "LeaseDurationThresholdAlert",
   LeaseFreezingThresholdBreachedAlert: "LeaseFreezingThresholdAlert",
   LeaseBudgetExceededAlert: "LeaseBudgetExceeded",

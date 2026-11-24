@@ -115,7 +115,7 @@ export const RegionListBuilder = ({
             return {
               value: region,
               label: displayName,
-              description: displayName !== region ? region : undefined,
+              description: displayName === region ? undefined : region,
             };
           })}
           placeholder={getPlaceholderText()}

@@ -1,6 +1,7 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+import { GroupCostReportGeneratedFailureEvent } from "@amzn/innovation-sandbox-commons/events/group-cost-report-generated-failure-event.js";
 import { GroupCostReportingLambdaEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/group-cost-reporting-lambda-environment.js";
 import { generateSchemaData } from "@amzn/innovation-sandbox-commons/test/generate-schema-data.js";
 import {
@@ -258,8 +259,11 @@ describe("group-cost-reporting-handler", () => {
         generateReport(scheduleEvent, mockedContext),
       ).rejects.toThrow(error);
 
-      // Verify failure event was sent
-      expect(mockEventBridgeClient.sendIsbEvent).toHaveBeenCalled();
+      expect(mockEventBridgeClient.sendIsbEvent).toHaveBeenCalledTimes(1);
+      expect(
+        mockEventBridgeClient.sendIsbEvent.mock.calls[0]![1],
+      ).toBeInstanceOf(GroupCostReportGeneratedFailureEvent);
+      expect(mockS3Send).not.toHaveBeenCalled();
     });
 
     it("should send failure event when S3 upload fails", async () => {

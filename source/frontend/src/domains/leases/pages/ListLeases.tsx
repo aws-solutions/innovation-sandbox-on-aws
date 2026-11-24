@@ -38,6 +38,11 @@ import {
   LeaseView,
   SharedLeaseAccessType,
 } from "@amzn/innovation-sandbox-frontend/domains/leases/model";
+import {
+  isSandboxSpacesGloballyUsable,
+  sandboxSpacePath,
+} from "@amzn/innovation-sandbox-frontend/domains/sandbox-agent/helpers";
+import { useGetConfigurations } from "@amzn/innovation-sandbox-frontend/domains/settings/hooks";
 import { useBreadcrumb } from "@amzn/innovation-sandbox-frontend/hooks/useBreadcrumb";
 import { useUser } from "@amzn/innovation-sandbox-frontend/hooks/useUser";
 
@@ -199,6 +204,8 @@ const LeaseTabContent = ({
   isManager,
 }: LeaseTabContentProps) => {
   const { user } = useUser();
+  const navigate = useNavigate();
+  const { data: config } = useGetConfigurations();
   const { selectionType, selectedItems, onSelectionChange, headerActions } =
     useBulkLeaseActions();
 
@@ -331,7 +338,15 @@ const LeaseTabContent = ({
       title={title}
       description={description}
       items={enrichedItems}
-      columnDefinitions={getLeaseColumnDefinitions({ isAdmin, isManager })}
+      columnDefinitions={getLeaseColumnDefinitions(
+        { isAdmin, isManager },
+        isSandboxSpacesGloballyUsable(config?.agent.sandboxSpacesEnabled)
+          ? {
+              user,
+              onOpenSpace: (lease) => navigate(sandboxSpacePath(lease.leaseId)),
+            }
+          : undefined,
+      )}
       filteringProperties={getLeaseFilteringProperties()}
       loading={isFetching}
       loadingText={`Loading ${title.toLowerCase()}...`}

@@ -66,6 +66,10 @@ const EjectConfirmation = ({
         account pool. The account will no longer be managed by this solution.
         <br />
         <br />
+        Ejecting the account does not run account cleanup. Any resources that
+        remain in the account can continue to incur charges.
+        <br />
+        <br />
         This action cannot be reversed. To re-add the account, you will need to
         onboard it again.
       </Alert>

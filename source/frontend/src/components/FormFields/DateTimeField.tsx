@@ -14,8 +14,8 @@ import { useEffect, useState } from "react";
 import {
   FieldPath,
   FieldValues,
-  UseControllerProps,
   useController,
+  UseControllerProps,
 } from "react-hook-form";
 
 export interface DateTimeFieldProps<
@@ -38,7 +38,7 @@ export default function DateTimeField<
 >({
   controllerProps,
   formFieldProps,
-}: DateTimeFieldProps<TFieldValues, TName>) {
+}: Readonly<DateTimeFieldProps<TFieldValues, TName>>) {
   const {
     field: { onBlur: onFieldBlur, onChange: onFieldChange, value: fieldValue },
     fieldState: { error, invalid },

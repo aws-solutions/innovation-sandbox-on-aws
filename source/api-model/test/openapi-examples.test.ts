@@ -17,8 +17,9 @@
  * check is intentionally omitted — that is Smithy's own `@examples` validation.
  * The description-jargon policy check lives in `openapi-documentation.test.ts`.)
  */
-import Ajv from "ajv";
-import addFormats from "ajv-formats";
+import { Ajv } from "ajv";
+import type { FormatsPlugin } from "ajv-formats";
+import * as addFormatsModule from "ajv-formats";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
@@ -27,6 +28,7 @@ import { modelJson, openapiJson } from "../scripts/lib/paths.mjs";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const oa: any = JSON.parse(readFileSync(openapiJson, "utf8"));
 const model: any = JSON.parse(readFileSync(modelJson, "utf8"));
+const addFormats = addFormatsModule.default as unknown as FormatsPlugin;
 
 // OpenAPI 3.0 schema objects use keywords JSON Schema draft-07 doesn't (`nullable`,
 // `example`, `discriminator`, `x-*`); `strict: false` ignores them. Register the
@@ -105,5 +107,25 @@ describe("@examples entries are complete", () => {
       bad,
       `input-only @examples (would emit an invalid {} response): ${bad.join(", ")}`,
     ).toHaveLength(0);
+  });
+});
+
+describe("Permission Sets OpenAPI contract", () => {
+  it("publishes the permissionSets tag and paginated list operation", () => {
+    expect(oa.tags).toContainEqual({
+      name: "permissionSets",
+      description:
+        "IAM Identity Center permission sets available for sandbox lease permission profiles",
+    });
+
+    const operation = oa.paths["/permissionSets"]?.get;
+    expect(operation?.operationId).toBe("ListPermissionSets");
+    expect(operation?.tags).toEqual(["permissionSets"]);
+    expect(operation?.description).toContain(
+      "Accessible only to Admin and Manager roles.",
+    );
+    expect(
+      operation?.parameters.map((parameter: any) => parameter.name).sort(),
+    ).toEqual(["maxResults", "pageIdentifier", "q"]);
   });
 });

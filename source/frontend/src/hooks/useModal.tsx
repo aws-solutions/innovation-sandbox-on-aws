@@ -1,6 +1,7 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+import { Modal } from "@cloudscape-design/components";
 import {
   createContext,
   ReactNode,
@@ -9,8 +10,6 @@ import {
   useMemo,
   useState,
 } from "react";
-
-import { Modal } from "@cloudscape-design/components";
 
 export type ModalProps = {
   header?: ReactNode;

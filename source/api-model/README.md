@@ -45,6 +45,23 @@ and fails with an actionable error on drift.
 The shared response/validation glue in `common/lambda/smithy/` and the aggregate
 client are reused unchanged.
 
+## HTTP path naming
+
+Public HTTP path segments use lower camel case when they contain multiple words,
+including top-level domains (`/leaseTemplates`, `/permissionSets`,
+`/sandboxAgent`) and new subresources or actions. Smithy projection names,
+package subpaths, and source directories may remain kebab-case because they are
+build-time identifiers rather than public HTTP paths.
+
+`/accounts/{awsAccountId}/cleanup-reports` predates this convention and remains
+unchanged for backward compatibility. It is the only grandfathered kebab-case
+public path segment and must not be used as a precedent for new routes.
+
+The generated Smithy server router handles path labels independently of segment
+casing. `/leaseTemplates/{leaseTemplateId}` provides the regression coverage for
+path-parameter routing under a multi-word domain. Because `/leaseTemplates`
+remains the canonical path, existing consumers require no alias or migration.
+
 ## Generate the bindings
 
 From the repository root, use the supported generation command:

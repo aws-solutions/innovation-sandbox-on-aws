@@ -5,10 +5,10 @@ import { FormField, Slider } from "@cloudscape-design/components";
 import type { FormFieldProps } from "@cloudscape-design/components/form-field";
 import type { SliderProps } from "@cloudscape-design/components/slider";
 import {
-  useController,
-  UseControllerProps,
   type FieldPath,
   type FieldValues,
+  useController,
+  UseControllerProps,
 } from "react-hook-form";
 
 export interface SliderFieldProps<
@@ -30,7 +30,7 @@ export default function SliderField<
   controllerProps,
   formFieldProps,
   sliderProps,
-}: SliderFieldProps<TFieldValues, TName>) {
+}: Readonly<SliderFieldProps<TFieldValues, TName>>) {
   const {
     field: { onChange: onFieldChange, value: fieldValue },
     fieldState: { error: fieldError },

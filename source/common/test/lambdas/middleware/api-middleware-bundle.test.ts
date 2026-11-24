@@ -48,8 +48,11 @@ import { Logger } from "@aws-lambda-powertools/logger";
 import { Tracer } from "@aws-lambda-powertools/tracer";
 
 const NAMESPACE = "isb";
+const HUB_ACCOUNT_ID = "123456789012";
 const testEnv = generateSchemaData(ConfigurationLambdaEnvironmentSchema, {
+  HUB_ACCOUNT_ID,
   ISB_NAMESPACE: NAMESPACE,
+  SES_IDENTITY_ARN: "",
 });
 
 let mockedGlobalConfig: GlobalConfig;
@@ -67,7 +70,7 @@ const m2mAdminArn = (clientName: string) =>
     namespace: NAMESPACE,
     roleTier: "Admin",
     clientName,
-    accountId: "123456789012",
+    accountId: HUB_ACCOUNT_ID,
   });
 
 describe("apiMiddlewareBundle", () => {
@@ -289,6 +292,30 @@ describe("apiMiddlewareBundle", () => {
 
       const response = await handler(event, {} as any);
       expect(response.statusCode).toBe(401);
+    });
+
+    it("rejects a matching M2M role ARN from a different AWS account", async () => {
+      const event = createAPIGatewayProxyEvent({
+        httpMethod: "GET",
+        path: "/accounts",
+        identity: {
+          userArn: buildM2mAssumedRoleArn({
+            namespace: NAMESPACE,
+            roleTier: "Admin",
+            clientName: "foreign-client",
+            accountId: "210987654321",
+          }),
+        },
+      });
+      const handlerFn = vi.fn(async () => ({
+        statusCode: 200,
+        body: "{}",
+      }));
+
+      const response = await createHandler(handlerFn)(event, {} as any);
+
+      expect(response.statusCode).toBe(401);
+      expect(handlerFn).not.toHaveBeenCalled();
     });
 
     it("returns 400 when an M2M IAM principal also sends x-isb-identity (hybrid request)", async () => {

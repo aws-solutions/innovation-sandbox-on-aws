@@ -29,6 +29,9 @@ const template: LeaseTemplateView = {
   createdBy: "owner@example.com",
   visibility: "PRIVATE",
   allowOwnerToShareLease: false,
+  predictiveBudgetEnabled: false,
+  bedrockTokenMonitoringEnabled: false,
+  sandboxSpacesEnabled: true,
   meta: {
     createdTime: "2026-08-01T12:00:00.000Z",
     lastEditTime: "2026-08-02T13:30:00.000Z",
@@ -41,6 +44,14 @@ const newTemplate: CreateLeaseTemplateRequest = {
   requiresApproval: true,
   visibility: "PRIVATE",
   allowOwnerToShareLease: false,
+  predictiveBudgetEnabled: false,
+  bedrockTokenMonitoringEnabled: false,
+  sandboxSpacesEnabled: true,
+  defaultPermissionSetArn:
+    "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-0123456789abcdef",
+  allowedPermissionSetArns: [
+    "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-0123456789abcdef",
+  ],
 };
 
 describe("LeaseTemplateService smithy-client operations", () => {

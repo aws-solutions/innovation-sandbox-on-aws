@@ -106,9 +106,8 @@ async function archiveLogGroup(props: {
     lastExportedTS,
     periodInDays,
   );
-  const fromTime = parsedLastExportTS
-    ? parsedLastExportTS
-    : toTime.minus({ days: periodInDays + 1 });
+  const fromTime =
+    parsedLastExportTS ?? toTime.minus({ days: periodInDays + 1 });
   logger.info({
     message: "Log export period",
     logGroupName,

@@ -2,57 +2,29 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { SpaceBetween } from "@cloudscape-design/components";
-import type { SelectProps } from "@cloudscape-design/components/select";
 import { useFormContext, useWatch } from "react-hook-form";
 
 import InputField from "@amzn/innovation-sandbox-frontend/components/FormFields/InputField";
-import SelectField from "@amzn/innovation-sandbox-frontend/components/FormFields/SelectField";
 import TextareaField from "@amzn/innovation-sandbox-frontend/components/FormFields/TextareaField";
 import ToggleField from "@amzn/innovation-sandbox-frontend/components/FormFields/ToggleField";
-import { SharingSettingsForm } from "@amzn/innovation-sandbox-frontend/components/Forms/SharingSettingsForm";
 import type { Visibility } from "@amzn/innovation-sandbox-shared/types/lease-template.js";
-
-export interface VisibilityOption {
-  label: string;
-  value: Visibility;
-}
-
-const VISIBILITY_OPTIONS: readonly VisibilityOption[] = [
-  { label: "Private", value: "PRIVATE" },
-  { label: "Public", value: "PUBLIC" },
-];
-
-function getVisibilityOption(
-  visibility: Visibility,
-): SelectProps.Option | null {
-  return VISIBILITY_OPTIONS.find((opt) => opt.value === visibility) || null;
-}
-
-function getVisibilityValue(option: SelectProps.Option | null): Visibility {
-  return (option?.value as Visibility) || "PRIVATE";
-}
 
 export interface BasicDetailsFormValues {
   name: string;
   description?: string;
   requiresApproval: boolean;
   visibility: Visibility;
-  allowOwnerToShareLease: boolean;
 }
 
 /**
  * Form component for lease template basic details.
  * Uses FormContext from parent - no internal state management.
  */
-export function BasicDetailsForm({
-  leaseSharingEnabled = false,
-}: {
-  leaseSharingEnabled?: boolean;
-}) {
+export function BasicDetailsForm() {
   // Get control from form context
   const { control } = useFormContext<BasicDetailsFormValues>();
 
-  // Watch requiresApproval for dynamic toggle label
+  const visibility = useWatch({ control, name: "visibility" });
   const requiresApproval = useWatch({ control, name: "requiresApproval" });
 
   return (
@@ -85,19 +57,19 @@ export function BasicDetailsForm({
         }}
       />
 
-      <SelectField
+      <ToggleField
         controllerProps={{ control, name: "visibility" }}
         formFieldProps={{
-          label: "Visibility",
+          label: "Allow user requests",
           description:
-            "Controls if users can view and request leases using this template",
+            "When enabled, users can see this template and request leases from it. When disabled, only managers and administrators can assign or request leases from it.",
         }}
-        selectProps={{
-          options: VISIBILITY_OPTIONS,
-          placeholder: "Select visibility",
-          valueToOption: getVisibilityOption,
-          optionToValue: getVisibilityValue,
+        toggleProps={{
+          children:
+            visibility === "PUBLIC" ? "Requests allowed" : "Assignment only",
         }}
+        valueToChecked={(value) => value === "PUBLIC"}
+        checkedToValue={(checked) => (checked ? "PUBLIC" : "PRIVATE")}
       />
 
       <ToggleField
@@ -111,8 +83,6 @@ export function BasicDetailsForm({
           children: requiresApproval ? "Approval required" : "Auto-approved",
         }}
       />
-
-      <SharingSettingsForm leaseSharingEnabled={leaseSharingEnabled} />
     </SpaceBetween>
   );
 }

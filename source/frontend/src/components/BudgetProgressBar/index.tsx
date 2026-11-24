@@ -1,28 +1,43 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { ProgressBar, StatusIndicator } from "@cloudscape-design/components";
+import {
+  Box,
+  ProgressBar,
+  type ProgressBarProps,
+  StatusIndicator,
+} from "@cloudscape-design/components";
 
 import { formatCurrency } from "@amzn/innovation-sandbox-frontend/helpers/util";
 
 interface BudgetProgressBarProps {
   currentValue: number;
   maxValue?: number;
+  formatValue?: (value: number) => string;
+  variant?: ProgressBarProps.Variant;
+  ariaLabel?: string;
 }
 
 export const BudgetProgressBar = ({
   currentValue,
   maxValue,
+  formatValue = formatCurrency,
+  variant = "key-value",
+  ariaLabel = "Budget used",
 }: BudgetProgressBarProps) => {
-  if (maxValue) {
+  const hasBudget = maxValue !== undefined && maxValue > 0;
+  if (hasBudget) {
     const isOverrun = currentValue > maxValue;
-    const percentage = Math.min(100, (currentValue / maxValue) * 100);
+    const percentage = Math.min(
+      100,
+      Math.max(0, (currentValue / maxValue) * 100),
+    );
     return (
       <ProgressBar
         value={percentage}
-        variant="key-value"
-        additionalInfo={`${formatCurrency(currentValue)} of ${formatCurrency(maxValue)}`}
-        ariaLabel="Budget used"
+        variant={variant}
+        additionalInfo={`${formatValue(currentValue)} of ${formatValue(maxValue)}`}
+        ariaLabel={ariaLabel}
         style={{
           progressBar: {
             backgroundColor: "light-dark(#faf5ff, #2d1b69)",
@@ -41,7 +56,7 @@ export const BudgetProgressBar = ({
       <StatusIndicator data-small type="warning">
         No max budget
       </StatusIndicator>
-      <div>{formatCurrency(currentValue)}</div>
+      <Box>{formatValue(currentValue)}</Box>
     </>
   );
 };

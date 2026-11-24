@@ -22,6 +22,8 @@ Usage:
 Options:
   --skip-confirmation    Skip the interactive confirmation prompt
   --skip-build           Skip the TypeScript build before synthesis
+  --skip-image-build     Fail instead of building and pushing the agent runtime
+                         image when none was pushed for the current source
   --help, -h             Show this help message
 EOF
   exit 0
@@ -93,7 +95,8 @@ build_common_args() {
   # Build-time context (affects synthesized templates)
   [ -n "$NUKE_CONFIG_FILE_PATH" ] && CDK_CONTEXT_ARGS+=(--context "nukeConfigFilePath=$NUKE_CONFIG_FILE_PATH")
   [ -n "$SCP_DIRECTORY_PATH" ] && CDK_CONTEXT_ARGS+=(--context "scpDirectoryPath=$SCP_DIRECTORY_PATH")
-  [ -n "$PRIVATE_ECR_REPO" ] && CDK_CONTEXT_ARGS+=(--context "privateEcrRepo=$PRIVATE_ECR_REPO")
+  [ -n "$PRIVATE_ACCOUNT_CLEANER_ECR_REPO" ] && CDK_CONTEXT_ARGS+=(--context "privateAccountCleanerEcrRepo=$PRIVATE_ACCOUNT_CLEANER_ECR_REPO")
+  [ -n "$PRIVATE_SANDBOX_AGENT_RUNTIME_ECR_REPO" ] && CDK_CONTEXT_ARGS+=(--context "privateSandboxAgentRuntimeEcrRepo=$PRIVATE_SANDBOX_AGENT_RUNTIME_ECR_REPO")
 
   # Tags (deploy-time only)
   if [ -n "$STACK_TAGS" ]; then
@@ -120,9 +123,13 @@ deploy_stack() {
       args+=(--parameters "ParentOuId=$PARENT_OU_ID")
       args+=(--parameters "HubAccountId=$HUB_ACCOUNT_ID")
       args+=(--parameters "IsbManagedRegions=$AWS_REGIONS")
+      [ -n "$ACCOUNT_POOL_OU_NAME" ] && args+=(--parameters "AccountPoolOuName=$ACCOUNT_POOL_OU_NAME")
       [ -n "$ADDITIONAL_ALLOWED_SERVICES" ] && args+=(--parameters "AdditionalAllowedServices=$ADDITIONAL_ALLOWED_SERVICES")
       [ -n "$ADDITIONAL_PRINCIPAL_EXCEPTIONS" ] && args+=(--parameters "AdditionalPrincipalExceptions=$ADDITIONAL_PRINCIPAL_EXCEPTIONS")
-      [ -n "$BEDROCK_INFERENCE_PROFILE_PATTERNS" ] && args+=(--parameters "BedrockInferenceProfilePatterns=$BEDROCK_INFERENCE_PROFILE_PATTERNS")
+      # An explicitly empty value removes all Bedrock inference profile exemptions.
+      if [ -n "${BEDROCK_INFERENCE_PROFILE_PATTERNS+x}" ]; then
+        args+=(--parameters "BedrockInferenceProfilePatterns=$BEDROCK_INFERENCE_PROFILE_PATTERNS")
+      fi
       ;;
     idc)
       args+=(--parameters "IdentityStoreId=$IDENTITY_STORE_ID")
@@ -145,14 +152,112 @@ deploy_stack() {
       [ -n "$CUSTOM_DOMAIN_CERTIFICATE_ARN" ] && args+=(--parameters "CustomDomainCertificateArn=$CUSTOM_DOMAIN_CERTIFICATE_ARN")
       [ -n "$ALLOW_LISTED_IP_RANGES" ] && args+=(--parameters "AllowListedIPRanges=$ALLOW_LISTED_IP_RANGES")
       [ -n "$USE_STABLE_TAGGING" ] && args+=(--parameters "UseStableTagging=$USE_STABLE_TAGGING")
+      [ -n "$SES_IDENTITY_ARN" ] && args+=(--parameters "SesIdentityArn=$SES_IDENTITY_ARN")
       ;;
   esac
 
   [ -n "$profile" ] && args+=(--profile "$profile")
   args+=("${CDK_DEPLOY_ARGS[@]}")
   args+=(--require-approval=never)
+  # Treat .env as the single source of truth for stack parameters. Without this,
+  # CDK reuses previously deployed parameter values for any parameter not passed
+  # explicitly, so clearing a value in .env would not reset it. Disabling previous
+  # parameters makes omitted optional parameters fall back to their template default.
+  args+=(--previous-parameters=false)
 
   run_cdk deploy "${args[@]}"
+}
+
+agent_runtime_image_in_scope() {
+  [ -n "$PRIVATE_SANDBOX_AGENT_RUNTIME_ECR_REPO" ] &&
+    [[ " ${STACKS_TO_DEPLOY[*]} " == *" compute "* ]]
+}
+
+# Looks up the image pushed for the current source. Sets AGENT_RUNTIME_IMAGE_TAG
+# and AGENT_RUNTIME_IMAGE_DIGEST (empty when no image was pushed for this
+# source, or the repository does not exist yet). Exits on any other error.
+lookup_agent_runtime_image() {
+  local profile digest exit_code err_file err
+  if ! AGENT_RUNTIME_IMAGE_TAG=$(npm run --silent agent-runtime:source-tag); then
+    log_err "Could not compute the agent runtime source tag. Run 'npm install' first."
+    exit 1
+  fi
+
+  profile=$(get_stack_profile compute)
+  # stderr is kept apart so a warning on a successful call cannot corrupt the digest.
+  err_file=$(mktemp)
+  set +e
+  digest=$(aws ecr describe-images \
+    --repository-name "$PRIVATE_SANDBOX_AGENT_RUNTIME_ECR_REPO" \
+    --image-ids "imageTag=$AGENT_RUNTIME_IMAGE_TAG" \
+    --region "$DEPLOY_REGION" \
+    ${profile:+--profile "$profile"} \
+    --query 'imageDetails[0].imageDigest' \
+    --output text 2>"$err_file")
+  exit_code=$?
+  set -e
+  err=$(<"$err_file")
+  rm -f "$err_file"
+
+  AGENT_RUNTIME_IMAGE_DIGEST=""
+  if [ $exit_code -eq 0 ] && [[ "$digest" == sha256:* ]]; then
+    AGENT_RUNTIME_IMAGE_DIGEST="$digest"
+  elif [[ "$err" != *ImageNotFoundException* && "$err" != *RepositoryNotFoundException* ]]; then
+    log_err "Could not look up the agent runtime image ${PRIVATE_SANDBOX_AGENT_RUNTIME_ECR_REPO}:${AGENT_RUNTIME_IMAGE_TAG} in ${DEPLOY_REGION}: ${err:-$digest}"
+    exit 1
+  fi
+}
+
+# Decides, before confirmation, whether the agent runtime image needs building:
+# a deploy must run the image built from the current source, so a missing image
+# is built and pushed after confirmation rather than failing the deploy.
+prepare_agent_runtime_image() {
+  agent_runtime_image_in_scope || return 0
+
+  AGENT_RUNTIME_IMAGE_BUILD=false
+  lookup_agent_runtime_image
+  [ -n "$AGENT_RUNTIME_IMAGE_DIGEST" ] && return 0
+
+  if [ "$SKIP_IMAGE_BUILD" = true ]; then
+    log_err "No agent runtime image built from the current source (${PRIVATE_SANDBOX_AGENT_RUNTIME_ECR_REPO}:${AGENT_RUNTIME_IMAGE_TAG}) in ${DEPLOY_REGION}, and --skip-image-build was given."
+    printf "Build and push it first: npm run docker:build-and-push -- sandbox-agent-runtime\n"
+    exit 1
+  fi
+  # scripts/docker pushes to the Hub account's registry, which the compute stack
+  # does not otherwise need.
+  if [ -z "$HUB_ACCOUNT_ID" ]; then
+    log_err "HUB_ACCOUNT_ID must be set in .env to build and push the agent runtime image for the current source (${PRIVATE_SANDBOX_AGENT_RUNTIME_ECR_REPO}:${AGENT_RUNTIME_IMAGE_TAG})."
+    exit 1
+  fi
+  if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
+    log_err "The agent runtime image for the current source (${PRIVATE_SANDBOX_AGENT_RUNTIME_ECR_REPO}:${AGENT_RUNTIME_IMAGE_TAG}) is not in ECR, and Docker is not available to build it."
+    printf "Start Docker and rerun, or build and push it elsewhere: npm run docker:build-and-push -- sandbox-agent-runtime\n"
+    exit 1
+  fi
+  AGENT_RUNTIME_IMAGE_BUILD=true
+}
+
+# Builds and pushes the image if needed, then pins the runtime to its digest.
+add_agent_runtime_image_digest() {
+  agent_runtime_image_in_scope || return 0
+
+  if [ "$AGENT_RUNTIME_IMAGE_BUILD" = true ]; then
+    printf "\n"
+    log_info "Building and pushing the agent runtime image for the current source..."
+    if ! "${PROJECT_ROOT}/scripts/docker/build-and-push.sh" sandbox-agent-runtime; then
+      log_err "Agent runtime image build or push failed"
+      exit 1
+    fi
+    lookup_agent_runtime_image
+    if [ -z "$AGENT_RUNTIME_IMAGE_DIGEST" ]; then
+      log_err "Pushed the agent runtime image, but ${PRIVATE_SANDBOX_AGENT_RUNTIME_ECR_REPO}:${AGENT_RUNTIME_IMAGE_TAG} is still not in ECR."
+      exit 1
+    fi
+    log_ok "Agent runtime image pushed"
+  fi
+
+  log_info "Agent runtime image: ${PRIVATE_SANDBOX_AGENT_RUNTIME_ECR_REPO}:${AGENT_RUNTIME_IMAGE_TAG} (${AGENT_RUNTIME_IMAGE_DIGEST})"
+  CDK_CONTEXT_ARGS+=(--context "sandboxAgentRuntimeImageDigest=$AGENT_RUNTIME_IMAGE_DIGEST")
 }
 
 show_confirmation() {
@@ -175,6 +280,13 @@ show_confirmation() {
   log_info "  IDC Account:              ${IDC_ACCOUNT_ID:-Not set}"
   log_info "  Deployment Mode:          ${DEPLOYMENT_MODE:-prod (default)}"
   log_info "  Sandbox Account Regions:  ${AWS_REGIONS:-Not set}"
+  if agent_runtime_image_in_scope; then
+    if [ "$AGENT_RUNTIME_IMAGE_BUILD" = true ]; then
+      log_warn "  Agent Runtime Image:      will build and push ${PRIVATE_SANDBOX_AGENT_RUNTIME_ECR_REPO}:${AGENT_RUNTIME_IMAGE_TAG}"
+    else
+      log_info "  Agent Runtime Image:      ${PRIVATE_SANDBOX_AGENT_RUNTIME_ECR_REPO}:${AGENT_RUNTIME_IMAGE_TAG}"
+    fi
+  fi
   printf "\n"
 
   printf "Stacks to deploy:\n"
@@ -223,17 +335,19 @@ show_confirmation() {
 STACKS_TO_DEPLOY=()
 SKIP_CONFIRMATION=false
 SKIP_BUILD=false
+SKIP_IMAGE_BUILD=false
 
 for arg in "$@"; do
   case "$arg" in
     --help|-h) show_help ;;
     --skip-confirmation) SKIP_CONFIRMATION=true ;;
     --skip-build) SKIP_BUILD=true ;;
+    --skip-image-build) SKIP_IMAGE_BUILD=true ;;
     account-pool|idc|data|compute) STACKS_TO_DEPLOY+=("$arg") ;;
     all) STACKS_TO_DEPLOY=(account-pool idc data compute) ;;
     *)
       log_err "Unknown argument: $arg"
-      printf "Usage: %s [account-pool|idc|data|compute|all] [--skip-confirmation] [--skip-build] [--help]\n" "$0"
+      printf "Usage: %s [account-pool|idc|data|compute|all] [--skip-confirmation] [--skip-build] [--skip-image-build] [--help]\n" "$0"
       exit 1
       ;;
   esac
@@ -255,10 +369,14 @@ for stack in "${STACKS_TO_DEPLOY[@]}"; do
   fi
 done
 
+prepare_agent_runtime_image
+
 # Confirmation
 if [ "$SKIP_CONFIRMATION" = false ]; then
   show_confirmation
 fi
+
+add_agent_runtime_image_digest
 
 # Build
 # The generated packages under source/api-client and source/api-server are

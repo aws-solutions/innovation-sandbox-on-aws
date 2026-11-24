@@ -18,6 +18,10 @@ import DateTimeField from "@amzn/innovation-sandbox-frontend/components/FormFiel
 import InputField from "@amzn/innovation-sandbox-frontend/components/FormFields/InputField";
 import SelectField from "@amzn/innovation-sandbox-frontend/components/FormFields/SelectField";
 import ToggleField from "@amzn/innovation-sandbox-frontend/components/FormFields/ToggleField";
+import {
+  hoursBetween,
+  PredictiveDurationWarning,
+} from "@amzn/innovation-sandbox-frontend/components/Forms/PredictiveDurationWarning";
 import { DurationThreshold } from "@amzn/innovation-sandbox-shared/types/lease-template";
 
 export const EXPIRATION_ACTION_OPTIONS: readonly SelectProps.Option[] = [
@@ -34,6 +38,14 @@ export interface ExpirationSettingsFormValues {
 export interface ExpirationSettingsFormProps {
   /** Whether expiration date is required by organization policy */
   requireMaxDuration: boolean;
+  /** The lease's opt-in, for the short-lease warning */
+  predictiveBudgetEnabled?: boolean;
+  /**
+   * The lease's start date. The warning measures the lease's total hours from
+   * here to the chosen expiry — a young lease whose expiry is brought inside
+   * 48 hours of its start can end before a spending rate ever exists.
+   */
+  leaseStartDate?: string;
 }
 
 /**
@@ -43,9 +55,12 @@ export interface ExpirationSettingsFormProps {
  */
 export function ExpirationSettingsForm({
   requireMaxDuration,
-}: ExpirationSettingsFormProps) {
+  predictiveBudgetEnabled,
+  leaseStartDate,
+}: Readonly<ExpirationSettingsFormProps>) {
   // Get control and trigger from form context
-  const { control, trigger } = useFormContext<ExpirationSettingsFormValues>();
+  const { control, trigger, resetField } =
+    useFormContext<ExpirationSettingsFormValues>();
 
   // Watch form values for dynamic UI
   const maxDurationEnabled = useWatch({ control, name: "maxDurationEnabled" });
@@ -59,7 +74,7 @@ export function ExpirationSettingsForm({
 
   // Helper functions for SelectField value transformation
   const getExpirationActionOption = (
-    action: string,
+    action: DurationThreshold["action"] | undefined,
   ): SelectProps.Option | null => {
     return (
       EXPIRATION_ACTION_OPTIONS.find((opt) => opt.value === action) || null
@@ -68,14 +83,14 @@ export function ExpirationSettingsForm({
 
   const getExpirationActionValue = (
     option: SelectProps.Option | null,
-  ): string => {
-    return (option?.value as string) || "ALERT";
-  };
+  ): DurationThreshold["action"] =>
+    (option?.value as DurationThreshold["action"] | undefined) ?? "ALERT";
 
   return (
     <SpaceBetween size="l">
       <ToggleField
         controllerProps={{ control, name: "maxDurationEnabled" }}
+        valueToChecked={(value) => value || requireMaxDuration}
         formFieldProps={{
           label: "Enable Expiration Date",
           description: requireMaxDuration
@@ -86,6 +101,18 @@ export function ExpirationSettingsForm({
           children:
             maxDurationEnabled || requireMaxDuration ? "Enabled" : "Disabled",
           disabled: requireMaxDuration,
+          // The date and thresholds are hidden while the toggle is off, so put
+          // back their starting values rather than leave an invalid value
+          // nobody can see or fix. That also clears the threshold errors, so
+          // check the thresholds again when the toggle comes back on.
+          onChange: (event) => {
+            if (event.detail.checked) {
+              trigger("durationThresholds");
+            } else {
+              resetField("expirationDate");
+              resetField("durationThresholds");
+            }
+          },
         }}
       />
 
@@ -95,6 +122,16 @@ export function ExpirationSettingsForm({
           indefinitely. Consider setting an expiration date.
         </Alert>
       )}
+
+      <PredictiveDurationWarning
+        predictiveBudgetEnabled={predictiveBudgetEnabled}
+        durationHours={
+          maxDurationEnabled || requireMaxDuration
+            ? hoursBetween(leaseStartDate, expirationDate)
+            : undefined
+        }
+        variant="lease"
+      />
 
       {(maxDurationEnabled || requireMaxDuration) && (
         <DateTimeField
@@ -106,7 +143,7 @@ export function ExpirationSettingsForm({
         />
       )}
 
-      {maxDurationEnabled && (
+      {(maxDurationEnabled || requireMaxDuration) && (
         <FormField
           label={
             <>
@@ -133,8 +170,10 @@ export function ExpirationSettingsForm({
                     control,
                     name: `durationThresholds.${index}.hoursRemaining` as const,
                   }}
+                  min={0}
                   inputProps={{
                     type: "number",
+                    step: "any",
                     placeholder: "Enter hours",
                     inputMode: "numeric",
                   }}
@@ -190,7 +229,7 @@ export function ExpirationSettingsForm({
                 append({
                   hoursRemaining: 0,
                   action: "ALERT",
-                } as DurationThreshold);
+                });
               }}
             >
               Add threshold

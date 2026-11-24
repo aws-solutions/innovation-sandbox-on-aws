@@ -13,7 +13,7 @@ import {
   SpaceBetween,
   StatusIndicator,
 } from "@cloudscape-design/components";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   PRINCIPAL_SEARCH_MIN_CHARS,
@@ -21,6 +21,7 @@ import {
   useResolvePrincipal,
 } from "@amzn/innovation-sandbox-frontend/domains/principals/hooks";
 import type { IdcPrincipalView } from "@amzn/innovation-sandbox-frontend/domains/principals/model";
+import { useLatest } from "@amzn/innovation-sandbox-frontend/hooks/useLatest";
 import type { PrincipalSearchType } from "@amzn/innovation-sandbox-shared/types/principal.js";
 
 const DEBOUNCE_MS = 200;
@@ -61,6 +62,17 @@ export const PrincipalTypeahead = ({
     useState<IdcPrincipalView | null>(null);
   const [selectedType, setSelectedType] = useState<"users" | "groups">(
     type === "groups" ? "groups" : "users",
+  );
+  const onSelectRef = useLatest(onSelect);
+  const shouldExcludeRef = useLatest(shouldExclude);
+  const disabledRef = useLatest(disabled);
+  const resolveRequestIdRef = useRef(0);
+
+  useEffect(
+    () => () => {
+      resolveRequestIdRef.current += 1;
+    },
+    [],
   );
 
   // Debounce for typeahead search
@@ -117,6 +129,7 @@ export const PrincipalTypeahead = ({
 
   // Handle selection from the typeahead dropdown
   const handleSelected: AutosuggestProps["onSelect"] = ({ detail }) => {
+    if (disabledRef.current) return;
     const selected = principalsByValue.get(detail.value);
     if (!selected) {
       // User pressed Enter on text that didn't match a dropdown item —
@@ -131,13 +144,15 @@ export const PrincipalTypeahead = ({
       setPendingGroupSelection(selected);
       return;
     }
-    onSelect(selected);
+    onSelectRef.current(selected);
   };
 
   // Manual resolve: user typed a value and pressed Enter or clicked Add
   const handleManualResolve = async () => {
+    if (disabledRef.current) return;
     const trimmed = inputValue.trim();
     if (trimmed.length === 0) return;
+    const requestId = ++resolveRequestIdRef.current;
     setErrorText("");
 
     const resolveType = getResolveType(type, selectedType);
@@ -147,8 +162,11 @@ export const PrincipalTypeahead = ({
         identifier: trimmed,
         type: resolveType,
       });
+      if (requestId !== resolveRequestIdRef.current || disabledRef.current) {
+        return;
+      }
 
-      if (shouldExclude(principal)) {
+      if (shouldExcludeRef.current(principal)) {
         setErrorText("This principal is already assigned.");
         return;
       }
@@ -158,9 +176,12 @@ export const PrincipalTypeahead = ({
       if (principal.principalType === "GROUP") {
         setPendingGroupSelection(principal);
       } else {
-        onSelect(principal);
+        onSelectRef.current(principal);
       }
     } catch (err: unknown) {
+      if (requestId !== resolveRequestIdRef.current || disabledRef.current) {
+        return;
+      }
       if (err instanceof Error && "statusCode" in err) {
         const statusCode = (err as { statusCode: number }).statusCode;
         if (statusCode === 404) {
@@ -173,8 +194,12 @@ export const PrincipalTypeahead = ({
   };
 
   const confirmGroup = () => {
-    if (pendingGroupSelection) {
-      onSelect(pendingGroupSelection);
+    if (
+      pendingGroupSelection &&
+      !disabledRef.current &&
+      !shouldExcludeRef.current(pendingGroupSelection)
+    ) {
+      onSelectRef.current(pendingGroupSelection);
     }
     setPendingGroupSelection(null);
   };
@@ -247,6 +272,7 @@ export const PrincipalTypeahead = ({
       </FormField>
       <GroupConfirmationModal
         pendingGroupSelection={pendingGroupSelection}
+        disabled={disabled}
         onConfirm={confirmGroup}
         onCancel={cancelGroup}
       />
@@ -258,12 +284,14 @@ export const PrincipalTypeahead = ({
 
 type GroupConfirmationModalProps = {
   pendingGroupSelection: IdcPrincipalView | null;
+  disabled: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 };
 
 const GroupConfirmationModal = ({
   pendingGroupSelection,
+  disabled,
   onConfirm,
   onCancel,
 }: GroupConfirmationModalProps) => (
@@ -277,7 +305,7 @@ const GroupConfirmationModal = ({
           <Button variant="link" onClick={onCancel}>
             Cancel
           </Button>
-          <Button variant="primary" onClick={onConfirm}>
+          <Button variant="primary" onClick={onConfirm} disabled={disabled}>
             Add group
           </Button>
         </SpaceBetween>

@@ -3,7 +3,7 @@
 import { ArnFormat, Stack } from "aws-cdk-lib";
 import { Effect, PolicyStatement } from "aws-cdk-lib/aws-iam";
 import { Construct } from "constructs";
-import path from "path";
+import path from "node:path";
 
 import { ConfigMigratorLambdaEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/config-migrator-lambda-environment.js";
 import { IsbLambdaFunctionCustomResource } from "@amzn/innovation-sandbox-infrastructure/components/isb-lambda-function-custom-resource";

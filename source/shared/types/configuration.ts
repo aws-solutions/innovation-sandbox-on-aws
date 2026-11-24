@@ -24,6 +24,7 @@ export const CONFIG_BOUNDS = {
   MAX_DURATION_HOURS: 87_600,
   MIN_LEASES_PER_USER: 1,
   MIN_TTL_DAYS: 1,
+  MAX_TTL_DAYS: 3650,
   MIN_LEASE_REQUEST_WINDOW_HOURS: 1,
   MIN_LEASE_REQUESTS_PER_WINDOW: 1,
   MIN_CLEANUP_VALUE: 1,
@@ -70,10 +71,17 @@ const leasesBaseShape = {
   leaseSharingEnabled: z.boolean(),
   enablePrincipalSearch: z.boolean(),
   groupAssignmentMode: GroupAssignmentModeSchema,
+  allowPredictiveBudgetControls: z.boolean(),
+  serviceBreakdownEnabled: z.boolean(),
+  allowBedrockTokenMonitoring: z.boolean(),
 } as const;
 
+const boundedTtl = leasesBaseShape.ttl.lte(CONFIG_BOUNDS.MAX_TTL_DAYS);
+
 /** All leases fields, without defaults or cross-field validation. */
-export const LeasesConfigBaseSchema = z.object(leasesBaseShape).strict();
+export const LeasesConfigBaseSchema = z
+  .object({ ...leasesBaseShape, ttl: boundedTtl })
+  .strict();
 
 export type LeasesConfigInput = z.infer<typeof LeasesConfigBaseSchema>;
 
@@ -112,6 +120,12 @@ export const LeasesConfigSchema = z
     groupAssignmentMode: leasesBaseShape.groupAssignmentMode.default(
       DEFAULT_GROUP_ASSIGNMENT_MODE,
     ),
+    allowPredictiveBudgetControls:
+      leasesBaseShape.allowPredictiveBudgetControls.default(false),
+    serviceBreakdownEnabled:
+      leasesBaseShape.serviceBreakdownEnabled.default(false),
+    allowBedrockTokenMonitoring:
+      leasesBaseShape.allowBedrockTokenMonitoring.default(false),
   })
   .strict();
 
@@ -178,17 +192,32 @@ const notificationBaseShape = {
     z.email().max(CONFIG_BOUNDS.MAX_EMAIL_LENGTH),
     z.literal(""),
   ]),
+  sesEnabled: z.boolean(),
+  snsIntegrationTopicEnabled: z.boolean(),
 } as const;
 
 export const NotificationConfigSchema = z
   .object({
     emailFrom: notificationBaseShape.emailFrom.default(""),
+    sesEnabled: notificationBaseShape.sesEnabled.default(true),
+    snsIntegrationTopicEnabled:
+      notificationBaseShape.snsIntegrationTopicEnabled.default(false),
   })
   .strict();
 
 export const NotificationConfigWriteSchema = z
   .object(notificationBaseShape)
   .strict();
+
+export function isSesNotificationEnabled({
+  emailFrom,
+  sesEnabled,
+}: {
+  emailFrom: string;
+  sesEnabled: boolean;
+}): boolean {
+  return sesEnabled && emailFrom.trim().length > 0;
+}
 
 const maintenanceBaseShape = {
   enabled: z.boolean(),
@@ -235,7 +264,58 @@ export const CostReportingConfigSchema = z
 
 export const CostReportingConfigWriteSchema = z
   .object(costReportingBaseShape)
+  .strict()
+  .superRefine(costReportingRefinement);
+
+// Keep this write-only so existing invalid settings can still load for repair.
+function costReportingRefinement(
+  data: CostReportingConfig,
+  ctx: z.RefinementCtx,
+): void {
+  if (data.requireCostReportGroup && data.costReportGroups.length === 0) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["costReportGroups"],
+      message:
+        "Add at least one cost report group or turn off Require cost report group.",
+    });
+  }
+}
+
+/**
+ * Resolves the effective Bedrock token-monitoring state of a lease or lease
+ * template without changing its saved preference. A lease with Sandbox Spaces
+ * is always monitored, so its agent spend is counted; otherwise the saved
+ * preference applies. The two saved settings stay independent.
+ */
+export function resolveBedrockTokenMonitoringEnabled({
+  configured,
+  sandboxSpacesEnabled,
+}: {
+  configured: boolean | undefined;
+  sandboxSpacesEnabled: boolean | undefined;
+}): boolean {
+  return configured === true || sandboxSpacesEnabled === true;
+}
+
+/**
+ * Global Sandbox Spaces capability. `true` turns the feature on for every role
+ * with an active lease (still subject to the enabled-model catalog gate);
+ * `false` turns it off entirely. Opt-in per environment.
+ */
+const agentBaseShape = {
+  sandboxSpacesEnabled: z.boolean(),
+} as const;
+
+/** Read schema: defaults are applied to fields not yet configured. */
+export const AgentConfigSchema = z
+  .object({
+    sandboxSpacesEnabled: agentBaseShape.sandboxSpacesEnabled.default(false),
+  })
   .strict();
+
+/** Write schema: all agent fields are required. */
+export const AgentConfigWriteSchema = z.object(agentBaseShape).strict();
 
 /** Read schemas, including code defaults, keyed by configuration section. */
 export const ConfigSchemas = {
@@ -245,6 +325,7 @@ export const ConfigSchemas = {
   maintenance: MaintenanceConfigSchema,
   termsOfService: TermsOfServiceConfigSchema,
   costReporting: CostReportingConfigSchema,
+  agent: AgentConfigSchema,
 } as const;
 
 /** Strict full-replacement schemas used by forms and persistence writes. */
@@ -255,6 +336,7 @@ export const ConfigWriteSchemas = {
   maintenance: MaintenanceConfigWriteSchema,
   termsOfService: TermsOfServiceConfigWriteSchema,
   costReporting: CostReportingConfigWriteSchema,
+  agent: AgentConfigWriteSchema,
 } as const;
 
 export type ConfigSection = keyof typeof ConfigSchemas;
@@ -270,6 +352,7 @@ export type ConfigSectionWriteFields<T extends ConfigSection> = z.infer<
 >;
 
 export type CostReportingConfig = ConfigSectionFields<"costReporting">;
+export type AgentConfig = ConfigSectionFields<"agent">;
 
 /** Complete response metadata for a configuration section that has been saved. */
 export type ConfigurationResponseMetadata = {
@@ -294,12 +377,16 @@ const requestAuditEnvelopeShape = {
 
 /**
  * Raw PUT-body supplements. Smithy validates modeled fields first; these
- * schemas additionally reject unknown keys, enforce the leases cross-field
- * rule, and accept the optimistic-concurrency envelope.
+ * schemas additionally reject unknown keys, enforce cross-field rules,
+ * and accept the optimistic-concurrency envelope.
  */
 export const ConfigPutBodySchemas = {
   leases: z
-    .object({ ...leasesBaseShape, ...requestAuditEnvelopeShape })
+    .object({
+      ...leasesBaseShape,
+      ttl: boundedTtl,
+      ...requestAuditEnvelopeShape,
+    })
     .strict()
     .superRefine(leasesRefinement),
   cleanup: z
@@ -316,5 +403,7 @@ export const ConfigPutBodySchemas = {
     .strict(),
   costReporting: z
     .object({ ...costReportingBaseShape, ...requestAuditEnvelopeShape })
-    .strict(),
+    .strict()
+    .superRefine(costReportingRefinement),
+  agent: z.object({ ...agentBaseShape, ...requestAuditEnvelopeShape }).strict(),
 } as const;

@@ -3,7 +3,7 @@
 import { Aws } from "aws-cdk-lib";
 import { PolicyStatement } from "aws-cdk-lib/aws-iam";
 import { Construct } from "constructs";
-import path from "path";
+import path from "node:path";
 
 import { CognitoPostDeployEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/cognito-post-deploy-environment.js";
 import { IsbLambdaFunctionCustomResource } from "@amzn/innovation-sandbox-infrastructure/components/isb-lambda-function-custom-resource";
@@ -59,7 +59,7 @@ export class CognitoPostDeployConfigurer extends Construct {
           CallbackUrls: props.callbackUrls,
           LogoutUrls: props.logoutUrls,
           // Force update on every synth so URLs stay in sync
-          forceUpdate: new Date().getTime(),
+          forceUpdate: Date.now(),
         },
       },
     );

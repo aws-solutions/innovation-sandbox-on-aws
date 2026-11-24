@@ -47,3 +47,20 @@ export { ConflictError } from "@amzn/innovation-sandbox-commons/data/config/conf
 export type { ConfigStore } from "@amzn/innovation-sandbox-commons/data/config/config-store.js";
 
 export { DynamoConfigStore } from "@amzn/innovation-sandbox-commons/data/config/dynamo-config-store.js";
+
+export {
+  AGENT_MODELS_SECTION,
+  AGENT_MODEL_SK_PREFIX,
+  AgentModelAdminUpdateSchema,
+  AgentModelCatalogSchemaVersion,
+  AgentModelCreateSchema,
+  PersistedAgentModelCatalogRowSchema,
+  agentModelSk,
+} from "@amzn/innovation-sandbox-commons/data/config/agent-model-catalog.js";
+
+export type {
+  AgentModelAdminUpdate,
+  AgentModelCreate,
+  AgentModelMeta,
+  PersistedAgentModelCatalogRow,
+} from "@amzn/innovation-sandbox-commons/data/config/agent-model-catalog.js";

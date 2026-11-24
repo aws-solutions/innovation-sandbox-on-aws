@@ -208,6 +208,13 @@ describe("EditDurationSettings", () => {
       ).toBeInTheDocument();
     });
 
+    const toggle = screen.getByRole("checkbox", { name: /Duration limit/ });
+    expect(toggle).toBeChecked();
+    expect(toggle).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Add Threshold" }),
+    ).toBeInTheDocument();
+
     const durationInput = screen.getByLabelText("Maximum Duration (Hours)");
     await user.tripleClick(durationInput);
     await user.keyboard("240");
@@ -217,5 +224,129 @@ describe("EditDurationSettings", () => {
     await user.click(saveButton);
 
     await waitFor(() => expect(submittedData?.leaseDurationInHours).toBe(240));
+  });
+
+  test("drops hidden invalid values when the maximum duration is turned off, so the change can be saved", async () => {
+    let submittedData: any = null;
+    server.use(
+      http.put(
+        `${getConfig().ApiUrl}/leaseTemplates/${mockUuid}`,
+        async ({ request }) => {
+          submittedData = await request.json();
+          return HttpResponse.json({ status: "success", data: submittedData });
+        },
+      ),
+    );
+
+    renderComponent();
+    const user = userEvent.setup();
+
+    await waitFor(() => {
+      expect(
+        screen.getByLabelText("Maximum Duration (Hours)"),
+      ).toBeInTheDocument();
+    });
+
+    // A duration of 0 is invalid, and so is a new row, which starts at 0 hours
+    // remaining.
+    await user.tripleClick(screen.getByLabelText("Maximum Duration (Hours)"));
+    await user.keyboard("0");
+    await user.click(screen.getByRole("button", { name: "Add Threshold" }));
+    const saveButton = screen.getByRole("button", { name: /save changes/i });
+    await waitFor(() => expect(saveButton).toBeDisabled());
+
+    const toggle = screen.getByRole("checkbox", { name: /Duration limit/ });
+    await user.click(toggle);
+    await waitFor(() => expect(saveButton).toBeEnabled());
+
+    // Turning it back on shows the saved duration and threshold again.
+    await user.click(toggle);
+    expect(screen.getByLabelText("Maximum Duration (Hours)")).toHaveValue(72);
+    expect(screen.getAllByPlaceholderText("e.g., 24")).toHaveLength(1);
+    expect(screen.getByPlaceholderText("e.g., 24")).toHaveValue(24);
+
+    await user.click(toggle);
+    await waitFor(() => expect(saveButton).toBeEnabled());
+    await user.click(saveButton);
+
+    await waitFor(() => expect(submittedData).not.toBeNull());
+    expect(submittedData.leaseDurationInHours).toBeUndefined();
+    expect(submittedData.durationThresholds).toBeUndefined();
+  });
+
+  test("removes an added threshold when the maximum duration is turned off and on, for a template with no saved thresholds", async () => {
+    server.use(
+      http.get(`${getConfig().ApiUrl}/leaseTemplates/${mockUuid}`, () =>
+        HttpResponse.json({
+          status: "success",
+          data: { ...mockAdvancedLeaseTemplate, durationThresholds: undefined },
+        }),
+      ),
+    );
+
+    renderComponent();
+    const user = userEvent.setup();
+
+    await waitFor(() => {
+      expect(
+        screen.getByLabelText("Maximum Duration (Hours)"),
+      ).toBeInTheDocument();
+    });
+    await user.click(screen.getByRole("button", { name: "Add Threshold" }));
+    expect(screen.getAllByPlaceholderText("e.g., 24")).toHaveLength(1);
+
+    const toggle = screen.getByRole("checkbox", { name: /Duration limit/ });
+    await user.click(toggle);
+    await user.click(toggle);
+
+    expect(screen.queryByPlaceholderText("e.g., 24")).not.toBeInTheDocument();
+  });
+  test("warns without blocking when the template uses predictive controls and duration is under 48 hours", async () => {
+    server.use(
+      http.get(`${getConfig().ApiUrl}/leaseTemplates/${mockUuid}`, () =>
+        HttpResponse.json({
+          status: "success",
+          data: {
+            ...mockAdvancedLeaseTemplate,
+            predictiveBudgetEnabled: true,
+            leaseDurationInHours: 12,
+          },
+        }),
+      ),
+    );
+
+    renderComponent();
+
+    expect(
+      await screen.findByText(/estimated-cost thresholds may never fire/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /save changes/i }),
+    ).toBeInTheDocument();
+  });
+  test("does not warn when the template does not use predictive controls", async () => {
+    server.use(
+      http.get(`${getConfig().ApiUrl}/leaseTemplates/${mockUuid}`, () =>
+        HttpResponse.json({
+          status: "success",
+          data: {
+            ...mockAdvancedLeaseTemplate,
+            predictiveBudgetEnabled: false,
+            leaseDurationInHours: 12,
+          },
+        }),
+      ),
+    );
+
+    renderComponent();
+
+    await waitFor(() => {
+      expect(
+        screen.getByLabelText("Maximum Duration (Hours)"),
+      ).toBeInTheDocument();
+    });
+    expect(
+      screen.queryByText(/estimated-cost thresholds may never fire/i),
+    ).not.toBeInTheDocument();
   });
 });

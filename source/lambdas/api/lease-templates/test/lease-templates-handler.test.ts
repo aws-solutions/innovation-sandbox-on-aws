@@ -9,17 +9,27 @@ import {
   it,
   vi,
 } from "vitest";
+import { z } from "zod";
 
 import { DynamoBlueprintStore } from "@amzn/innovation-sandbox-commons/data/blueprint/dynamo-blueprint-store.js";
-import { UnknownItem } from "@amzn/innovation-sandbox-commons/data/errors.js";
+import { PersistedAgentModelCatalogRow } from "@amzn/innovation-sandbox-commons/data/config/agent-model-catalog.js";
+import { DynamoConfigStore } from "@amzn/innovation-sandbox-commons/data/config/dynamo-config-store.js";
+import {
+  ConcurrentDataModificationException,
+  UnknownItem,
+} from "@amzn/innovation-sandbox-commons/data/errors.js";
+import { SsmIdcStackConfigStore } from "@amzn/innovation-sandbox-commons/data/idc-stack-config/ssm-idc-stack-config-store.js";
 import { DynamoLeaseTemplateStore } from "@amzn/innovation-sandbox-commons/data/lease-template/dynamo-lease-template-store.js";
 import {
   PersistedLeaseTemplate,
   PersistedLeaseTemplateSchema,
 } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template.js";
+import { PersistedPermissionSetCacheItemSchema } from "@amzn/innovation-sandbox-commons/data/permission-set/permission-set.js";
+import { DynamoPrincipalStore } from "@amzn/innovation-sandbox-commons/data/principal/dynamo-principal-store.js";
 import { LeaseTemplateLambdaEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/lease-template-lambda-environment.js";
 import { generateSchemaData } from "@amzn/innovation-sandbox-commons/test/generate-schema-data.js";
 import {
+  serializedBodyLike as baseSerializedBodyLike,
   createAPIGatewayProxyEvent,
   createErrorResponseBody,
   createFailureResponseBody,
@@ -30,15 +40,171 @@ import {
   mockGlobalConfig,
   responseHeaders,
   responseHeadersWithErrorType,
-  serializedBodyLike,
 } from "@amzn/innovation-sandbox-commons/test/lambdas/fixtures.js";
 import {
   bulkStubEnv,
   mockAppConfigMiddleware,
 } from "@amzn/innovation-sandbox-commons/test/lambdas/utils.js";
+import { permissionSetIdFromArn } from "@amzn/innovation-sandbox-shared/types/permission-set.js";
 import { randomUUID } from "crypto";
 
 const mockUuid = "00000000-0000-0000-0000-000000000000";
+// Owned by the shared validatePredictiveBudgetFields, not the handler.
+const PREDICTED_REQUIRES_PREDICTIVE_MESSAGE =
+  "triggerOn PREDICTED is only supported when predictiveBudgetEnabled is true.";
+// Owned by the shared validateBudgetThresholdsBelowMaxSpend, not the handler.
+const THRESHOLD_AT_MAX_SPEND_MESSAGE =
+  "Every budget threshold dollarsSpent must be less than maxSpend (50).";
+const userPermissionSetArn =
+  "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-user123456789012";
+const adminPermissionSetArn =
+  "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-admin12345678901";
+const managerPermissionSetArn =
+  "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-manager123456789";
+const customPermissionSetArn =
+  "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-custom1234567890";
+const missingPermissionSetArn =
+  "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-missing123456789";
+
+function permissionSetCacheItem(permissionSetArn: string, name: string) {
+  const permissionSetId = permissionSetIdFromArn(permissionSetArn)!;
+  return generateSchemaData(PersistedPermissionSetCacheItemSchema, {
+    pk: "permissionSetCache",
+    sk: `ps#${permissionSetId}`,
+    permissionSetArn,
+    permissionSetId,
+    name,
+    description: `${name} description`,
+    sessionDuration: "PT1H",
+  });
+}
+
+function generateLeaseTemplateData<T extends z.ZodTypeAny>(
+  schema: T,
+  overrides?: Partial<z.infer<T>>,
+): z.infer<T> {
+  const data = generateSchemaData(schema, {
+    defaultPermissionSetArn: undefined,
+    allowedPermissionSetArns: undefined,
+    allowedModelIds: undefined,
+    defaultModelId: undefined,
+    // Random rows would trip the predictive-controls gate on rateLimits.
+    rateLimits: undefined,
+    // Random Sandbox Spaces would trip its token-monitoring requirement.
+    sandboxSpacesEnabled: false,
+    ...overrides,
+  } as unknown as Partial<z.infer<T>>);
+  // Random thresholds would likewise trip the gate on PREDICTED triggers and
+  // the rule that each is below maxSpend.
+  const generated = data as {
+    maxSpend?: number;
+    budgetThresholds?: { dollarsSpent: number; triggerOn?: string }[];
+  };
+  const sent = overrides as { budgetThresholds?: unknown } | undefined;
+  if (sent?.budgetThresholds === undefined && generated.budgetThresholds) {
+    const maxSpend = generated.maxSpend;
+    generated.budgetThresholds = generated.budgetThresholds
+      .filter(
+        (threshold) =>
+          maxSpend === undefined || threshold.dollarsSpent < maxSpend,
+      )
+      .map((threshold) =>
+        threshold.triggerOn === "PREDICTED"
+          ? { ...threshold, triggerOn: "REPORTED" }
+          : threshold,
+      );
+  }
+  return data;
+}
+function rateLimitedTemplateBody(overrides: Record<string, unknown>) {
+  return generateLeaseTemplateData(
+    PersistedLeaseTemplateSchema.omit({
+      uuid: true,
+      createdBy: true,
+      blueprintName: true,
+      meta: true,
+      allowedModelIds: true,
+      defaultModelId: true,
+    }),
+    {
+      predictiveBudgetEnabled: true,
+      bedrockTokenMonitoringEnabled: false,
+      budgetThresholds: [],
+      maxSpend: 50,
+      leaseDurationInHours: 24,
+      costReportGroup: undefined,
+      blueprintId: undefined,
+      allowOwnerToShareLease: false,
+      ...overrides,
+    },
+  );
+}
+
+function expectedPermissionSetReference(permissionSetArn: string) {
+  const permissionSetId = permissionSetIdFromArn(permissionSetArn);
+  if (permissionSetArn === userPermissionSetArn) {
+    return {
+      permissionSetArn,
+      permissionSetId,
+      name: "BuiltInUser",
+      description: "BuiltInUser description",
+      sessionDuration: "PT1H",
+      availability: "AVAILABLE",
+    };
+  }
+  return {
+    permissionSetArn,
+    permissionSetId,
+    availability: "UNAVAILABLE",
+  };
+}
+
+function addExpectedPermissionSets(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(addExpectedPermissionSets);
+  }
+  if (value === null || typeof value !== "object") {
+    return value;
+  }
+
+  const object = Object.fromEntries(
+    Object.entries(value).map(([key, member]) => [
+      key,
+      addExpectedPermissionSets(member),
+    ]),
+  );
+  if (
+    typeof object.uuid === "string" &&
+    typeof object.createdBy === "string" &&
+    typeof object.requiresApproval === "boolean"
+  ) {
+    const defaultPermissionSetArn =
+      typeof object.defaultPermissionSetArn === "string"
+        ? object.defaultPermissionSetArn
+        : userPermissionSetArn;
+    const allowedPermissionSetArns = Array.isArray(
+      object.allowedPermissionSetArns,
+    )
+      ? object.allowedPermissionSetArns.filter(
+          (arn): arn is string => typeof arn === "string",
+        )
+      : [];
+    const effectiveAllowedArns = [
+      ...new Set([defaultPermissionSetArn, ...allowedPermissionSetArns]),
+    ];
+    object.defaultPermissionSet = expectedPermissionSetReference(
+      defaultPermissionSetArn,
+    );
+    object.allowedPermissionSets = effectiveAllowedArns.map(
+      expectedPermissionSetReference,
+    );
+  }
+  return object;
+}
+
+function serializedBodyLike(body: unknown) {
+  return baseSerializedBodyLike(addExpectedPermissionSets(body));
+}
 vi.mock("uuid", () => ({
   v4: vi.fn().mockReturnValue(mockUuid),
 }));
@@ -74,29 +240,30 @@ beforeAll(async () => {
 beforeEach(() => {
   bulkStubEnv(testEnv);
   mockAppConfigMiddleware(mockedGlobalConfig, mockedReportingConfig);
+  vi.spyOn(SsmIdcStackConfigStore.prototype, "get").mockResolvedValue({
+    identityStoreId: "d-1234567890",
+    ssoInstanceArn: "arn:aws:sso:::instance/ssoins-1234567890abcdef",
+    adminGroupId: "admin-group",
+    managerGroupId: "manager-group",
+    userGroupId: "user-group",
+    adminPermissionSetArn,
+    managerPermissionSetArn,
+    userPermissionSetArn,
+    solutionVersion: "1.4.0",
+    supportedSchemas: "1",
+  });
+  vi.spyOn(
+    DynamoPrincipalStore.prototype,
+    "getPermissionSetCacheItems",
+  ).mockResolvedValue([
+    permissionSetCacheItem(userPermissionSetArn, "BuiltInUser"),
+  ]);
 });
 
 afterEach(() => {
   vi.resetAllMocks();
   vi.unstubAllEnvs();
 });
-
-function createLeaseTemplateBody(overrides: Record<string, unknown> = {}) {
-  return {
-    name: "template",
-    description: "a template",
-    requiresApproval: false,
-    visibility: "PUBLIC" as const,
-    costReportGroup: undefined,
-    blueprintId: undefined,
-    allowOwnerToShareLease: false,
-    maxSpend: 50,
-    budgetThresholds: [{ dollarsSpent: 10, action: "ALERT" as const }],
-    leaseDurationInHours: 24,
-    durationThresholds: [{ hoursRemaining: 2, action: "ALERT" as const }],
-    ...overrides,
-  };
-}
 
 describe("handler", async () => {
   it("should return 500 response when environment variables are misconfigured", async () => {
@@ -124,8 +291,8 @@ describe("handler", async () => {
   describe("GET /leaseTemplates", () => {
     it("should return 200 response with all lease templates", async () => {
       const leaseTemplates: PersistedLeaseTemplate[] = [
-        generateSchemaData(PersistedLeaseTemplateSchema),
-        generateSchemaData(PersistedLeaseTemplateSchema),
+        generateLeaseTemplateData(PersistedLeaseTemplateSchema, {}),
+        generateLeaseTemplateData(PersistedLeaseTemplateSchema, {}),
       ];
 
       vi.spyOn(
@@ -161,8 +328,8 @@ describe("handler", async () => {
     });
     it("should return 200 without leaking the validation error to the caller", async () => {
       const leaseTemplates: PersistedLeaseTemplate[] = [
-        generateSchemaData(PersistedLeaseTemplateSchema),
-        generateSchemaData(PersistedLeaseTemplateSchema),
+        generateLeaseTemplateData(PersistedLeaseTemplateSchema, {}),
+        generateLeaseTemplateData(PersistedLeaseTemplateSchema, {}),
       ];
 
       vi.spyOn(
@@ -200,8 +367,8 @@ describe("handler", async () => {
 
     it("should return 200 with first page of lease template when pagination query parameters are passed in", async () => {
       const leaseTemplates: PersistedLeaseTemplate[] = [
-        generateSchemaData(PersistedLeaseTemplateSchema),
-        generateSchemaData(PersistedLeaseTemplateSchema),
+        generateLeaseTemplateData(PersistedLeaseTemplateSchema, {}),
+        generateLeaseTemplateData(PersistedLeaseTemplateSchema, {}),
       ];
 
       const findAllVisibleMethod = vi
@@ -251,33 +418,10 @@ describe("handler", async () => {
         },
       ]);
     });
-    it("should use the schema default when maxResults is absent", async () => {
-      const findAllVisibleMethod = vi
-        .spyOn(DynamoLeaseTemplateStore.prototype, "findAllVisible")
-        .mockResolvedValue({
-          result: [],
-          nextPageIdentifier: null,
-        });
-
-      await handler(
-        createAPIGatewayProxyEvent({
-          httpMethod: "GET",
-          path: "/leaseTemplates",
-          isbUser: isbAuthorizedUser.user,
-        }),
-        mockAuthorizedContext(testEnv, mockedGlobalConfig),
-      );
-
-      expect(findAllVisibleMethod).toHaveBeenCalledWith({
-        pageIdentifier: undefined,
-        pageSize: 2000,
-        includePrivate: true,
-      });
-    });
     it("should return 400 when invalid pagination query parameters are passed in", async () => {
       const leaseTemplates: PersistedLeaseTemplate[] = [
-        generateSchemaData(PersistedLeaseTemplateSchema),
-        generateSchemaData(PersistedLeaseTemplateSchema),
+        generateLeaseTemplateData(PersistedLeaseTemplateSchema, {}),
+        generateLeaseTemplateData(PersistedLeaseTemplateSchema, {}),
       ];
 
       const findAllVisibleMethod = vi
@@ -377,12 +521,18 @@ describe("handler", async () => {
     });
 
     it("should return 200 with all templates (PUBLIC and PRIVATE) for Admin/Manager users", async () => {
-      const publicTemplate = generateSchemaData(PersistedLeaseTemplateSchema, {
-        visibility: "PUBLIC",
-      });
-      const privateTemplate = generateSchemaData(PersistedLeaseTemplateSchema, {
-        visibility: "PRIVATE",
-      });
+      const publicTemplate = generateLeaseTemplateData(
+        PersistedLeaseTemplateSchema,
+        {
+          visibility: "PUBLIC",
+        },
+      );
+      const privateTemplate = generateLeaseTemplateData(
+        PersistedLeaseTemplateSchema,
+        {
+          visibility: "PRIVATE",
+        },
+      );
       const leaseTemplates = [publicTemplate, privateTemplate];
 
       vi.spyOn(
@@ -421,9 +571,12 @@ describe("handler", async () => {
       // Visibility filtering now happens in the store (findAllVisible), so the
       // handler must ask for the non-privileged view. The store's own tests
       // verify PRIVATE templates never appear in the result or the token.
-      const publicTemplate = generateSchemaData(PersistedLeaseTemplateSchema, {
-        visibility: "PUBLIC",
-      });
+      const publicTemplate = generateLeaseTemplateData(
+        PersistedLeaseTemplateSchema,
+        {
+          visibility: "PUBLIC",
+        },
+      );
 
       const findAllVisibleMethod = vi
         .spyOn(DynamoLeaseTemplateStore.prototype, "findAllVisible")
@@ -463,12 +616,18 @@ describe("handler", async () => {
     });
 
     it("should request all templates (includePrivate true) for Admin/Manager role", async () => {
-      const publicTemplate = generateSchemaData(PersistedLeaseTemplateSchema, {
-        visibility: "PUBLIC",
-      });
-      const privateTemplate = generateSchemaData(PersistedLeaseTemplateSchema, {
-        visibility: "PRIVATE",
-      });
+      const publicTemplate = generateLeaseTemplateData(
+        PersistedLeaseTemplateSchema,
+        {
+          visibility: "PUBLIC",
+        },
+      );
+      const privateTemplate = generateLeaseTemplateData(
+        PersistedLeaseTemplateSchema,
+        {
+          visibility: "PRIVATE",
+        },
+      );
 
       const findAllVisibleMethod = vi
         .spyOn(DynamoLeaseTemplateStore.prototype, "findAllVisible")
@@ -509,7 +668,7 @@ describe("handler", async () => {
         DynamoLeaseTemplateStore.prototype,
         "findAllVisible",
       ).mockResolvedValue({
-        result: [generateSchemaData(PersistedLeaseTemplateSchema)],
+        result: [generateLeaseTemplateData(PersistedLeaseTemplateSchema)],
         // Non-null so the member survives serialization; the null case is the
         // next test.
         nextPageIdentifier: "next-token",
@@ -562,16 +721,181 @@ describe("handler", async () => {
       expect(data).not.toHaveProperty("nextPageIdentifier");
       expect(data.result).toEqual([]);
     });
+
+    it("batch-hydrates available and unavailable permission sets without exposing raw ARNs", async () => {
+      const templates = [
+        generateLeaseTemplateData(PersistedLeaseTemplateSchema, {
+          defaultPermissionSetArn: customPermissionSetArn,
+          allowedPermissionSetArns: [
+            customPermissionSetArn,
+            missingPermissionSetArn,
+          ],
+        }),
+        generateLeaseTemplateData(PersistedLeaseTemplateSchema),
+      ];
+      vi.spyOn(
+        DynamoLeaseTemplateStore.prototype,
+        "findAllVisible",
+      ).mockResolvedValue({
+        result: templates,
+        nextPageIdentifier: null,
+      });
+      const cacheRead = vi
+        .spyOn(DynamoPrincipalStore.prototype, "getPermissionSetCacheItems")
+        .mockResolvedValue([
+          permissionSetCacheItem(userPermissionSetArn, "BuiltInUser"),
+          permissionSetCacheItem(customPermissionSetArn, "Custom"),
+        ]);
+
+      const response = await handler(
+        createAPIGatewayProxyEvent({
+          httpMethod: "GET",
+          path: "/leaseTemplates",
+          isbUser: isbAuthorizedUser.user,
+        }),
+        mockAuthorizedContext(testEnv, mockedGlobalConfig),
+      );
+
+      expect(response.statusCode).toBe(200);
+      const [customTemplate, legacyTemplate] = JSON.parse(response.body).data
+        .result;
+      expect(customTemplate).not.toHaveProperty("defaultPermissionSetArn");
+      expect(customTemplate).not.toHaveProperty("allowedPermissionSetArns");
+      expect(customTemplate.defaultPermissionSet).toEqual(
+        expect.objectContaining({
+          permissionSetArn: customPermissionSetArn,
+          name: "Custom",
+          availability: "AVAILABLE",
+        }),
+      );
+      expect(customTemplate.allowedPermissionSets).toEqual([
+        customTemplate.defaultPermissionSet,
+        {
+          permissionSetArn: missingPermissionSetArn,
+          permissionSetId: permissionSetIdFromArn(missingPermissionSetArn),
+          availability: "UNAVAILABLE",
+        },
+      ]);
+      expect(legacyTemplate.allowedPermissionSets).toEqual([
+        legacyTemplate.defaultPermissionSet,
+      ]);
+      expect(cacheRead).toHaveBeenCalledExactlyOnceWith({});
+    });
   });
 
   describe("POST /leaseTemplates", () => {
-    it("should return 201 response when leaseTemplate is created successfully", async () => {
-      const leaseTemplate = generateSchemaData(
+    it("persists an eager default and returns generated hydrated references", async () => {
+      const request = generateLeaseTemplateData(
         PersistedLeaseTemplateSchema.omit({
           uuid: true,
           createdBy: true,
           blueprintName: true,
           meta: true,
+        }),
+        {
+          maxSpend: 50,
+          leaseDurationInHours: 24,
+          costReportGroup: undefined,
+          blueprintId: undefined,
+        },
+      );
+      const create = vi
+        .spyOn(DynamoLeaseTemplateStore.prototype, "create")
+        .mockImplementation(async (item) => item);
+
+      const response = await handler(
+        createAPIGatewayProxyEvent({
+          httpMethod: "POST",
+          path: "/leaseTemplates",
+          headers: { "Content-Type": "application/json" },
+          isbUser: isbAuthorizedUser.user,
+          body: JSON.stringify(request),
+        }),
+        mockAuthorizedContext(testEnv, mockedGlobalConfig),
+      );
+
+      expect(response.statusCode).toBe(201);
+      expect(
+        DynamoPrincipalStore.prototype.getPermissionSetCacheItems,
+      ).toHaveBeenCalledExactlyOnceWith({ consistentRead: true });
+
+      expect(create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          defaultPermissionSetArn: userPermissionSetArn,
+          allowedPermissionSetArns: undefined,
+        }),
+      );
+      const data = JSON.parse(response.body).data;
+      expect(data).not.toHaveProperty("defaultPermissionSetArn");
+      expect(data.defaultPermissionSet).toEqual(
+        expect.objectContaining({
+          permissionSetArn: userPermissionSetArn,
+          availability: "AVAILABLE",
+        }),
+      );
+      expect(data.allowedPermissionSets).toEqual([data.defaultPermissionSet]);
+    });
+
+    it.each([
+      {
+        name: "system role",
+        defaultPermissionSetArn: adminPermissionSetArn,
+        message: `Permission set ${adminPermissionSetArn} is a system role and cannot be assigned to lease users.`,
+      },
+      {
+        name: "uncached permission set",
+        defaultPermissionSetArn: missingPermissionSetArn,
+        message: `Permission set ${missingPermissionSetArn} is not registered in this deployment's catalog.`,
+      },
+    ])(
+      "rejects a $name through the generated request path",
+      async ({ defaultPermissionSetArn, message }) => {
+        const request = generateLeaseTemplateData(
+          PersistedLeaseTemplateSchema.omit({
+            uuid: true,
+            createdBy: true,
+            blueprintName: true,
+            meta: true,
+          }),
+          {
+            maxSpend: 50,
+            leaseDurationInHours: 24,
+            costReportGroup: undefined,
+            blueprintId: undefined,
+            defaultPermissionSetArn,
+          },
+        );
+
+        const response = await handler(
+          createAPIGatewayProxyEvent({
+            httpMethod: "POST",
+            path: "/leaseTemplates",
+            headers: { "Content-Type": "application/json" },
+            isbUser: isbAuthorizedUser.user,
+            body: JSON.stringify(request),
+          }),
+          mockAuthorizedContext(testEnv, mockedGlobalConfig),
+        );
+
+        expect(response).toEqual({
+          statusCode: 400,
+          body: createFailureResponseBody({ message }),
+          headers: expect.objectContaining(
+            responseHeadersWithErrorType("ValidationError"),
+          ),
+        });
+      },
+    );
+
+    it("should return 201 response when leaseTemplate is created successfully", async () => {
+      const leaseTemplate = generateLeaseTemplateData(
+        PersistedLeaseTemplateSchema.omit({
+          uuid: true,
+          createdBy: true,
+          blueprintName: true,
+          meta: true,
+          allowedModelIds: true,
+          defaultModelId: true,
         }),
         {
           maxSpend: 50,
@@ -616,6 +940,324 @@ describe("handler", async () => {
         headers: expect.objectContaining(responseHeaders),
       });
     });
+    it("should return 201 echoing rateLimits and both opt-ins when the gates are open", async () => {
+      const leaseTemplate = generateLeaseTemplateData(
+        PersistedLeaseTemplateSchema.omit({
+          uuid: true,
+          createdBy: true,
+          blueprintName: true,
+          meta: true,
+          allowedModelIds: true,
+          defaultModelId: true,
+        }),
+        {
+          rateLimits: [
+            { basis: "HOURLY", rate: 2.5, action: "ALERT" },
+            { basis: "DAILY", rate: 40, action: "FREEZE_ACCOUNT" },
+          ],
+          predictiveBudgetEnabled: true,
+          bedrockTokenMonitoringEnabled: true,
+          budgetThresholds: [
+            { dollarsSpent: 25, action: "ALERT", triggerOn: "PREDICTED" },
+          ],
+          maxSpend: 50,
+          leaseDurationInHours: 24,
+          costReportGroup: undefined,
+          blueprintId: undefined,
+          allowOwnerToShareLease: false,
+        },
+      );
+      const event = createAPIGatewayProxyEvent({
+        httpMethod: "POST",
+        path: "/leaseTemplates",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        isbUser: isbAuthorizedUser.user,
+        body: JSON.stringify(leaseTemplate),
+      });
+
+      const uuid = randomUUID();
+
+      const createSpy = vi
+        .spyOn(DynamoLeaseTemplateStore.prototype, "create")
+        .mockResolvedValue({
+          ...leaseTemplate,
+          uuid,
+          createdBy: isbAuthorizedUser.user.email,
+        });
+
+      const response = await handler(
+        event,
+        mockAuthorizedContext(testEnv, mockedGlobalConfig),
+      );
+      expect(response.statusCode).toBe(201);
+      expect(response.body).toEqual(
+        serializedBodyLike({
+          status: "success",
+          data: {
+            ...leaseTemplate,
+            uuid,
+            createdBy: isbAuthorizedUser.user.email,
+          },
+        }),
+      );
+      expect(response.headers).toEqual(
+        expect.objectContaining(responseHeaders),
+      );
+      expect(createSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          rateLimits: [
+            { basis: "HOURLY", rate: 2.5, action: "ALERT" },
+            { basis: "DAILY", rate: 40, action: "FREEZE_ACCOUNT" },
+          ],
+          predictiveBudgetEnabled: true,
+          bedrockTokenMonitoringEnabled: true,
+          budgetThresholds: [
+            { dollarsSpent: 25, action: "ALERT", triggerOn: "PREDICTED" },
+          ],
+        }),
+      );
+    });
+
+    describe("rateLimits", () => {
+      const rateLimits = [
+        { basis: "HOURLY", rate: 10, action: "ALERT" },
+        { basis: "HOURLY", rate: 15, action: "FREEZE_ACCOUNT" },
+        { basis: "DAILY", rate: 200, action: "FREEZE_ACCOUNT" },
+      ] as const;
+      const post = (body: unknown) =>
+        handler(
+          createAPIGatewayProxyEvent({
+            httpMethod: "POST",
+            path: "/leaseTemplates",
+            headers: { "Content-Type": "application/json" },
+            isbUser: isbAuthorizedUser.user,
+            body: JSON.stringify(body),
+          }),
+          mockAuthorizedContext(testEnv, mockedGlobalConfig),
+        );
+
+      it.each([
+        ["a list", { rateLimits }],
+        ["an empty list", { rateLimits: [] }],
+        [
+          "an empty list with predictive controls off",
+          { rateLimits: [], predictiveBudgetEnabled: false },
+        ],
+      ])("stores and returns %s", async (_label, overrides) => {
+        const createSpy = vi
+          .spyOn(DynamoLeaseTemplateStore.prototype, "create")
+          .mockImplementation(async (item) => item);
+
+        const response = await post(rateLimitedTemplateBody(overrides));
+
+        expect(response.statusCode).toBe(201);
+        const stored = createSpy.mock.calls[0]![0];
+        expect(stored).toMatchObject(overrides);
+        expect(stored).not.toHaveProperty("rateLimit");
+        const data = JSON.parse(response.body as string).data;
+        expect(data.rateLimits).toEqual(overrides.rateLimits);
+        expect(data).not.toHaveProperty("rateLimit");
+      });
+
+      it.each([
+        ["without rateLimits", {}],
+        ["beside rateLimits", { rateLimits }],
+      ])(
+        "rejects a singular rateLimit member %s as an unknown key",
+        async (_label, extra) => {
+          const createSpy = vi.spyOn(
+            DynamoLeaseTemplateStore.prototype,
+            "create",
+          );
+
+          const response = await post({
+            ...rateLimitedTemplateBody(extra),
+            rateLimit: { maxHourlyRate: 5 },
+          });
+
+          expect(response).toEqual({
+            statusCode: 400,
+            body: createFailureResponseBody({
+              field: "input",
+              message: 'Unrecognized key: "rateLimit"',
+            }),
+            headers: expect.objectContaining(
+              responseHeadersWithErrorType("ValidationError"),
+            ),
+          });
+          expect(createSpy).not.toHaveBeenCalled();
+        },
+      );
+
+      const limit = (overrides: Record<string, unknown>) => ({
+        basis: "HOURLY",
+        rate: 5,
+        action: "ALERT",
+        ...overrides,
+      });
+
+      it.each([
+        [
+          "eleven entries",
+          {
+            rateLimits: Array.from({ length: 11 }, (_, i) =>
+              limit({ rate: i + 1 }),
+            ),
+          },
+          "less than or equal to 10",
+        ],
+        [
+          "a repeated (basis, rate) pair",
+          { rateLimits: [limit({}), limit({ action: "FREEZE_ACCOUNT" })] },
+          "duplicate rate limit",
+        ],
+        [
+          "a zero rate",
+          { rateLimits: [limit({ rate: 0 })] },
+          "rateLimits.0.rate",
+        ],
+        [
+          "an unknown basis",
+          { rateLimits: [limit({ basis: "WEEKLY" })] },
+          "rateLimits.0.basis",
+        ],
+        [
+          "an unknown action",
+          { rateLimits: [limit({ action: "DELETE" })] },
+          "rateLimits.0.action",
+        ],
+        ["an unknown member", { rateLimits: [limit({ note: "x" })] }, "note"],
+        [
+          "a non-empty list with predictive controls off",
+          { rateLimits, predictiveBudgetEnabled: false },
+          "rateLimits requires predictiveBudgetEnabled",
+        ],
+      ])("rejects %s with a 400", async (_label, overrides, message) => {
+        const createSpy = vi.spyOn(
+          DynamoLeaseTemplateStore.prototype,
+          "create",
+        );
+
+        const response = await post(rateLimitedTemplateBody(overrides));
+
+        expect(response.statusCode).toBe(400);
+        expect(response.body).toContain(message);
+        expect(createSpy).not.toHaveBeenCalled();
+      });
+    });
+
+    describe("PREDICTED budget thresholds", () => {
+      const predicted = {
+        dollarsSpent: 25,
+        action: "ALERT",
+        triggerOn: "PREDICTED",
+      } as const;
+      const post = (body: Record<string, unknown>) =>
+        handler(
+          createAPIGatewayProxyEvent({
+            httpMethod: "POST",
+            path: "/leaseTemplates",
+            headers: { "Content-Type": "application/json" },
+            isbUser: isbAuthorizedUser.user,
+            body: JSON.stringify(body),
+          }),
+          mockAuthorizedContext(testEnv, mockedGlobalConfig),
+        );
+
+      it.each([
+        ["predictive controls off", { predictiveBudgetEnabled: false }],
+        ["the flag omitted (defaults off)", {}],
+      ])("rejects a PREDICTED threshold with %s", async (_label, flag) => {
+        const createSpy = vi.spyOn(
+          DynamoLeaseTemplateStore.prototype,
+          "create",
+        );
+        const { predictiveBudgetEnabled: _omitted, ...body } =
+          rateLimitedTemplateBody({ budgetThresholds: [predicted] });
+
+        const response = await post({ ...body, ...flag });
+
+        expect(response).toEqual({
+          statusCode: 400,
+          body: createFailureResponseBody({
+            field: "budgetThresholds",
+            message: PREDICTED_REQUIRES_PREDICTIVE_MESSAGE,
+          }),
+          headers: expect.objectContaining(
+            responseHeadersWithErrorType("ValidationError"),
+          ),
+        });
+        expect(createSpy).not.toHaveBeenCalled();
+      });
+
+      it.each([
+        ["REPORTED", { triggerOn: "REPORTED" }],
+        ["unset triggerOn", {}],
+      ])(
+        "accepts a %s threshold with predictive controls off",
+        async (_label, trigger) => {
+          const createSpy = vi
+            .spyOn(DynamoLeaseTemplateStore.prototype, "create")
+            .mockImplementation(async (item) => item);
+          const threshold = { dollarsSpent: 25, action: "ALERT", ...trigger };
+
+          const response = await post(
+            rateLimitedTemplateBody({
+              predictiveBudgetEnabled: false,
+              budgetThresholds: [threshold],
+            }),
+          );
+
+          expect(response.statusCode).toBe(201);
+          expect(createSpy.mock.calls[0]![0].budgetThresholds).toEqual([
+            threshold,
+          ]);
+        },
+      );
+    });
+
+    describe("budget thresholds at maxSpend", () => {
+      const post = (body: Record<string, unknown>) =>
+        handler(
+          createAPIGatewayProxyEvent({
+            httpMethod: "POST",
+            path: "/leaseTemplates",
+            headers: { "Content-Type": "application/json" },
+            isbUser: isbAuthorizedUser.user,
+            body: JSON.stringify(body),
+          }),
+          mockAuthorizedContext(testEnv, mockedGlobalConfig),
+        );
+
+      it("rejects a threshold equal to maxSpend", async () => {
+        const createSpy = vi.spyOn(
+          DynamoLeaseTemplateStore.prototype,
+          "create",
+        );
+
+        const response = await post(
+          rateLimitedTemplateBody({
+            maxSpend: 50,
+            budgetThresholds: [{ dollarsSpent: 50, action: "ALERT" }],
+          }),
+        );
+
+        expect(response).toEqual({
+          statusCode: 400,
+          body: createFailureResponseBody({
+            field: "budgetThresholds",
+            message: THRESHOLD_AT_MAX_SPEND_MESSAGE,
+          }),
+          headers: expect.objectContaining(
+            responseHeadersWithErrorType("ValidationError"),
+          ),
+        });
+        expect(createSpy).not.toHaveBeenCalled();
+      });
+    });
+
     it("should reject a client-supplied meta field (server-owned)", async () => {
       // meta (createdTime/lastEditTime/schemaVersion) is server-owned. A client
       // must not be able to forge it, so meta is omitted from the accepted
@@ -717,14 +1359,17 @@ describe("handler", async () => {
       });
     });
     it("should return 400 response when body is malformed", async () => {
-      const leaseTemplate = generateSchemaData(PersistedLeaseTemplateSchema, {
-        uuid: undefined,
-        name: undefined,
-        blueprintName: undefined,
-        meta: undefined,
-        maxSpend: 50,
-        leaseDurationInHours: 24,
-      });
+      const leaseTemplate = generateLeaseTemplateData(
+        PersistedLeaseTemplateSchema,
+        {
+          uuid: undefined,
+          name: undefined,
+          blueprintName: undefined,
+          meta: undefined,
+          maxSpend: 50,
+          leaseDurationInHours: 24,
+        },
+      );
 
       const event = createAPIGatewayProxyEvent({
         httpMethod: "POST",
@@ -765,107 +1410,6 @@ describe("handler", async () => {
       });
     });
 
-    it("should reject an unknown member nested inside a threshold", async () => {
-      const response = await handler(
-        createAPIGatewayProxyEvent({
-          httpMethod: "POST",
-          path: "/leaseTemplates",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          isbUser: isbAuthorizedUser.user,
-          body: JSON.stringify(
-            createLeaseTemplateBody({
-              budgetThresholds: [
-                { dollarsSpent: 10, action: "ALERT", surprise: true },
-              ],
-            }),
-          ),
-        }),
-        mockAuthorizedContext(testEnv, mockedGlobalConfig),
-      );
-
-      expect(response.statusCode).toBe(400);
-      expect(JSON.parse(response.body).data.errors).toEqual([
-        {
-          field: "budgetThresholds.0",
-          message: 'Unrecognized key: "surprise"',
-        },
-      ]);
-    });
-
-    it("should reject a blueprintId that is not a UUID", async () => {
-      const response = await handler(
-        createAPIGatewayProxyEvent({
-          httpMethod: "POST",
-          path: "/leaseTemplates",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          isbUser: isbAuthorizedUser.user,
-          body: JSON.stringify(
-            createLeaseTemplateBody({ blueprintId: "not-a-uuid" }),
-          ),
-        }),
-        mockAuthorizedContext(testEnv, mockedGlobalConfig),
-      );
-
-      expect(response.statusCode).toBe(400);
-      expect(JSON.parse(response.body).data.errors).toEqual([
-        expect.objectContaining({ field: "blueprintId" }),
-      ]);
-    });
-
-    it("should reject a zero maxSpend", async () => {
-      const response = await handler(
-        createAPIGatewayProxyEvent({
-          httpMethod: "POST",
-          path: "/leaseTemplates",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          isbUser: isbAuthorizedUser.user,
-          body: JSON.stringify(createLeaseTemplateBody({ maxSpend: 0 })),
-        }),
-        mockAuthorizedContext(testEnv, mockedGlobalConfig),
-      );
-
-      expect(response.statusCode).toBe(400);
-      expect(JSON.parse(response.body).data.errors).toEqual([
-        expect.objectContaining({ field: "maxSpend" }),
-      ]);
-    });
-
-    it("should accept positive fractional amounts and durations", async () => {
-      const leaseTemplate = createLeaseTemplateBody({
-        maxSpend: 0.5,
-        leaseDurationInHours: 0.5,
-        budgetThresholds: [{ dollarsSpent: 0.25, action: "ALERT" }],
-        durationThresholds: [{ hoursRemaining: 0.25, action: "ALERT" }],
-      });
-      vi.spyOn(DynamoLeaseTemplateStore.prototype, "create").mockResolvedValue({
-        ...leaseTemplate,
-        uuid: mockUuid,
-        createdBy: isbAuthorizedUser.user.email,
-        blueprintName: null,
-      } as PersistedLeaseTemplate);
-
-      const response = await handler(
-        createAPIGatewayProxyEvent({
-          httpMethod: "POST",
-          path: "/leaseTemplates",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          isbUser: isbAuthorizedUser.user,
-          body: JSON.stringify(leaseTemplate),
-        }),
-        mockAuthorizedContext(testEnv, mockedGlobalConfig),
-      );
-
-      expect(response.statusCode).toBe(201);
-    });
-
     it.each([
       {
         maxSpend: 200, // exceeded max
@@ -884,12 +1428,14 @@ describe("handler", async () => {
     ])(
       `should return 400 when lease template values exceed global configuration: $expectedErrorMessage`,
       async ({ maxSpend, leaseDurationInHours, expectedErrorMessage }) => {
-        const leaseTemplate = generateSchemaData(
+        const leaseTemplate = generateLeaseTemplateData(
           PersistedLeaseTemplateSchema.omit({
             uuid: true,
             createdBy: true,
             blueprintName: true,
             meta: true,
+            allowedModelIds: true,
+            defaultModelId: true,
           }),
           {
             maxSpend,
@@ -940,12 +1486,14 @@ describe("handler", async () => {
       async ({ costReportGroup, reportingConfig, expectedError }) => {
         mockAppConfigMiddleware(mockedGlobalConfig, reportingConfig);
 
-        const leaseTemplate = generateSchemaData(
+        const leaseTemplate = generateLeaseTemplateData(
           PersistedLeaseTemplateSchema.omit({
             uuid: true,
             createdBy: true,
             blueprintName: true,
             meta: true,
+            allowedModelIds: true,
+            defaultModelId: true,
           }),
           {
             maxSpend: 50,
@@ -1006,12 +1554,14 @@ describe("handler", async () => {
 
         mockAppConfigMiddleware(mockedGlobalConfig, mockedReportingConfig);
 
-        const leaseTemplate = generateSchemaData(
+        const leaseTemplate = generateLeaseTemplateData(
           PersistedLeaseTemplateSchema.omit({
             uuid: true,
             createdBy: true,
             blueprintName: true,
             meta: true,
+            allowedModelIds: true,
+            defaultModelId: true,
           }),
           {
             maxSpend,
@@ -1045,12 +1595,14 @@ describe("handler", async () => {
     );
 
     it("should return 200 and create lease template with PUBLIC visibility", async () => {
-      const leaseTemplate = generateSchemaData(
+      const leaseTemplate = generateLeaseTemplateData(
         PersistedLeaseTemplateSchema.omit({
           uuid: true,
           createdBy: true,
           blueprintName: true,
           meta: true,
+          allowedModelIds: true,
+          defaultModelId: true,
         }),
         {
           maxSpend: 50,
@@ -1097,12 +1649,14 @@ describe("handler", async () => {
     });
 
     it("should create lease template with PRIVATE visibility", async () => {
-      const leaseTemplate = generateSchemaData(
+      const leaseTemplate = generateLeaseTemplateData(
         PersistedLeaseTemplateSchema.omit({
           uuid: true,
           createdBy: true,
           blueprintName: true,
           meta: true,
+          allowedModelIds: true,
+          defaultModelId: true,
         }),
         {
           maxSpend: 50,
@@ -1149,13 +1703,15 @@ describe("handler", async () => {
     });
 
     it("should default to PUBLIC visibility when not specified", async () => {
-      const leaseTemplate = generateSchemaData(
+      const leaseTemplate = generateLeaseTemplateData(
         PersistedLeaseTemplateSchema.omit({
           uuid: true,
           createdBy: true,
           visibility: true,
           blueprintName: true,
           meta: true,
+          allowedModelIds: true,
+          defaultModelId: true,
         }),
         {
           maxSpend: 50,
@@ -1202,12 +1758,14 @@ describe("handler", async () => {
     });
 
     it("should return 500 response when db call throws unexpected error", async () => {
-      const leaseTemplate = generateSchemaData(
+      const leaseTemplate = generateLeaseTemplateData(
         PersistedLeaseTemplateSchema.omit({
           uuid: true,
           createdBy: true,
           blueprintName: true,
           meta: true,
+          allowedModelIds: true,
+          defaultModelId: true,
         }),
         {
           maxSpend: 50,
@@ -1249,12 +1807,14 @@ describe("handler", async () => {
 
     it("should resolve blueprintName when blueprintId is provided", async () => {
       const blueprintId = "550e8400-e29b-41d4-a716-446655440000";
-      const leaseTemplate = generateSchemaData(
+      const leaseTemplate = generateLeaseTemplateData(
         PersistedLeaseTemplateSchema.omit({
           uuid: true,
           createdBy: true,
           blueprintName: true,
           meta: true,
+          allowedModelIds: true,
+          defaultModelId: true,
         }),
         {
           maxSpend: 50,
@@ -1305,12 +1865,14 @@ describe("handler", async () => {
     });
 
     it("should return 400 when blueprintId references non-existent blueprint", async () => {
-      const leaseTemplate = generateSchemaData(
+      const leaseTemplate = generateLeaseTemplateData(
         PersistedLeaseTemplateSchema.omit({
           uuid: true,
           createdBy: true,
           blueprintName: true,
           meta: true,
+          allowedModelIds: true,
+          defaultModelId: true,
         }),
         {
           maxSpend: 50,
@@ -1351,12 +1913,14 @@ describe("handler", async () => {
     });
 
     it("should set blueprintName to null when no blueprintId is provided", async () => {
-      const leaseTemplate = generateSchemaData(
+      const leaseTemplate = generateLeaseTemplateData(
         PersistedLeaseTemplateSchema.omit({
           uuid: true,
           createdBy: true,
           blueprintName: true,
           meta: true,
+          allowedModelIds: true,
+          defaultModelId: true,
         }),
         {
           maxSpend: 50,
@@ -1409,12 +1973,14 @@ describe("handler", async () => {
       };
       mockAppConfigMiddleware(disabledSharingConfig, mockedReportingConfig);
 
-      const leaseTemplate = generateSchemaData(
+      const leaseTemplate = generateLeaseTemplateData(
         PersistedLeaseTemplateSchema.omit({
           uuid: true,
           createdBy: true,
           blueprintName: true,
           meta: true,
+          allowedModelIds: true,
+          defaultModelId: true,
         }),
         {
           maxSpend: 50,
@@ -1452,6 +2018,222 @@ describe("handler", async () => {
       });
     });
 
+    it.each([
+      [
+        "predictiveBudgetEnabled",
+        "allowPredictiveBudgetControls",
+        "predictive budget controls",
+      ],
+      [
+        "bedrockTokenMonitoringEnabled",
+        "allowBedrockTokenMonitoring",
+        "Bedrock token monitoring",
+      ],
+    ] as const)(
+      "should return 400 when %s is true and %s is false",
+      async (templateField, gateField, featureName) => {
+        const gateOffConfig = {
+          ...mockedGlobalConfig,
+          leases: {
+            ...mockedGlobalConfig.leases,
+            [gateField]: false,
+          },
+        };
+        mockAppConfigMiddleware(gateOffConfig, mockedReportingConfig);
+
+        const leaseTemplate = generateLeaseTemplateData(
+          PersistedLeaseTemplateSchema.omit({
+            uuid: true,
+            createdBy: true,
+            blueprintName: true,
+            meta: true,
+            allowedModelIds: true,
+            defaultModelId: true,
+          }),
+          {
+            maxSpend: 50,
+            leaseDurationInHours: 24,
+            costReportGroup: undefined,
+            blueprintId: undefined,
+            allowOwnerToShareLease: false,
+            [templateField]: true,
+          },
+        );
+
+        const event = createAPIGatewayProxyEvent({
+          httpMethod: "POST",
+          path: "/leaseTemplates",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          isbUser: isbAuthorizedUser.user,
+          body: JSON.stringify(leaseTemplate),
+        });
+
+        expect(
+          await handler(event, mockAuthorizedContext(testEnv, gateOffConfig)),
+        ).toEqual({
+          statusCode: 400,
+          body: createFailureResponseBody({
+            message: `Cannot enable ${templateField} because ${featureName} is not available.`,
+          }),
+          // The generated pipeline adds `x-amzn-errortype` to error responses.
+          headers: responseHeadersWithErrorType("ValidationError"),
+        });
+      },
+    );
+
+    describe("Sandbox Spaces token monitoring requirement", () => {
+      // The requirement is checked while Sandbox Spaces is on globally.
+      const sandboxSpacesOnConfig = {
+        ...mockedGlobalConfig,
+        agent: {
+          ...mockedGlobalConfig.agent,
+          sandboxSpacesEnabled: true,
+        },
+      };
+      // Both global gates off, for the tests that check the global gate.
+      const globalGatesOffConfig = {
+        ...mockedGlobalConfig,
+        leases: {
+          ...mockedGlobalConfig.leases,
+          allowBedrockTokenMonitoring: false,
+        },
+        agent: {
+          ...mockedGlobalConfig.agent,
+          sandboxSpacesEnabled: false,
+        },
+      };
+      beforeEach(() => {
+        mockAppConfigMiddleware(sandboxSpacesOnConfig, mockedReportingConfig);
+      });
+      function createEvent(fields: Record<string, unknown>) {
+        const leaseTemplate = generateLeaseTemplateData(
+          PersistedLeaseTemplateSchema.omit({
+            uuid: true,
+            createdBy: true,
+            blueprintName: true,
+            meta: true,
+            allowedModelIds: true,
+            defaultModelId: true,
+          }),
+          {
+            maxSpend: 50,
+            leaseDurationInHours: 24,
+            costReportGroup: undefined,
+            blueprintId: undefined,
+            allowOwnerToShareLease: false,
+            predictiveBudgetEnabled: false,
+            ...fields,
+          },
+        );
+        return createAPIGatewayProxyEvent({
+          httpMethod: "POST",
+          path: "/leaseTemplates",
+          headers: { "Content-Type": "application/json" },
+          isbUser: isbAuthorizedUser.user,
+          body: JSON.stringify(leaseTemplate),
+        });
+      }
+
+      it("rejects Sandbox Spaces without Bedrock token monitoring", async () => {
+        const createSpy = vi.spyOn(
+          DynamoLeaseTemplateStore.prototype,
+          "create",
+        );
+
+        const response = await handler(
+          createEvent({
+            sandboxSpacesEnabled: true,
+            bedrockTokenMonitoringEnabled: false,
+          }),
+          mockAuthorizedContext(testEnv, sandboxSpacesOnConfig),
+        );
+
+        expect(response.statusCode).toBe(400);
+        expect(response.headers?.["x-amzn-errortype"]).toBe("ValidationError");
+        expect(JSON.parse(response.body).data.errors).toEqual([
+          {
+            field: "sandboxSpacesEnabled",
+            message:
+              "Sandbox Spaces requires Bedrock token monitoring. Set bedrockTokenMonitoringEnabled to true to enable Sandbox Spaces.",
+          },
+        ]);
+        expect(createSpy).not.toHaveBeenCalled();
+      });
+
+      it("rejects Sandbox Spaces when bedrockTokenMonitoringEnabled is omitted", async () => {
+        const createSpy = vi.spyOn(
+          DynamoLeaseTemplateStore.prototype,
+          "create",
+        );
+        const event = createEvent({ sandboxSpacesEnabled: true });
+        const body = JSON.parse(event.body!);
+        delete body.bedrockTokenMonitoringEnabled;
+        event.body = JSON.stringify(body);
+
+        const response = await handler(
+          event,
+          mockAuthorizedContext(testEnv, sandboxSpacesOnConfig),
+        );
+
+        expect(response.statusCode).toBe(400);
+        expect(JSON.parse(response.body).data.errors[0].field).toBe(
+          "sandboxSpacesEnabled",
+        );
+        expect(createSpy).not.toHaveBeenCalled();
+      });
+
+      it.each([
+        { sandboxSpacesEnabled: true, bedrockTokenMonitoringEnabled: true },
+        { sandboxSpacesEnabled: false, bedrockTokenMonitoringEnabled: false },
+        { sandboxSpacesEnabled: false, bedrockTokenMonitoringEnabled: true },
+      ] as const)(
+        "creates a template with sandboxSpacesEnabled $sandboxSpacesEnabled and monitoring $bedrockTokenMonitoringEnabled",
+        async (fields) => {
+          const createSpy = vi
+            .spyOn(DynamoLeaseTemplateStore.prototype, "create")
+            .mockImplementation(async (item) => item);
+
+          const response = await handler(
+            createEvent(fields),
+            mockAuthorizedContext(testEnv, sandboxSpacesOnConfig),
+          );
+
+          expect(response.statusCode).toBe(201);
+          expect(createSpy).toHaveBeenCalledWith(
+            expect.objectContaining(fields),
+          );
+        },
+      );
+
+      it("rejects a new template enabling Sandbox Spaces while Sandbox Spaces and Bedrock token monitoring are off globally", async () => {
+        mockAppConfigMiddleware(globalGatesOffConfig, mockedReportingConfig);
+        const createSpy = vi.spyOn(
+          DynamoLeaseTemplateStore.prototype,
+          "create",
+        );
+
+        const response = await handler(
+          createEvent({
+            sandboxSpacesEnabled: true,
+            bedrockTokenMonitoringEnabled: true,
+          }),
+          mockAuthorizedContext(testEnv, globalGatesOffConfig),
+        );
+
+        expect(response).toEqual({
+          statusCode: 400,
+          body: createFailureResponseBody({
+            message:
+              "Cannot enable sandboxSpacesEnabled because Sandbox Spaces is not available.",
+          }),
+          headers: responseHeadersWithErrorType("ValidationError"),
+        });
+        expect(createSpy).not.toHaveBeenCalled();
+      });
+    });
+
     // The body parser returns 415 for three conditions; only a non-JSON
     // Content-Type is genuinely a media-type problem.
     it("should return 415 when Content-Type is not JSON", async () => {
@@ -1482,12 +2264,14 @@ describe("handler", async () => {
     });
 
     it("rejects a Content-Type carrying parameters (e.g. charset)", async () => {
-      const leaseTemplate = generateSchemaData(
+      const leaseTemplate = generateLeaseTemplateData(
         PersistedLeaseTemplateSchema.omit({
           uuid: true,
           createdBy: true,
           blueprintName: true,
           meta: true,
+          allowedModelIds: true,
+          defaultModelId: true,
         }),
         {
           maxSpend: 50,
@@ -1533,12 +2317,14 @@ describe("handler", async () => {
     });
 
     it("should return exactly the JSend success envelope keys", async () => {
-      const leaseTemplate = generateSchemaData(
+      const leaseTemplate = generateLeaseTemplateData(
         PersistedLeaseTemplateSchema.omit({
           uuid: true,
           createdBy: true,
           blueprintName: true,
           meta: true,
+          allowedModelIds: true,
+          defaultModelId: true,
         }),
         {
           maxSpend: 50,
@@ -1576,12 +2362,14 @@ describe("handler", async () => {
     });
 
     it("should return the bare entity in data, not a result wrapper", async () => {
-      const leaseTemplate = generateSchemaData(
+      const leaseTemplate = generateLeaseTemplateData(
         PersistedLeaseTemplateSchema.omit({
           uuid: true,
           createdBy: true,
           blueprintName: true,
           meta: true,
+          allowedModelIds: true,
+          defaultModelId: true,
         }),
         {
           maxSpend: 50,
@@ -1631,7 +2419,7 @@ describe("handler", async () => {
       const getSpy = vi
         .spyOn(DynamoLeaseTemplateStore.prototype, "get")
         .mockResolvedValue({
-          result: generateSchemaData(PersistedLeaseTemplateSchema, {
+          result: generateLeaseTemplateData(PersistedLeaseTemplateSchema, {
             uuid: pathId,
             visibility: "PUBLIC",
           }),
@@ -1661,7 +2449,10 @@ describe("handler", async () => {
         isbUser: isbAuthorizedUser.user,
       });
 
-      const leaseTemplate = generateSchemaData(PersistedLeaseTemplateSchema);
+      const leaseTemplate = generateLeaseTemplateData(
+        PersistedLeaseTemplateSchema,
+        {},
+      );
 
       vi.spyOn(DynamoLeaseTemplateStore.prototype, "get").mockReturnValue(
         Promise.resolve({
@@ -1685,9 +2476,12 @@ describe("handler", async () => {
     });
 
     it("should return 200 and allow Admin/Manager to access PRIVATE templates", async () => {
-      const privateTemplate = generateSchemaData(PersistedLeaseTemplateSchema, {
-        visibility: "PRIVATE",
-      });
+      const privateTemplate = generateLeaseTemplateData(
+        PersistedLeaseTemplateSchema,
+        {
+          visibility: "PRIVATE",
+        },
+      );
 
       vi.spyOn(DynamoLeaseTemplateStore.prototype, "get").mockResolvedValue({
         result: privateTemplate,
@@ -1718,9 +2512,12 @@ describe("handler", async () => {
     });
 
     it("should return 404 and deny User role access to PRIVATE templates", async () => {
-      const privateTemplate = generateSchemaData(PersistedLeaseTemplateSchema, {
-        visibility: "PRIVATE",
-      });
+      const privateTemplate = generateLeaseTemplateData(
+        PersistedLeaseTemplateSchema,
+        {
+          visibility: "PRIVATE",
+        },
+      );
 
       vi.spyOn(DynamoLeaseTemplateStore.prototype, "get").mockResolvedValue({
         result: privateTemplate,
@@ -1749,12 +2546,19 @@ describe("handler", async () => {
         }),
         headers: expect.objectContaining(responseHeaders),
       });
+      expect(SsmIdcStackConfigStore.prototype.get).not.toHaveBeenCalled();
+      expect(
+        DynamoPrincipalStore.prototype.getPermissionSetCacheItems,
+      ).not.toHaveBeenCalled();
     });
 
     it("should return 200 allow User role to access PUBLIC templates", async () => {
-      const publicTemplate = generateSchemaData(PersistedLeaseTemplateSchema, {
-        visibility: "PUBLIC",
-      });
+      const publicTemplate = generateLeaseTemplateData(
+        PersistedLeaseTemplateSchema,
+        {
+          visibility: "PUBLIC",
+        },
+      );
 
       vi.spyOn(DynamoLeaseTemplateStore.prototype, "get").mockResolvedValue({
         result: publicTemplate,
@@ -1814,6 +2618,10 @@ describe("handler", async () => {
         }),
         headers: expect.objectContaining(responseHeaders),
       });
+      expect(SsmIdcStackConfigStore.prototype.get).not.toHaveBeenCalled();
+      expect(
+        DynamoPrincipalStore.prototype.getPermissionSetCacheItems,
+      ).not.toHaveBeenCalled();
     });
     it("should return 500 response when db call throws unexpected error", async () => {
       vi.spyOn(DynamoLeaseTemplateStore.prototype, "get").mockImplementation(
@@ -1846,29 +2654,266 @@ describe("handler", async () => {
   describe("PUT /leaseTemplates/{leaseTemplateId}", () => {
     beforeEach(() => {
       // The PUT handler fetches the existing template to make config-compliance
-      // validation change-aware (cost report group, max budget, duration).
-      // Default to an existing template with no cost report group; individual
-      // tests override as needed.
+      // validation change-aware (cost report group, max budget, duration, and
+      // the two feature opt-ins). Default to an existing template with no cost
+      // report group and both opt-ins off, so a test that enables one is a
+      // change; individual tests override as needed.
       vi.spyOn(DynamoLeaseTemplateStore.prototype, "get").mockResolvedValue({
-        result: generateSchemaData(PersistedLeaseTemplateSchema, {
+        result: generateLeaseTemplateData(PersistedLeaseTemplateSchema, {
           uuid: mockUuid,
           costReportGroup: undefined,
+          allowOwnerToShareLease: false,
+          predictiveBudgetEnabled: false,
+          bedrockTokenMonitoringEnabled: false,
         }),
       });
     });
 
-    it("should return 200 response with updated data", async () => {
-      const oldLeaseTemplate = generateSchemaData(
+    it("accepts both permission-set ARN fields and returns hydrated references", async () => {
+      const existingTemplate = generateLeaseTemplateData(
         PersistedLeaseTemplateSchema,
         {
           uuid: mockUuid,
         },
       );
-      const newLeaseTemplateJsonBody = generateSchemaData(
+      vi.spyOn(DynamoLeaseTemplateStore.prototype, "get").mockResolvedValue({
+        result: existingTemplate,
+      });
+      vi.spyOn(
+        DynamoPrincipalStore.prototype,
+        "getPermissionSetCacheItems",
+      ).mockResolvedValue([
+        permissionSetCacheItem(userPermissionSetArn, "BuiltInUser"),
+        permissionSetCacheItem(customPermissionSetArn, "Custom"),
+      ]);
+
+      const request = generateLeaseTemplateData(
         PersistedLeaseTemplateSchema.omit({
           uuid: true,
           createdBy: true,
           blueprintName: true,
+        }),
+        {
+          maxSpend: 50,
+          leaseDurationInHours: 24,
+          costReportGroup: undefined,
+          blueprintId: undefined,
+          defaultPermissionSetArn: customPermissionSetArn,
+          allowedPermissionSetArns: [
+            customPermissionSetArn,
+            userPermissionSetArn,
+          ],
+        },
+      );
+      const update = vi
+        .spyOn(DynamoLeaseTemplateStore.prototype, "update")
+        .mockImplementation(async (item) => ({
+          oldItem: existingTemplate,
+          newItem: item,
+        }));
+
+      const response = await handler(
+        createAPIGatewayProxyEvent({
+          httpMethod: "PUT",
+          path: "/leaseTemplates/{leaseTemplateId}",
+          pathParameters: { leaseTemplateId: mockUuid },
+          headers: { "Content-Type": "application/json" },
+          isbUser: isbAuthorizedUser.user,
+          body: JSON.stringify(request),
+        }),
+        mockAuthorizedContext(testEnv, mockedGlobalConfig),
+      );
+
+      expect(response.statusCode).toBe(200);
+      expect(
+        DynamoPrincipalStore.prototype.getPermissionSetCacheItems,
+      ).toHaveBeenCalledExactlyOnceWith({ consistentRead: true });
+
+      expect(update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          defaultPermissionSetArn: customPermissionSetArn,
+          allowedPermissionSetArns: [
+            customPermissionSetArn,
+            userPermissionSetArn,
+          ],
+        }),
+        expect.anything(),
+      );
+      const data = JSON.parse(response.body).data;
+      expect(data).not.toHaveProperty("defaultPermissionSetArn");
+      expect(data).not.toHaveProperty("allowedPermissionSetArns");
+      expect(data.defaultPermissionSet).toEqual(
+        expect.objectContaining({
+          permissionSetArn: customPermissionSetArn,
+          name: "Custom",
+          availability: "AVAILABLE",
+        }),
+      );
+      expect(data.allowedPermissionSets).toEqual([
+        data.defaultPermissionSet,
+        expect.objectContaining({
+          permissionSetArn: userPermissionSetArn,
+          name: "BuiltInUser",
+          availability: "AVAILABLE",
+        }),
+      ]);
+    });
+
+    it("should return 200 for a PREDICTED threshold while switching predictive budget controls on", async () => {
+      const fields = {
+        predictiveBudgetEnabled: true,
+        budgetThresholds: [
+          {
+            dollarsSpent: 25,
+            action: "ALERT" as const,
+            triggerOn: "PREDICTED" as const,
+          },
+        ],
+      };
+      const existingTemplate = generateLeaseTemplateData(
+        PersistedLeaseTemplateSchema,
+        {
+          uuid: mockUuid,
+          costReportGroup: undefined,
+          predictiveBudgetEnabled: false,
+        },
+      );
+      vi.spyOn(DynamoLeaseTemplateStore.prototype, "get").mockResolvedValue({
+        result: existingTemplate,
+      });
+      const request = generateLeaseTemplateData(
+        PersistedLeaseTemplateSchema.omit({
+          uuid: true,
+          createdBy: true,
+          blueprintName: true,
+        }),
+        {
+          maxSpend: 50,
+          leaseDurationInHours: 24,
+          costReportGroup: undefined,
+          blueprintId: undefined,
+          ...fields,
+        },
+      );
+      const update = vi
+        .spyOn(DynamoLeaseTemplateStore.prototype, "update")
+        .mockImplementation(async (item) => ({
+          oldItem: existingTemplate,
+          newItem: item,
+        }));
+
+      const response = await handler(
+        createAPIGatewayProxyEvent({
+          httpMethod: "PUT",
+          path: "/leaseTemplates/{leaseTemplateId}",
+          pathParameters: { leaseTemplateId: mockUuid },
+          headers: { "Content-Type": "application/json" },
+          isbUser: isbAuthorizedUser.user,
+          body: JSON.stringify(request),
+        }),
+        mockAuthorizedContext(testEnv, mockedGlobalConfig),
+      );
+
+      expect(response.statusCode).toBe(200);
+      expect(update).toHaveBeenCalledWith(
+        expect.objectContaining(fields),
+        existingTemplate,
+      );
+    });
+
+    it("allows unrelated updates to preserve explicitly echoed unavailable permission sets", async () => {
+      const existingTemplate = generateLeaseTemplateData(
+        PersistedLeaseTemplateSchema,
+        {
+          uuid: mockUuid,
+          maxSpend: 25,
+          defaultPermissionSetArn: customPermissionSetArn,
+          allowedPermissionSetArns: [missingPermissionSetArn],
+        },
+      );
+      vi.spyOn(DynamoLeaseTemplateStore.prototype, "get").mockResolvedValue({
+        result: existingTemplate,
+      });
+      vi.spyOn(
+        DynamoPrincipalStore.prototype,
+        "getPermissionSetCacheItems",
+      ).mockResolvedValue([
+        permissionSetCacheItem(userPermissionSetArn, "BuiltInUser"),
+      ]);
+
+      const request = generateLeaseTemplateData(
+        PersistedLeaseTemplateSchema.omit({
+          uuid: true,
+          createdBy: true,
+          blueprintName: true,
+        }),
+        {
+          maxSpend: 50,
+          leaseDurationInHours: 24,
+          costReportGroup: undefined,
+          blueprintId: undefined,
+          defaultPermissionSetArn: customPermissionSetArn,
+          allowedPermissionSetArns: [missingPermissionSetArn],
+        },
+      );
+      const update = vi
+        .spyOn(DynamoLeaseTemplateStore.prototype, "update")
+        .mockImplementation(async (item) => ({
+          oldItem: existingTemplate,
+          newItem: item,
+        }));
+
+      const response = await handler(
+        createAPIGatewayProxyEvent({
+          httpMethod: "PUT",
+          path: "/leaseTemplates/{leaseTemplateId}",
+          pathParameters: { leaseTemplateId: mockUuid },
+          headers: { "Content-Type": "application/json" },
+          isbUser: isbAuthorizedUser.user,
+          body: JSON.stringify(request),
+        }),
+        mockAuthorizedContext(testEnv, mockedGlobalConfig),
+      );
+
+      expect(response.statusCode).toBe(200);
+      expect(update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          maxSpend: 50,
+          defaultPermissionSetArn: customPermissionSetArn,
+          allowedPermissionSetArns: [missingPermissionSetArn],
+        }),
+        expect.anything(),
+      );
+      const data = JSON.parse(response.body).data;
+      expect(data.defaultPermissionSet).toEqual({
+        permissionSetArn: customPermissionSetArn,
+        permissionSetId: permissionSetIdFromArn(customPermissionSetArn),
+        availability: "UNAVAILABLE",
+      });
+      expect(data.allowedPermissionSets).toEqual([
+        data.defaultPermissionSet,
+        {
+          permissionSetArn: missingPermissionSetArn,
+          permissionSetId: permissionSetIdFromArn(missingPermissionSetArn),
+          availability: "UNAVAILABLE",
+        },
+      ]);
+    });
+
+    it("should return 200 response with updated data", async () => {
+      const oldLeaseTemplate = generateLeaseTemplateData(
+        PersistedLeaseTemplateSchema,
+        {
+          uuid: mockUuid,
+        },
+      );
+      const newLeaseTemplateJsonBody = generateLeaseTemplateData(
+        PersistedLeaseTemplateSchema.omit({
+          uuid: true,
+          createdBy: true,
+          blueprintName: true,
+          allowedModelIds: true,
+          defaultModelId: true,
         }),
         {
           maxSpend: 50,
@@ -1922,11 +2967,13 @@ describe("handler", async () => {
       // invalid date-time fails generated deserialization before the operation's
       // Zod parse — the generic restJson1 400, not the pre-Smithy field-specific
       // message. Accepted deviation of the Smithy migration.
-      const validBody = generateSchemaData(
+      const validBody = generateLeaseTemplateData(
         PersistedLeaseTemplateSchema.omit({
           uuid: true,
           createdBy: true,
           blueprintName: true,
+          allowedModelIds: true,
+          defaultModelId: true,
         }),
         {
           maxSpend: 50,
@@ -1970,17 +3017,19 @@ describe("handler", async () => {
       // Editing an unrelated field (maxSpend) must still succeed.
       mockAppConfigMiddleware(mockedGlobalConfig, testReportingConfigRequired);
       vi.spyOn(DynamoLeaseTemplateStore.prototype, "get").mockResolvedValue({
-        result: generateSchemaData(PersistedLeaseTemplateSchema, {
+        result: generateLeaseTemplateData(PersistedLeaseTemplateSchema, {
           uuid: mockUuid,
           costReportGroup: undefined,
         }),
       });
 
-      const newLeaseTemplateJsonBody = generateSchemaData(
+      const newLeaseTemplateJsonBody = generateLeaseTemplateData(
         PersistedLeaseTemplateSchema.omit({
           uuid: true,
           createdBy: true,
           blueprintName: true,
+          allowedModelIds: true,
+          defaultModelId: true,
         }),
         {
           maxSpend: 75,
@@ -1996,7 +3045,7 @@ describe("handler", async () => {
           uuid: mockUuid,
           createdBy: "original.author@example.com",
         },
-        oldItem: generateSchemaData(PersistedLeaseTemplateSchema, {
+        oldItem: generateLeaseTemplateData(PersistedLeaseTemplateSchema, {
           uuid: mockUuid,
         }),
       });
@@ -2035,7 +3084,7 @@ describe("handler", async () => {
       mockAppConfigMiddleware(requiredConfig, testReportingConfig);
 
       vi.spyOn(DynamoLeaseTemplateStore.prototype, "get").mockResolvedValue({
-        result: generateSchemaData(PersistedLeaseTemplateSchema, {
+        result: generateLeaseTemplateData(PersistedLeaseTemplateSchema, {
           uuid: mockUuid,
           maxSpend: undefined,
           leaseDurationInHours: undefined,
@@ -2043,11 +3092,13 @@ describe("handler", async () => {
         }),
       });
 
-      const newLeaseTemplateJsonBody = generateSchemaData(
+      const newLeaseTemplateJsonBody = generateLeaseTemplateData(
         PersistedLeaseTemplateSchema.omit({
           uuid: true,
           createdBy: true,
           blueprintName: true,
+          allowedModelIds: true,
+          defaultModelId: true,
         }),
         {
           maxSpend: undefined,
@@ -2064,7 +3115,7 @@ describe("handler", async () => {
           uuid: mockUuid,
           createdBy: "original.author@example.com",
         },
-        oldItem: generateSchemaData(PersistedLeaseTemplateSchema, {
+        oldItem: generateLeaseTemplateData(PersistedLeaseTemplateSchema, {
           uuid: mockUuid,
         }),
       });
@@ -2105,8 +3156,8 @@ describe("handler", async () => {
 
       vi.spyOn(DynamoLeaseTemplateStore.prototype, "update").mockReturnValue(
         Promise.resolve({
-          newItem: generateSchemaData(PersistedLeaseTemplateSchema),
-          oldItem: generateSchemaData(PersistedLeaseTemplateSchema),
+          newItem: generateLeaseTemplateData(PersistedLeaseTemplateSchema, {}),
+          oldItem: generateLeaseTemplateData(PersistedLeaseTemplateSchema, {}),
         }),
       );
 
@@ -2154,8 +3205,8 @@ describe("handler", async () => {
 
       vi.spyOn(DynamoLeaseTemplateStore.prototype, "update").mockReturnValue(
         Promise.resolve({
-          newItem: generateSchemaData(PersistedLeaseTemplateSchema),
-          oldItem: generateSchemaData(PersistedLeaseTemplateSchema),
+          newItem: generateLeaseTemplateData(PersistedLeaseTemplateSchema, {}),
+          oldItem: generateLeaseTemplateData(PersistedLeaseTemplateSchema, {}),
         }),
       );
 
@@ -2176,11 +3227,14 @@ describe("handler", async () => {
       });
     });
     it("should return 400 response when body is malformed", async () => {
-      const leaseTemplate = generateSchemaData(PersistedLeaseTemplateSchema, {
-        blueprintName: undefined,
-        maxSpend: 50,
-        leaseDurationInHours: 24,
-      });
+      const leaseTemplate = generateLeaseTemplateData(
+        PersistedLeaseTemplateSchema,
+        {
+          blueprintName: undefined,
+          maxSpend: 50,
+          leaseDurationInHours: 24,
+        },
+      );
       const event = createAPIGatewayProxyEvent({
         httpMethod: "PUT",
         path: "/leaseTemplates/{leaseTemplateId}",
@@ -2196,8 +3250,8 @@ describe("handler", async () => {
 
       vi.spyOn(DynamoLeaseTemplateStore.prototype, "update").mockReturnValue(
         Promise.resolve({
-          newItem: generateSchemaData(PersistedLeaseTemplateSchema),
-          oldItem: generateSchemaData(PersistedLeaseTemplateSchema),
+          newItem: generateLeaseTemplateData(PersistedLeaseTemplateSchema, {}),
+          oldItem: generateLeaseTemplateData(PersistedLeaseTemplateSchema, {}),
         }),
       );
 
@@ -2235,11 +3289,13 @@ describe("handler", async () => {
     ])(
       `should return 400 when lease template values exceed global configuration: $expectedErrorMessage`,
       async ({ maxSpend, leaseDurationInHours, expectedErrorMessage }) => {
-        const leaseTemplate = generateSchemaData(
+        const leaseTemplate = generateLeaseTemplateData(
           PersistedLeaseTemplateSchema.omit({
             uuid: true,
             createdBy: true,
             blueprintName: true,
+            allowedModelIds: true,
+            defaultModelId: true,
           }),
           {
             maxSpend,
@@ -2302,17 +3358,19 @@ describe("handler", async () => {
         mockAppConfigMiddleware(mockedGlobalConfig, reportingConfig);
 
         vi.spyOn(DynamoLeaseTemplateStore.prototype, "get").mockResolvedValue({
-          result: generateSchemaData(PersistedLeaseTemplateSchema, {
+          result: generateLeaseTemplateData(PersistedLeaseTemplateSchema, {
             uuid: mockUuid,
             costReportGroup: previousCostReportGroup,
           }),
         });
 
-        const leaseTemplate = generateSchemaData(
+        const leaseTemplate = generateLeaseTemplateData(
           PersistedLeaseTemplateSchema.omit({
             uuid: true,
             createdBy: true,
             blueprintName: true,
+            allowedModelIds: true,
+            defaultModelId: true,
           }),
           {
             maxSpend: 50,
@@ -2381,7 +3439,7 @@ describe("handler", async () => {
         // not treated as an unchanged pre-existing gap. (Pin both so the
         // change-aware validation is deterministic.)
         vi.spyOn(DynamoLeaseTemplateStore.prototype, "get").mockResolvedValue({
-          result: generateSchemaData(PersistedLeaseTemplateSchema, {
+          result: generateLeaseTemplateData(PersistedLeaseTemplateSchema, {
             uuid: mockUuid,
             maxSpend: 100,
             leaseDurationInHours: 50,
@@ -2389,11 +3447,13 @@ describe("handler", async () => {
           }),
         });
 
-        const leaseTemplate = generateSchemaData(
+        const leaseTemplate = generateLeaseTemplateData(
           PersistedLeaseTemplateSchema.omit({
             uuid: true,
             createdBy: true,
             blueprintName: true,
+            allowedModelIds: true,
+            defaultModelId: true,
           }),
           {
             maxSpend,
@@ -2433,11 +3493,13 @@ describe("handler", async () => {
     );
 
     it("should return 500 response when db call throws unexpected error", async () => {
-      const leaseTemplate = generateSchemaData(
+      const leaseTemplate = generateLeaseTemplateData(
         PersistedLeaseTemplateSchema.omit({
           uuid: true,
           createdBy: true,
           blueprintName: true,
+          allowedModelIds: true,
+          defaultModelId: true,
         }),
         {
           maxSpend: 50,
@@ -2480,15 +3542,20 @@ describe("handler", async () => {
     });
 
     it("should return 200 and update lease template visibility from PUBLIC to PRIVATE", async () => {
-      const oldTemplate = generateSchemaData(PersistedLeaseTemplateSchema, {
-        visibility: "PUBLIC",
-      });
+      const oldTemplate = generateLeaseTemplateData(
+        PersistedLeaseTemplateSchema,
+        {
+          visibility: "PUBLIC",
+        },
+      );
 
-      const updatedTemplate = generateSchemaData(
+      const updatedTemplate = generateLeaseTemplateData(
         PersistedLeaseTemplateSchema.omit({
           uuid: true,
           createdBy: true,
           blueprintName: true,
+          allowedModelIds: true,
+          defaultModelId: true,
         }),
         {
           maxSpend: 50,
@@ -2542,11 +3609,13 @@ describe("handler", async () => {
       // createdBy is server-owned and immutable after create, so the strict
       // schema rejects it outright rather than silently ignoring it.
       const body = {
-        ...generateSchemaData(
+        ...generateLeaseTemplateData(
           PersistedLeaseTemplateSchema.omit({
             uuid: true,
             createdBy: true,
             blueprintName: true,
+            allowedModelIds: true,
+            defaultModelId: true,
           }),
           {
             maxSpend: 50,
@@ -2589,20 +3658,25 @@ describe("handler", async () => {
       // still put the ORIGINAL creator on the updated record (not drop it, and
       // not substitute the caller's identity).
       const originalCreatedBy = "original.author@example.com";
-      const persisted = generateSchemaData(PersistedLeaseTemplateSchema, {
-        uuid: mockUuid,
-        createdBy: originalCreatedBy,
-        costReportGroup: undefined,
-      });
+      const persisted = generateLeaseTemplateData(
+        PersistedLeaseTemplateSchema,
+        {
+          uuid: mockUuid,
+          createdBy: originalCreatedBy,
+          costReportGroup: undefined,
+        },
+      );
       vi.spyOn(DynamoLeaseTemplateStore.prototype, "get").mockResolvedValue({
         result: persisted,
       });
 
-      const body = generateSchemaData(
+      const body = generateLeaseTemplateData(
         PersistedLeaseTemplateSchema.omit({
           uuid: true,
           createdBy: true,
           blueprintName: true,
+          allowedModelIds: true,
+          defaultModelId: true,
         }),
         {
           maxSpend: 50,
@@ -2652,11 +3726,13 @@ describe("handler", async () => {
         .spyOn(DynamoBlueprintStore.prototype, "get")
         .mockResolvedValue({ result: undefined } as any);
 
-      const body = generateSchemaData(
+      const body = generateLeaseTemplateData(
         PersistedLeaseTemplateSchema.omit({
           uuid: true,
           createdBy: true,
           blueprintName: true,
+          allowedModelIds: true,
+          defaultModelId: true,
         }),
         {
           maxSpend: 50,
@@ -2696,11 +3772,13 @@ describe("handler", async () => {
         result: undefined,
       });
 
-      const body = generateSchemaData(
+      const body = generateLeaseTemplateData(
         PersistedLeaseTemplateSchema.omit({
           uuid: true,
           createdBy: true,
           blueprintName: true,
+          allowedModelIds: true,
+          defaultModelId: true,
         }),
         {
           maxSpend: 50,
@@ -2734,15 +3812,20 @@ describe("handler", async () => {
     });
 
     it("should return 200 and update lease template visibility from PRIVATE to PUBLIC", async () => {
-      const oldTemplate = generateSchemaData(PersistedLeaseTemplateSchema, {
-        visibility: "PRIVATE",
-      });
+      const oldTemplate = generateLeaseTemplateData(
+        PersistedLeaseTemplateSchema,
+        {
+          visibility: "PRIVATE",
+        },
+      );
 
-      const updatedTemplate = generateSchemaData(
+      const updatedTemplate = generateLeaseTemplateData(
         PersistedLeaseTemplateSchema.omit({
           uuid: true,
           createdBy: true,
           blueprintName: true,
+          allowedModelIds: true,
+          defaultModelId: true,
         }),
         {
           maxSpend: 50,
@@ -2793,11 +3876,13 @@ describe("handler", async () => {
     });
 
     it("should return 404 response when the item is deleted between read and write", async () => {
-      const leaseTemplate = generateSchemaData(
+      const leaseTemplate = generateLeaseTemplateData(
         PersistedLeaseTemplateSchema.omit({
           uuid: true,
           createdBy: true,
           blueprintName: true,
+          allowedModelIds: true,
+          defaultModelId: true,
         }),
         {
           maxSpend: 50,
@@ -2844,11 +3929,13 @@ describe("handler", async () => {
 
     it("should resolve blueprintName when blueprintId is provided on update", async () => {
       const blueprintId = "550e8400-e29b-41d4-a716-446655440000";
-      const leaseTemplate = generateSchemaData(
+      const leaseTemplate = generateLeaseTemplateData(
         PersistedLeaseTemplateSchema.omit({
           uuid: true,
           createdBy: true,
           blueprintName: true,
+          allowedModelIds: true,
+          defaultModelId: true,
         }),
         {
           maxSpend: 50,
@@ -2868,7 +3955,7 @@ describe("handler", async () => {
       const updateSpy = vi
         .spyOn(DynamoLeaseTemplateStore.prototype, "update")
         .mockResolvedValue({
-          oldItem: generateSchemaData(PersistedLeaseTemplateSchema),
+          oldItem: generateLeaseTemplateData(PersistedLeaseTemplateSchema, {}),
           newItem: {
             ...leaseTemplate,
             uuid: mockUuid,
@@ -2899,15 +3986,18 @@ describe("handler", async () => {
           blueprintId,
           blueprintName: "Resolved-Blueprint",
         }),
+        expect.anything(),
       );
     });
 
     it("should return 400 when blueprintId references non-existent blueprint on update", async () => {
-      const leaseTemplate = generateSchemaData(
+      const leaseTemplate = generateLeaseTemplateData(
         PersistedLeaseTemplateSchema.omit({
           uuid: true,
           createdBy: true,
           blueprintName: true,
+          allowedModelIds: true,
+          defaultModelId: true,
         }),
         {
           maxSpend: 50,
@@ -2958,11 +4048,13 @@ describe("handler", async () => {
       };
       mockAppConfigMiddleware(disabledSharingConfig, mockedReportingConfig);
 
-      const leaseTemplate = generateSchemaData(
+      const leaseTemplate = generateLeaseTemplateData(
         PersistedLeaseTemplateSchema.omit({
           uuid: true,
           createdBy: true,
           blueprintName: true,
+          allowedModelIds: true,
+          defaultModelId: true,
         }),
         {
           maxSpend: 50,
@@ -3000,6 +4092,866 @@ describe("handler", async () => {
         ),
       });
     });
+
+    it.each([
+      [
+        "predictiveBudgetEnabled",
+        "allowPredictiveBudgetControls",
+        "predictive budget controls",
+      ],
+      [
+        "bedrockTokenMonitoringEnabled",
+        "allowBedrockTokenMonitoring",
+        "Bedrock token monitoring",
+      ],
+    ] as const)(
+      "should return 400 when enabling %s while %s is false",
+      async (templateField, gateField, featureName) => {
+        const gateOffConfig = {
+          ...mockedGlobalConfig,
+          leases: {
+            ...mockedGlobalConfig.leases,
+            [gateField]: false,
+          },
+        };
+        mockAppConfigMiddleware(gateOffConfig, mockedReportingConfig);
+
+        const leaseTemplate = generateLeaseTemplateData(
+          PersistedLeaseTemplateSchema.omit({
+            uuid: true,
+            createdBy: true,
+            blueprintName: true,
+            allowedModelIds: true,
+            defaultModelId: true,
+          }),
+          {
+            maxSpend: 50,
+            leaseDurationInHours: 24,
+            costReportGroup: undefined,
+            blueprintId: undefined,
+            allowOwnerToShareLease: false,
+            [templateField]: true,
+          },
+        );
+
+        const event = createAPIGatewayProxyEvent({
+          httpMethod: "PUT",
+          path: "/leaseTemplates/{leaseTemplateId}",
+          pathParameters: { leaseTemplateId: mockUuid },
+          headers: {
+            "Content-Type": "application/json",
+          },
+          isbUser: isbAuthorizedUser.user,
+          body: JSON.stringify(leaseTemplate),
+        });
+
+        expect(
+          await handler(event, mockAuthorizedContext(testEnv, gateOffConfig)),
+        ).toEqual({
+          statusCode: 400,
+          body: createFailureResponseBody({
+            message: `Cannot enable ${templateField} because ${featureName} is not available.`,
+          }),
+          // The generated pipeline adds `x-amzn-errortype` to error responses.
+          headers: responseHeadersWithErrorType("ValidationError"),
+        });
+      },
+    );
+
+    it.each([
+      ["predictiveBudgetEnabled", "allowPredictiveBudgetControls", true],
+      ["predictiveBudgetEnabled", "allowPredictiveBudgetControls", false],
+      ["bedrockTokenMonitoringEnabled", "allowBedrockTokenMonitoring", true],
+      ["bedrockTokenMonitoringEnabled", "allowBedrockTokenMonitoring", false],
+    ] as const)(
+      "still saves a template with %s already on while %s is off (kept on: %s)",
+      async (templateField, gateField, keepEnabled) => {
+        const gateOffConfig = {
+          ...mockedGlobalConfig,
+          leases: {
+            ...mockedGlobalConfig.leases,
+            [gateField]: false,
+          },
+        };
+        mockAppConfigMiddleware(gateOffConfig, mockedReportingConfig);
+
+        const existingTemplate = generateLeaseTemplateData(
+          PersistedLeaseTemplateSchema,
+          {
+            uuid: mockUuid,
+            costReportGroup: undefined,
+            [templateField]: true,
+          },
+        );
+        vi.spyOn(DynamoLeaseTemplateStore.prototype, "get").mockResolvedValue({
+          result: existingTemplate,
+        });
+
+        const leaseTemplate = generateLeaseTemplateData(
+          PersistedLeaseTemplateSchema.omit({
+            uuid: true,
+            createdBy: true,
+            blueprintName: true,
+            allowedModelIds: true,
+            defaultModelId: true,
+          }),
+          {
+            maxSpend: 50,
+            leaseDurationInHours: 24,
+            costReportGroup: undefined,
+            blueprintId: undefined,
+            allowOwnerToShareLease: false,
+            [templateField]: keepEnabled,
+          },
+        );
+        vi.spyOn(DynamoLeaseTemplateStore.prototype, "update").mockReturnValue(
+          Promise.resolve({
+            newItem: {
+              ...leaseTemplate,
+              uuid: existingTemplate.uuid,
+              createdBy: existingTemplate.createdBy,
+            },
+            oldItem: existingTemplate,
+          }),
+        );
+
+        const event = createAPIGatewayProxyEvent({
+          httpMethod: "PUT",
+          path: "/leaseTemplates/{leaseTemplateId}",
+          pathParameters: { leaseTemplateId: mockUuid },
+          headers: {
+            "Content-Type": "application/json",
+          },
+          isbUser: isbAuthorizedUser.user,
+          body: JSON.stringify(leaseTemplate),
+        });
+
+        const response = await handler(
+          event,
+          mockAuthorizedContext(testEnv, gateOffConfig),
+        );
+        expect(response.statusCode).toBe(200);
+      },
+    );
+
+    it("saves a template turning Bedrock token monitoring on with Sandbox Spaces while allowBedrockTokenMonitoring is off", async () => {
+      const gateOffConfig = {
+        ...mockedGlobalConfig,
+        leases: {
+          ...mockedGlobalConfig.leases,
+          allowBedrockTokenMonitoring: false,
+        },
+        agent: {
+          ...mockedGlobalConfig.agent,
+          sandboxSpacesEnabled: true,
+        },
+      };
+      mockAppConfigMiddleware(gateOffConfig, mockedReportingConfig);
+
+      const existingTemplate = generateLeaseTemplateData(
+        PersistedLeaseTemplateSchema,
+        {
+          uuid: mockUuid,
+          costReportGroup: undefined,
+          bedrockTokenMonitoringEnabled: false,
+          sandboxSpacesEnabled: false,
+        },
+      );
+      vi.spyOn(DynamoLeaseTemplateStore.prototype, "get").mockResolvedValue({
+        result: existingTemplate,
+      });
+
+      const leaseTemplate = generateLeaseTemplateData(
+        PersistedLeaseTemplateSchema.omit({
+          uuid: true,
+          createdBy: true,
+          blueprintName: true,
+          allowedModelIds: true,
+          defaultModelId: true,
+        }),
+        {
+          maxSpend: 50,
+          leaseDurationInHours: 24,
+          costReportGroup: undefined,
+          blueprintId: undefined,
+          allowOwnerToShareLease: false,
+          bedrockTokenMonitoringEnabled: true,
+          sandboxSpacesEnabled: true,
+        },
+      );
+      vi.spyOn(DynamoLeaseTemplateStore.prototype, "update").mockReturnValue(
+        Promise.resolve({
+          newItem: {
+            ...leaseTemplate,
+            uuid: existingTemplate.uuid,
+            createdBy: existingTemplate.createdBy,
+          },
+          oldItem: existingTemplate,
+        }),
+      );
+
+      const event = createAPIGatewayProxyEvent({
+        httpMethod: "PUT",
+        path: "/leaseTemplates/{leaseTemplateId}",
+        pathParameters: { leaseTemplateId: mockUuid },
+        headers: {
+          "Content-Type": "application/json",
+        },
+        isbUser: isbAuthorizedUser.user,
+        body: JSON.stringify(leaseTemplate),
+      });
+
+      const response = await handler(
+        event,
+        mockAuthorizedContext(testEnv, gateOffConfig),
+      );
+      expect(response.statusCode).toBe(200);
+    });
+
+    it("rejects keeping Bedrock token monitoring on when Sandbox Spaces is turned off while allowBedrockTokenMonitoring is off", async () => {
+      const gateOffConfig = {
+        ...mockedGlobalConfig,
+        leases: {
+          ...mockedGlobalConfig.leases,
+          allowBedrockTokenMonitoring: false,
+        },
+        agent: {
+          ...mockedGlobalConfig.agent,
+          sandboxSpacesEnabled: true,
+        },
+      };
+      mockAppConfigMiddleware(gateOffConfig, mockedReportingConfig);
+
+      const existingTemplate = generateLeaseTemplateData(
+        PersistedLeaseTemplateSchema,
+        {
+          uuid: mockUuid,
+          costReportGroup: undefined,
+          bedrockTokenMonitoringEnabled: true,
+          sandboxSpacesEnabled: true,
+        },
+      );
+      vi.spyOn(DynamoLeaseTemplateStore.prototype, "get").mockResolvedValue({
+        result: existingTemplate,
+      });
+
+      const leaseTemplate = generateLeaseTemplateData(
+        PersistedLeaseTemplateSchema.omit({
+          uuid: true,
+          createdBy: true,
+          blueprintName: true,
+          allowedModelIds: true,
+          defaultModelId: true,
+        }),
+        {
+          maxSpend: 50,
+          leaseDurationInHours: 24,
+          costReportGroup: undefined,
+          blueprintId: undefined,
+          allowOwnerToShareLease: false,
+          bedrockTokenMonitoringEnabled: true,
+          sandboxSpacesEnabled: false,
+        },
+      );
+      const updateSpy = vi
+        .spyOn(DynamoLeaseTemplateStore.prototype, "update")
+        .mockReturnValue(
+          Promise.resolve({
+            newItem: {
+              ...leaseTemplate,
+              uuid: existingTemplate.uuid,
+              createdBy: existingTemplate.createdBy,
+            },
+            oldItem: existingTemplate,
+          }),
+        );
+
+      const event = createAPIGatewayProxyEvent({
+        httpMethod: "PUT",
+        path: "/leaseTemplates/{leaseTemplateId}",
+        pathParameters: { leaseTemplateId: mockUuid },
+        headers: {
+          "Content-Type": "application/json",
+        },
+        isbUser: isbAuthorizedUser.user,
+        body: JSON.stringify(leaseTemplate),
+      });
+
+      const response = await handler(
+        event,
+        mockAuthorizedContext(testEnv, gateOffConfig),
+      );
+      expect(response.statusCode).toBe(400);
+      expect(updateSpy).not.toHaveBeenCalled();
+    });
+
+    describe("Sandbox Spaces token monitoring requirement", () => {
+      // The requirement is checked while Sandbox Spaces is on globally.
+      const sandboxSpacesOnConfig = {
+        ...mockedGlobalConfig,
+        agent: {
+          ...mockedGlobalConfig.agent,
+          sandboxSpacesEnabled: true,
+        },
+      };
+      // Both global gates off, for the tests that check the global gate.
+      const globalGatesOffConfig = {
+        ...mockedGlobalConfig,
+        leases: {
+          ...mockedGlobalConfig.leases,
+          allowBedrockTokenMonitoring: false,
+        },
+        agent: {
+          ...mockedGlobalConfig.agent,
+          sandboxSpacesEnabled: false,
+        },
+      };
+      beforeEach(() => {
+        mockAppConfigMiddleware(sandboxSpacesOnConfig, mockedReportingConfig);
+      });
+      function mockExistingTemplate(fields: Record<string, unknown>) {
+        const existingTemplate = generateLeaseTemplateData(
+          PersistedLeaseTemplateSchema,
+          {
+            uuid: mockUuid,
+            costReportGroup: undefined,
+            allowOwnerToShareLease: false,
+            predictiveBudgetEnabled: false,
+            ...fields,
+          },
+        );
+        vi.spyOn(DynamoLeaseTemplateStore.prototype, "get").mockResolvedValue({
+          result: existingTemplate,
+        });
+        return vi
+          .spyOn(DynamoLeaseTemplateStore.prototype, "update")
+          .mockImplementation(async (template) => ({
+            newItem: template as PersistedLeaseTemplate,
+            oldItem: existingTemplate,
+          }));
+      }
+
+      function updateEvent(fields: Record<string, unknown>) {
+        const leaseTemplate = generateLeaseTemplateData(
+          PersistedLeaseTemplateSchema.omit({
+            uuid: true,
+            createdBy: true,
+            blueprintName: true,
+            allowedModelIds: true,
+            defaultModelId: true,
+          }),
+          {
+            maxSpend: 50,
+            leaseDurationInHours: 24,
+            costReportGroup: undefined,
+            blueprintId: undefined,
+            allowOwnerToShareLease: false,
+            predictiveBudgetEnabled: false,
+            ...fields,
+          },
+        );
+        return createAPIGatewayProxyEvent({
+          httpMethod: "PUT",
+          path: "/leaseTemplates/{leaseTemplateId}",
+          pathParameters: { leaseTemplateId: mockUuid },
+          headers: { "Content-Type": "application/json" },
+          isbUser: isbAuthorizedUser.user,
+          body: JSON.stringify(leaseTemplate),
+        });
+      }
+
+      // The second row is a template stored before the requirement: re-saving
+      // it unchanged is rejected too, so no update can store the pair.
+      it.each([
+        { sandboxSpacesEnabled: false, bedrockTokenMonitoringEnabled: false },
+        { sandboxSpacesEnabled: true, bedrockTokenMonitoringEnabled: false },
+        { sandboxSpacesEnabled: true, bedrockTokenMonitoringEnabled: true },
+      ] as const)(
+        "rejects Sandbox Spaces without Bedrock token monitoring (stored sandboxSpacesEnabled $sandboxSpacesEnabled, monitoring $bedrockTokenMonitoringEnabled)",
+        async (stored) => {
+          const updateSpy = mockExistingTemplate(stored);
+
+          const response = await handler(
+            updateEvent({
+              sandboxSpacesEnabled: true,
+              bedrockTokenMonitoringEnabled: false,
+            }),
+            mockAuthorizedContext(testEnv, sandboxSpacesOnConfig),
+          );
+
+          expect(response.statusCode).toBe(400);
+          expect(response.headers?.["x-amzn-errortype"]).toBe(
+            "ValidationError",
+          );
+          expect(JSON.parse(response.body).data.errors).toEqual([
+            {
+              field: "sandboxSpacesEnabled",
+              message:
+                "Sandbox Spaces requires Bedrock token monitoring. Set bedrockTokenMonitoringEnabled to true to enable Sandbox Spaces.",
+            },
+          ]);
+          expect(updateSpy).not.toHaveBeenCalled();
+        },
+      );
+
+      it("rejects Sandbox Spaces when bedrockTokenMonitoringEnabled is omitted", async () => {
+        const updateSpy = mockExistingTemplate({
+          sandboxSpacesEnabled: true,
+          bedrockTokenMonitoringEnabled: true,
+        });
+        const event = updateEvent({ sandboxSpacesEnabled: true });
+        const body = JSON.parse(event.body!);
+        delete body.bedrockTokenMonitoringEnabled;
+        event.body = JSON.stringify(body);
+
+        const response = await handler(
+          event,
+          mockAuthorizedContext(testEnv, sandboxSpacesOnConfig),
+        );
+
+        expect(response.statusCode).toBe(400);
+        expect(JSON.parse(response.body).data.errors[0].field).toBe(
+          "sandboxSpacesEnabled",
+        );
+        expect(updateSpy).not.toHaveBeenCalled();
+      });
+
+      it.each([
+        { sandboxSpacesEnabled: true, bedrockTokenMonitoringEnabled: true },
+        { sandboxSpacesEnabled: false, bedrockTokenMonitoringEnabled: false },
+        { sandboxSpacesEnabled: false, bedrockTokenMonitoringEnabled: true },
+      ] as const)(
+        "saves sandboxSpacesEnabled $sandboxSpacesEnabled with monitoring $bedrockTokenMonitoringEnabled",
+        async (fields) => {
+          const updateSpy = mockExistingTemplate({
+            sandboxSpacesEnabled: true,
+            bedrockTokenMonitoringEnabled: true,
+          });
+
+          const response = await handler(
+            updateEvent(fields),
+            mockAuthorizedContext(testEnv, sandboxSpacesOnConfig),
+          );
+
+          expect(response.statusCode).toBe(200);
+          expect(updateSpy).toHaveBeenCalledWith(
+            expect.objectContaining(fields),
+            expect.anything(),
+          );
+        },
+      );
+
+      it("rejects turning Sandbox Spaces on while Sandbox Spaces and Bedrock token monitoring are off globally", async () => {
+        mockAppConfigMiddleware(globalGatesOffConfig, mockedReportingConfig);
+        const updateSpy = mockExistingTemplate({
+          sandboxSpacesEnabled: false,
+          bedrockTokenMonitoringEnabled: true,
+        });
+
+        const response = await handler(
+          updateEvent({
+            sandboxSpacesEnabled: true,
+            bedrockTokenMonitoringEnabled: true,
+          }),
+          mockAuthorizedContext(testEnv, globalGatesOffConfig),
+        );
+
+        expect(response).toEqual({
+          statusCode: 400,
+          body: createFailureResponseBody({
+            message:
+              "Cannot enable sandboxSpacesEnabled because Sandbox Spaces is not available.",
+          }),
+          headers: responseHeadersWithErrorType("ValidationError"),
+        });
+        expect(updateSpy).not.toHaveBeenCalled();
+      });
+    });
+
+    describe("rateLimits on update", () => {
+      const storedRateLimits = [
+        { basis: "HOURLY", rate: 10, action: "ALERT" },
+        { basis: "DAILY", rate: 200, action: "FREEZE_ACCOUNT" },
+      ] as const;
+      const replacement = [
+        { basis: "HOURLY", rate: 12, action: "FREEZE_ACCOUNT" },
+      ];
+      const gateOffConfig = {
+        ...mockedGlobalConfig,
+        leases: {
+          ...mockedGlobalConfig.leases,
+          allowPredictiveBudgetControls: false,
+        },
+      };
+
+      beforeEach(() => {
+        const existingTemplate = generateLeaseTemplateData(
+          PersistedLeaseTemplateSchema,
+          {
+            uuid: mockUuid,
+            costReportGroup: undefined,
+            allowOwnerToShareLease: false,
+            predictiveBudgetEnabled: true,
+            bedrockTokenMonitoringEnabled: false,
+            rateLimits: [...storedRateLimits],
+          },
+        );
+        vi.spyOn(DynamoLeaseTemplateStore.prototype, "get").mockResolvedValue({
+          result: existingTemplate,
+        });
+        vi.spyOn(
+          DynamoLeaseTemplateStore.prototype,
+          "update",
+        ).mockImplementation(async (item) => ({
+          oldItem: existingTemplate,
+          newItem: item,
+        }));
+      });
+
+      const put = (
+        body: unknown,
+        globalConfig: typeof mockedGlobalConfig = mockedGlobalConfig,
+      ) => {
+        mockAppConfigMiddleware(globalConfig, mockedReportingConfig);
+        return handler(
+          createAPIGatewayProxyEvent({
+            httpMethod: "PUT",
+            path: "/leaseTemplates/{leaseTemplateId}",
+            pathParameters: { leaseTemplateId: mockUuid },
+            headers: { "Content-Type": "application/json" },
+            isbUser: isbAuthorizedUser.user,
+            body: JSON.stringify(body),
+          }),
+          mockAuthorizedContext(testEnv, globalConfig),
+        );
+      };
+
+      const stored = () => {
+        const update = vi.mocked(DynamoLeaseTemplateStore.prototype.update);
+        expect(update).toHaveBeenCalledOnce();
+        return update.mock.calls[0]![0];
+      };
+
+      it.each<{
+        name: string;
+        body: Record<string, unknown>;
+        omitFlag?: boolean;
+        gateClosed?: boolean;
+        expected: unknown;
+      }>([
+        {
+          name: "keeps the stored list when the body omits it",
+          body: { maxSpend: 75 },
+          expected: storedRateLimits,
+        },
+        {
+          name: "replaces the stored list",
+          body: { rateLimits: replacement },
+          expected: replacement,
+        },
+        {
+          name: "replaces limits on an opted-in template after the global gate closes",
+          body: { rateLimits: replacement },
+          gateClosed: true,
+          expected: replacement,
+        },
+        {
+          name: "clears the limits with an explicit empty list",
+          body: { rateLimits: [] },
+          expected: [],
+        },
+        {
+          name: "clears the stored list when predictive controls are turned off",
+          body: { predictiveBudgetEnabled: false },
+          expected: undefined,
+        },
+        {
+          name: "stores an explicit empty list when predictive controls are turned off",
+          body: { predictiveBudgetEnabled: false, rateLimits: [] },
+          expected: [],
+        },
+        {
+          name: "keeps predictive controls and the stored list when the flag is omitted",
+          body: { maxSpend: 75 },
+          omitFlag: true,
+          expected: storedRateLimits,
+        },
+        {
+          name: "accepts a list when the flag is omitted on a predictive template",
+          body: { rateLimits: replacement },
+          omitFlag: true,
+          expected: replacement,
+        },
+      ])("$name", async ({ body, omitFlag, gateClosed, expected }) => {
+        const request = rateLimitedTemplateBody(body);
+        const { predictiveBudgetEnabled: _omitted, ...withoutFlag } = request;
+
+        const response = await put(
+          omitFlag ? withoutFlag : request,
+          gateClosed ? gateOffConfig : undefined,
+        );
+
+        expect(response.statusCode).toBe(200);
+        expect(stored().predictiveBudgetEnabled).toBe(
+          body.predictiveBudgetEnabled ?? true,
+        );
+        expect(stored().maxSpend).toBe(body.maxSpend ?? 50);
+        expect(stored().rateLimits).toEqual(expected);
+        expect(stored()).not.toHaveProperty("rateLimit");
+        const data = JSON.parse(response.body as string).data;
+        expect(data.rateLimits).toEqual(expected);
+        expect(data).not.toHaveProperty("rateLimit");
+      });
+
+      it.each([
+        ["without rateLimits", {}],
+        ["beside rateLimits", { rateLimits: replacement }],
+      ])(
+        "rejects a singular rateLimit member %s as an unknown key",
+        async (_label, extra) => {
+          const response = await put({
+            ...rateLimitedTemplateBody(extra),
+            rateLimit: { maxHourlyRate: 5 },
+          });
+
+          expect(response).toEqual({
+            statusCode: 400,
+            body: createFailureResponseBody({
+              field: "input",
+              message: 'Unrecognized key: "rateLimit"',
+            }),
+            headers: expect.objectContaining(
+              responseHeadersWithErrorType("ValidationError"),
+            ),
+          });
+          expect(
+            DynamoLeaseTemplateStore.prototype.update,
+          ).not.toHaveBeenCalled();
+        },
+      );
+
+      it("rejects a non-empty list sent beside an explicit off switch", async () => {
+        const response = await put(
+          rateLimitedTemplateBody({
+            predictiveBudgetEnabled: false,
+            rateLimits: replacement,
+          }),
+        );
+
+        expect(response.statusCode).toBe(400);
+        expect(response.body).toContain(
+          "rateLimits requires predictiveBudgetEnabled",
+        );
+        expect(
+          DynamoLeaseTemplateStore.prototype.update,
+        ).not.toHaveBeenCalled();
+      });
+
+      const predictedThreshold = {
+        dollarsSpent: 25,
+        action: "ALERT",
+        triggerOn: "PREDICTED",
+      } as const;
+
+      it("rejects a PREDICTED threshold sent beside an explicit off switch", async () => {
+        const response = await put(
+          rateLimitedTemplateBody({
+            predictiveBudgetEnabled: false,
+            budgetThresholds: [predictedThreshold],
+          }),
+        );
+
+        expect(response).toEqual({
+          statusCode: 400,
+          body: createFailureResponseBody({
+            field: "budgetThresholds",
+            message: PREDICTED_REQUIRES_PREDICTIVE_MESSAGE,
+          }),
+          headers: expect.objectContaining(
+            responseHeadersWithErrorType("ValidationError"),
+          ),
+        });
+        expect(
+          DynamoLeaseTemplateStore.prototype.update,
+        ).not.toHaveBeenCalled();
+      });
+
+      it("accepts a PREDICTED threshold when the flag is omitted on a predictive template", async () => {
+        const { predictiveBudgetEnabled: _omitted, ...body } =
+          rateLimitedTemplateBody({ budgetThresholds: [predictedThreshold] });
+
+        const response = await put(body);
+
+        expect(response.statusCode).toBe(200);
+        expect(stored().predictiveBudgetEnabled).toBe(true);
+        expect(stored().budgetThresholds).toEqual([predictedThreshold]);
+      });
+
+      it("rejects a PREDICTED threshold when the flag is omitted on a non-predictive template", async () => {
+        vi.spyOn(DynamoLeaseTemplateStore.prototype, "get").mockResolvedValue({
+          result: generateLeaseTemplateData(PersistedLeaseTemplateSchema, {
+            uuid: mockUuid,
+            costReportGroup: undefined,
+            allowOwnerToShareLease: false,
+            predictiveBudgetEnabled: false,
+            bedrockTokenMonitoringEnabled: false,
+          }),
+        });
+        const { predictiveBudgetEnabled: _omitted, ...body } =
+          rateLimitedTemplateBody({ budgetThresholds: [predictedThreshold] });
+
+        const response = await put(body);
+
+        expect(response).toEqual({
+          statusCode: 400,
+          body: createFailureResponseBody({
+            field: "budgetThresholds",
+            message: PREDICTED_REQUIRES_PREDICTIVE_MESSAGE,
+          }),
+          headers: expect.objectContaining(
+            responseHeadersWithErrorType("ValidationError"),
+          ),
+        });
+        expect(
+          DynamoLeaseTemplateStore.prototype.update,
+        ).not.toHaveBeenCalled();
+      });
+
+      it("accepts a REPORTED threshold when predictive controls are turned off", async () => {
+        const reported = { ...predictedThreshold, triggerOn: "REPORTED" };
+
+        const response = await put(
+          rateLimitedTemplateBody({
+            predictiveBudgetEnabled: false,
+            budgetThresholds: [reported],
+          }),
+        );
+
+        expect(response.statusCode).toBe(200);
+        expect(stored().budgetThresholds).toEqual([reported]);
+      });
+
+      it("rejects a threshold equal to maxSpend", async () => {
+        const response = await put(
+          rateLimitedTemplateBody({
+            maxSpend: 50,
+            budgetThresholds: [{ dollarsSpent: 50, action: "ALERT" }],
+          }),
+        );
+
+        expect(response).toEqual({
+          statusCode: 400,
+          body: createFailureResponseBody({
+            field: "budgetThresholds",
+            message: THRESHOLD_AT_MAX_SPEND_MESSAGE,
+          }),
+          headers: expect.objectContaining(
+            responseHeadersWithErrorType("ValidationError"),
+          ),
+        });
+        expect(
+          DynamoLeaseTemplateStore.prototype.update,
+        ).not.toHaveBeenCalled();
+      });
+
+      it("accepts an unrelated edit on a stored template whose threshold equals maxSpend", async () => {
+        const atMax = [{ dollarsSpent: 50, action: "ALERT" as const }];
+        vi.spyOn(DynamoLeaseTemplateStore.prototype, "get").mockResolvedValue({
+          result: generateLeaseTemplateData(PersistedLeaseTemplateSchema, {
+            uuid: mockUuid,
+            costReportGroup: undefined,
+            allowOwnerToShareLease: false,
+            predictiveBudgetEnabled: true,
+            bedrockTokenMonitoringEnabled: false,
+            maxSpend: 50,
+            budgetThresholds: atMax,
+          }),
+        });
+
+        const response = await put(
+          rateLimitedTemplateBody({
+            name: "renamed",
+            maxSpend: 50,
+            budgetThresholds: atMax,
+          }),
+        );
+
+        expect(response.statusCode).toBe(200);
+        expect(stored().budgetThresholds).toEqual(atMax);
+      });
+    });
+
+    describe("optimistic concurrency", () => {
+      const existingTemplate = () =>
+        generateLeaseTemplateData(PersistedLeaseTemplateSchema, {
+          uuid: mockUuid,
+          costReportGroup: undefined,
+          allowOwnerToShareLease: false,
+          predictiveBudgetEnabled: false,
+          bedrockTokenMonitoringEnabled: false,
+        });
+
+      const put = () =>
+        handler(
+          createAPIGatewayProxyEvent({
+            httpMethod: "PUT",
+            path: "/leaseTemplates/{leaseTemplateId}",
+            pathParameters: { leaseTemplateId: mockUuid },
+            headers: { "Content-Type": "application/json" },
+            isbUser: isbAuthorizedUser.user,
+            body: JSON.stringify(
+              rateLimitedTemplateBody({ predictiveBudgetEnabled: false }),
+            ),
+          }),
+          mockAuthorizedContext(testEnv, mockedGlobalConfig),
+        );
+
+      it("conditions the write on the template read for validation", async () => {
+        const existing = existingTemplate();
+        vi.spyOn(DynamoLeaseTemplateStore.prototype, "get").mockResolvedValue({
+          result: existing,
+        });
+        const update = vi
+          .spyOn(DynamoLeaseTemplateStore.prototype, "update")
+          .mockImplementation(async (item) => ({
+            oldItem: existing,
+            newItem: item,
+          }));
+
+        const response = await put();
+
+        expect(response.statusCode).toBe(200);
+        expect(update).toHaveBeenCalledOnce();
+        expect(update.mock.calls[0]![1]).toBe(existing);
+      });
+
+      it("returns 409 without retrying when the template changed after it was read", async () => {
+        vi.spyOn(DynamoLeaseTemplateStore.prototype, "get").mockResolvedValue({
+          result: existingTemplate(),
+        });
+        const update = vi
+          .spyOn(DynamoLeaseTemplateStore.prototype, "update")
+          .mockRejectedValue(
+            new ConcurrentDataModificationException(
+              "The lease template has been modified from the expected value.",
+            ),
+          );
+
+        const response = await put();
+
+        expect(response).toEqual({
+          statusCode: 409,
+          body: createFailureResponseBody({
+            message:
+              "The lease template changed while this update was being processed. Refresh the template and retry.",
+          }),
+          headers: expect.objectContaining(
+            responseHeadersWithErrorType("ConflictError"),
+          ),
+        });
+        expect(update).toHaveBeenCalledOnce();
+      });
+    });
   });
 
   describe("DELETE /leaseTemplates/{leaseTemplateId}", () => {
@@ -3015,7 +4967,9 @@ describe("handler", async () => {
 
       vi.spyOn(DynamoLeaseTemplateStore.prototype, "delete").mockReturnValue(
         Promise.resolve(
-          Promise.resolve(generateSchemaData(PersistedLeaseTemplateSchema)),
+          Promise.resolve(
+            generateLeaseTemplateData(PersistedLeaseTemplateSchema, {}),
+          ),
         ),
       );
 
@@ -3059,5 +5013,450 @@ describe("handler", async () => {
         ),
       });
     });
+  });
+});
+
+describe("catalog model allowlist (allowedModelIds)", () => {
+  const ENABLED_MODEL = "anthropic.claude-3-5-sonnet-20241022-v2:0";
+  const DISABLED_MODEL = "anthropic.claude-3-haiku";
+  // The default check only runs while Sandbox Spaces is on globally.
+  const baselineSandboxSpacesEnabled =
+    mockedGlobalConfig.agent.sandboxSpacesEnabled;
+  beforeEach(() => {
+    mockedGlobalConfig.agent.sandboxSpacesEnabled = true;
+    mockAppConfigMiddleware(mockedGlobalConfig, mockedReportingConfig);
+  });
+  afterEach(() => {
+    mockedGlobalConfig.agent.sandboxSpacesEnabled =
+      baselineSandboxSpacesEnabled;
+  });
+
+  function catalog(): PersistedAgentModelCatalogRow[] {
+    // Only modelId/enabled are read by the gate; the rest of the row is irrelevant.
+    return [
+      { modelId: ENABLED_MODEL, enabled: true },
+      { modelId: DISABLED_MODEL, enabled: false },
+    ] as unknown as PersistedAgentModelCatalogRow[];
+  }
+
+  // Feature-gated opt-ins and the predictive-only fields pinned off, and token
+  // monitoring on as Sandbox Spaces requires, so validation never rejects
+  // before the allowlist check runs; the catalog gate is what these tests
+  // assert.
+  function body(overrides: Record<string, unknown>) {
+    return generateSchemaData(
+      PersistedLeaseTemplateSchema.omit({
+        uuid: true,
+        createdBy: true,
+        blueprintName: true,
+        meta: true,
+        allowedModelIds: true,
+        defaultModelId: true,
+      }),
+      {
+        rateLimits: undefined,
+        // Random PREDICTED thresholds would trip the predictive gate.
+        budgetThresholds: [],
+        maxSpend: 50,
+        leaseDurationInHours: 24,
+        costReportGroup: undefined,
+        blueprintId: undefined,
+        allowOwnerToShareLease: false,
+        predictiveBudgetEnabled: false,
+        bedrockTokenMonitoringEnabled: true,
+        sandboxSpacesEnabled: true,
+        defaultPermissionSetArn: undefined,
+        allowedPermissionSetArns: undefined,
+        ...overrides,
+      },
+    );
+  }
+
+  it("creates a template when every selected model is enabled", async () => {
+    const getAgentModels = vi
+      .spyOn(DynamoConfigStore.prototype, "getAgentModels")
+      .mockResolvedValue(catalog());
+    const requestBody = body({ allowedModelIds: [ENABLED_MODEL] });
+    vi.spyOn(DynamoLeaseTemplateStore.prototype, "create").mockResolvedValue({
+      ...requestBody,
+      uuid: randomUUID(),
+      createdBy: isbAuthorizedUser.user.email,
+    });
+
+    const event = createAPIGatewayProxyEvent({
+      httpMethod: "POST",
+      path: "/leaseTemplates",
+      headers: { "Content-Type": "application/json" },
+      isbUser: isbAuthorizedUser.user,
+      body: JSON.stringify(requestBody),
+    });
+
+    const response = await handler(
+      event,
+      mockAuthorizedContext(testEnv, mockedGlobalConfig),
+    );
+    expect(response.statusCode).toBe(201);
+    expect(getAgentModels).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects creation when a selected model is not enabled, without echoing the id", async () => {
+    vi.spyOn(DynamoConfigStore.prototype, "getAgentModels").mockResolvedValue(
+      catalog(),
+    );
+    const createSpy = vi.spyOn(DynamoLeaseTemplateStore.prototype, "create");
+
+    const event = createAPIGatewayProxyEvent({
+      httpMethod: "POST",
+      path: "/leaseTemplates",
+      headers: { "Content-Type": "application/json" },
+      isbUser: isbAuthorizedUser.user,
+      body: JSON.stringify(body({ allowedModelIds: [DISABLED_MODEL] })),
+    });
+
+    const response = await handler(
+      event,
+      mockAuthorizedContext(testEnv, mockedGlobalConfig),
+    );
+    expect(response.statusCode).toBe(400);
+    // The rejected model id must not leak into the client-facing message.
+    expect(response.body).not.toContain(DISABLED_MODEL);
+    expect(createSpy).not.toHaveBeenCalled();
+  });
+
+  it("does not read the catalog when no model subset is provided (inherits global set)", async () => {
+    const getAgentModels = vi.spyOn(
+      DynamoConfigStore.prototype,
+      "getAgentModels",
+    );
+    const requestBody = body({}); // allowedModelIds omitted
+    vi.spyOn(DynamoLeaseTemplateStore.prototype, "create").mockResolvedValue({
+      ...requestBody,
+      uuid: randomUUID(),
+      createdBy: isbAuthorizedUser.user.email,
+    });
+
+    const event = createAPIGatewayProxyEvent({
+      httpMethod: "POST",
+      path: "/leaseTemplates",
+      headers: { "Content-Type": "application/json" },
+      isbUser: isbAuthorizedUser.user,
+      body: JSON.stringify(requestBody),
+    });
+
+    const response = await handler(
+      event,
+      mockAuthorizedContext(testEnv, mockedGlobalConfig),
+    );
+    expect(response.statusCode).toBe(201);
+    expect(getAgentModels).not.toHaveBeenCalled();
+  });
+
+  it("grandfathers a previously-permitted model that is now disabled on update", async () => {
+    vi.spyOn(DynamoConfigStore.prototype, "getAgentModels").mockResolvedValue(
+      catalog(),
+    );
+    const existing = generateLeaseTemplateData(PersistedLeaseTemplateSchema, {
+      uuid: mockUuid,
+      costReportGroup: undefined,
+      predictiveBudgetEnabled: false,
+      bedrockTokenMonitoringEnabled: false,
+      allowedModelIds: [DISABLED_MODEL],
+    });
+    vi.spyOn(DynamoLeaseTemplateStore.prototype, "get").mockResolvedValue({
+      result: existing,
+    });
+    const updateSpy = vi
+      .spyOn(DynamoLeaseTemplateStore.prototype, "update")
+      .mockImplementation(async (template) => ({
+        newItem: template,
+        oldItem: existing,
+      }));
+
+    const event = createAPIGatewayProxyEvent({
+      httpMethod: "PUT",
+      path: "/leaseTemplates/{leaseTemplateId}",
+      pathParameters: { leaseTemplateId: mockUuid },
+      headers: { "Content-Type": "application/json" },
+      isbUser: isbAuthorizedUser.user,
+      body: JSON.stringify(body({ allowedModelIds: [DISABLED_MODEL] })),
+    });
+
+    const response = await handler(
+      event,
+      mockAuthorizedContext(testEnv, mockedGlobalConfig),
+    );
+    expect(response.statusCode).toBe(200);
+    expect(updateSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects a newly-added disabled model on update", async () => {
+    vi.spyOn(DynamoConfigStore.prototype, "getAgentModels").mockResolvedValue(
+      catalog(),
+    );
+    const existing = generateSchemaData(PersistedLeaseTemplateSchema, {
+      uuid: mockUuid,
+      costReportGroup: undefined,
+      predictiveBudgetEnabled: false,
+      bedrockTokenMonitoringEnabled: false,
+      allowedModelIds: [],
+    });
+    vi.spyOn(DynamoLeaseTemplateStore.prototype, "get").mockResolvedValue({
+      result: existing,
+    });
+    const updateSpy = vi.spyOn(DynamoLeaseTemplateStore.prototype, "update");
+
+    const event = createAPIGatewayProxyEvent({
+      httpMethod: "PUT",
+      path: "/leaseTemplates/{leaseTemplateId}",
+      pathParameters: { leaseTemplateId: mockUuid },
+      headers: { "Content-Type": "application/json" },
+      isbUser: isbAuthorizedUser.user,
+      body: JSON.stringify(body({ allowedModelIds: [DISABLED_MODEL] })),
+    });
+
+    const response = await handler(
+      event,
+      mockAuthorizedContext(testEnv, mockedGlobalConfig),
+    );
+    expect(response.statusCode).toBe(400);
+    expect(updateSpy).not.toHaveBeenCalled();
+  });
+
+  it("creates a template when the default is one of the enabled selected models", async () => {
+    const getAgentModels = vi
+      .spyOn(DynamoConfigStore.prototype, "getAgentModels")
+      .mockResolvedValue(catalog());
+    const requestBody = body({
+      allowedModelIds: [ENABLED_MODEL],
+      defaultModelId: ENABLED_MODEL,
+    });
+    vi.spyOn(DynamoLeaseTemplateStore.prototype, "create").mockResolvedValue({
+      ...requestBody,
+      uuid: randomUUID(),
+      createdBy: isbAuthorizedUser.user.email,
+    });
+
+    const event = createAPIGatewayProxyEvent({
+      httpMethod: "POST",
+      path: "/leaseTemplates",
+      headers: { "Content-Type": "application/json" },
+      isbUser: isbAuthorizedUser.user,
+      body: JSON.stringify(requestBody),
+    });
+
+    const response = await handler(
+      event,
+      mockAuthorizedContext(testEnv, mockedGlobalConfig),
+    );
+    expect(response.statusCode).toBe(201);
+    expect(getAgentModels).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects creation when the default is outside the selected subset, without echoing the id", async () => {
+    vi.spyOn(DynamoConfigStore.prototype, "getAgentModels").mockResolvedValue(
+      catalog(),
+    );
+    const createSpy = vi.spyOn(DynamoLeaseTemplateStore.prototype, "create");
+
+    const event = createAPIGatewayProxyEvent({
+      httpMethod: "POST",
+      path: "/leaseTemplates",
+      headers: { "Content-Type": "application/json" },
+      isbUser: isbAuthorizedUser.user,
+      body: JSON.stringify(
+        body({
+          allowedModelIds: [ENABLED_MODEL],
+          defaultModelId: DISABLED_MODEL,
+        }),
+      ),
+    });
+
+    const response = await handler(
+      event,
+      mockAuthorizedContext(testEnv, mockedGlobalConfig),
+    );
+    expect(response.statusCode).toBe(400);
+    expect(response.body).not.toContain(DISABLED_MODEL);
+    expect(createSpy).not.toHaveBeenCalled();
+  });
+
+  it("rejects a disabled default when no subset is provided (inherits global set)", async () => {
+    vi.spyOn(DynamoConfigStore.prototype, "getAgentModels").mockResolvedValue(
+      catalog(),
+    );
+    const createSpy = vi.spyOn(DynamoLeaseTemplateStore.prototype, "create");
+
+    const event = createAPIGatewayProxyEvent({
+      httpMethod: "POST",
+      path: "/leaseTemplates",
+      headers: { "Content-Type": "application/json" },
+      isbUser: isbAuthorizedUser.user,
+      body: JSON.stringify(body({ defaultModelId: DISABLED_MODEL })),
+    });
+
+    const response = await handler(
+      event,
+      mockAuthorizedContext(testEnv, mockedGlobalConfig),
+    );
+    expect(response.statusCode).toBe(400);
+    expect(response.body).not.toContain(DISABLED_MODEL);
+    expect(createSpy).not.toHaveBeenCalled();
+  });
+
+  it("attributes a disabled default to the defaultModelId field", async () => {
+    vi.spyOn(DynamoConfigStore.prototype, "getAgentModels").mockResolvedValue(
+      catalog(),
+    );
+
+    const event = createAPIGatewayProxyEvent({
+      httpMethod: "POST",
+      path: "/leaseTemplates",
+      headers: { "Content-Type": "application/json" },
+      isbUser: isbAuthorizedUser.user,
+      body: JSON.stringify(body({ defaultModelId: DISABLED_MODEL })),
+    });
+
+    const response = await handler(
+      event,
+      mockAuthorizedContext(testEnv, mockedGlobalConfig),
+    );
+    expect(response.statusCode).toBe(400);
+    expect(response.headers?.["x-amzn-errortype"]).toBe("ValidationError");
+    expect(JSON.parse(response.body)).toMatchObject({
+      status: "fail",
+      data: { errors: [{ field: "defaultModelId" }] },
+    });
+  });
+
+  it.each([
+    {
+      case: "inside a grandfathered subset",
+      allowedModelIds: [DISABLED_MODEL],
+    },
+    { case: "with no subset", allowedModelIds: undefined },
+  ])(
+    "rejects an unchanged disabled default on update $case",
+    async ({ allowedModelIds }) => {
+      vi.spyOn(DynamoConfigStore.prototype, "getAgentModels").mockResolvedValue(
+        catalog(),
+      );
+      const existing = generateLeaseTemplateData(PersistedLeaseTemplateSchema, {
+        uuid: mockUuid,
+        costReportGroup: undefined,
+        predictiveBudgetEnabled: false,
+        bedrockTokenMonitoringEnabled: false,
+        allowedModelIds,
+        defaultModelId: DISABLED_MODEL,
+      });
+      vi.spyOn(DynamoLeaseTemplateStore.prototype, "get").mockResolvedValue({
+        result: existing,
+      });
+      const updateSpy = vi.spyOn(DynamoLeaseTemplateStore.prototype, "update");
+
+      const event = createAPIGatewayProxyEvent({
+        httpMethod: "PUT",
+        path: "/leaseTemplates/{leaseTemplateId}",
+        pathParameters: { leaseTemplateId: mockUuid },
+        headers: { "Content-Type": "application/json" },
+        isbUser: isbAuthorizedUser.user,
+        body: JSON.stringify(
+          body({ allowedModelIds, defaultModelId: DISABLED_MODEL }),
+        ),
+      });
+
+      const response = await handler(
+        event,
+        mockAuthorizedContext(testEnv, mockedGlobalConfig),
+      );
+      expect(response.statusCode).toBe(400);
+      expect(response.body).not.toContain(DISABLED_MODEL);
+      expect(JSON.parse(response.body).data.errors[0].field).toBe(
+        "defaultModelId",
+      );
+      expect(updateSpy).not.toHaveBeenCalled();
+    },
+  );
+  it("saves an unrelated edit carrying a disabled default while Sandbox Spaces is off globally", async () => {
+    mockedGlobalConfig.agent.sandboxSpacesEnabled = false;
+    mockAppConfigMiddleware(mockedGlobalConfig, mockedReportingConfig);
+    const getAgentModels = vi
+      .spyOn(DynamoConfigStore.prototype, "getAgentModels")
+      .mockResolvedValue(catalog());
+    const existing = generateLeaseTemplateData(PersistedLeaseTemplateSchema, {
+      uuid: mockUuid,
+      costReportGroup: undefined,
+      predictiveBudgetEnabled: false,
+      bedrockTokenMonitoringEnabled: false,
+      sandboxSpacesEnabled: true,
+      allowedModelIds: undefined,
+      defaultModelId: DISABLED_MODEL,
+    });
+    vi.spyOn(DynamoLeaseTemplateStore.prototype, "get").mockResolvedValue({
+      result: existing,
+    });
+    const updateSpy = vi
+      .spyOn(DynamoLeaseTemplateStore.prototype, "update")
+      .mockImplementation(async (template) => ({
+        newItem: template,
+        oldItem: existing,
+      }));
+    const event = createAPIGatewayProxyEvent({
+      httpMethod: "PUT",
+      path: "/leaseTemplates/{leaseTemplateId}",
+      pathParameters: { leaseTemplateId: mockUuid },
+      headers: { "Content-Type": "application/json" },
+      isbUser: isbAuthorizedUser.user,
+      body: JSON.stringify(body({ defaultModelId: DISABLED_MODEL })),
+    });
+    const response = await handler(
+      event,
+      mockAuthorizedContext(testEnv, mockedGlobalConfig),
+    );
+    expect(response.statusCode).toBe(200);
+    expect(updateSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ defaultModelId: DISABLED_MODEL }),
+      expect.anything(),
+    );
+    expect(getAgentModels).not.toHaveBeenCalled();
+  });
+  it("still rejects a newly added disabled model while Sandbox Spaces is off globally", async () => {
+    mockedGlobalConfig.agent.sandboxSpacesEnabled = false;
+    mockAppConfigMiddleware(mockedGlobalConfig, mockedReportingConfig);
+    vi.spyOn(DynamoConfigStore.prototype, "getAgentModels").mockResolvedValue(
+      catalog(),
+    );
+    const existing = generateLeaseTemplateData(PersistedLeaseTemplateSchema, {
+      uuid: mockUuid,
+      costReportGroup: undefined,
+      predictiveBudgetEnabled: false,
+      bedrockTokenMonitoringEnabled: false,
+      sandboxSpacesEnabled: true,
+      allowedModelIds: [ENABLED_MODEL],
+      defaultModelId: undefined,
+    });
+    vi.spyOn(DynamoLeaseTemplateStore.prototype, "get").mockResolvedValue({
+      result: existing,
+    });
+    const updateSpy = vi.spyOn(DynamoLeaseTemplateStore.prototype, "update");
+    const event = createAPIGatewayProxyEvent({
+      httpMethod: "PUT",
+      path: "/leaseTemplates/{leaseTemplateId}",
+      pathParameters: { leaseTemplateId: mockUuid },
+      headers: { "Content-Type": "application/json" },
+      isbUser: isbAuthorizedUser.user,
+      body: JSON.stringify(
+        body({ allowedModelIds: [ENABLED_MODEL, DISABLED_MODEL] }),
+      ),
+    });
+    const response = await handler(
+      event,
+      mockAuthorizedContext(testEnv, mockedGlobalConfig),
+    );
+    expect(response.statusCode).toBe(400);
+    expect(response.body).toContain(
+      "One or more selected models are not enabled in the model catalog.",
+    );
+    expect(response.body).not.toContain(DISABLED_MODEL);
+    expect(updateSpy).not.toHaveBeenCalled();
   });
 });

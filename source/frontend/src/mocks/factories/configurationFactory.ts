@@ -47,8 +47,8 @@ export function createConfiguration(
         section,
         {
           ...fields,
-          ...(BASELINE[section] ?? {}),
-          ...(overrides[section] ?? {}),
+          ...BASELINE[section],
+          ...overrides[section],
           lastSavedBy: DEFAULT_LAST_SAVED_BY,
           meta: DEFAULT_META,
         },
@@ -64,5 +64,10 @@ export function createConfiguration(
     ],
     awsAccessPortalUrl:
       overrides.awsAccessPortalUrl ?? "https://d-0000000000.awsapps.com/start",
+    bedrockInferenceProfilePatterns:
+      overrides.bedrockInferenceProfilePatterns ?? [
+        "arn:aws:bedrock:*:*:inference-profile/global.*",
+        "arn:aws:bedrock:*:*:inference-profile/us.*",
+      ],
   } as AdminConfigurationView;
 }

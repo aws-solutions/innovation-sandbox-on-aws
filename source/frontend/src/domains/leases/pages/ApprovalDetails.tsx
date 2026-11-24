@@ -40,6 +40,7 @@ export const ApprovalDetails = () => {
 
   const { data: config } = useGetConfigurations();
   const leaseSharingEnabled = config?.leases.leaseSharingEnabled ?? false;
+  const sandboxSpacesEnabled = config?.agent.sandboxSpacesEnabled ?? false;
 
   // update breadcrumb with approval details
   useEffect(() => {
@@ -125,15 +126,19 @@ export const ApprovalDetails = () => {
                   lease={lease}
                   showAdminFields={true}
                   leaseSharingEnabled={leaseSharingEnabled}
+                  sandboxSpacesEnabled={sandboxSpacesEnabled}
                 />
               ),
             },
             {
-              id: "sharing",
-              label: "Sharing",
+              id: "access",
+              label: "Access",
               content: (
                 <PendingAssignmentsList
                   desiredAssignments={lease.desiredAssignments}
+                  defaultPermissionSet={lease.defaultPermissionSet}
+                  allowedPermissionSets={lease.allowedPermissionSets}
+                  ownerEmail={lease.userEmail}
                 />
               ),
             },
@@ -144,6 +149,7 @@ export const ApprovalDetails = () => {
           lease={lease}
           showAdminFields={true}
           leaseSharingEnabled={leaseSharingEnabled}
+          sandboxSpacesEnabled={sandboxSpacesEnabled}
         />
       )}
     </ContentLayout>

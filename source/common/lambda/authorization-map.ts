@@ -29,6 +29,18 @@ export const authorizationMap: AuthorizationMapType = {
     PATCH: ["Manager", "Admin"],
     GET: ["User", "Manager", "Admin"],
   },
+  "/leases/{param}/costSummary": {
+    GET: ["User", "Manager", "Admin"],
+  },
+  "/leases/{param}/costHistory": {
+    GET: ["User", "Manager", "Admin"],
+  },
+  "/leases/{param}/bedrockTokenHistory": {
+    GET: ["User", "Manager", "Admin"],
+  },
+  "/leases/{param}/breachHistory": {
+    GET: ["User", "Manager", "Admin"],
+  },
   "/leases/{param}/review": {
     POST: ["Manager", "Admin"],
   },
@@ -97,6 +109,9 @@ export const authorizationMap: AuthorizationMapType = {
   "/principals/search": {
     GET: ["User", "Manager", "Admin"],
   },
+  "/permissionSets": {
+    GET: ["Manager", "Admin"],
+  },
   "/leases/{param}/assignments": {
     GET: ["User", "Manager", "Admin"],
     PUT: ["User", "Manager", "Admin"],
@@ -104,4 +119,65 @@ export const authorizationMap: AuthorizationMapType = {
   "/leases/shared": {
     GET: ["User", "Manager", "Admin"],
   },
+  "/sandboxAgent/history": {
+    GET: ["User", "Manager", "Admin"],
+  },
+  "/sandboxAgent/models": {
+    GET: ["Admin"],
+  },
+  "/configurations/agent/models": {
+    GET: ["User", "Manager", "Admin"],
+  },
+  "/configurations/agent/models/{param}": {
+    PUT: ["Admin"],
+  },
+  "/sandboxAgent/usage": {
+    GET: ["User", "Manager", "Admin"],
+  },
 };
+
+export function getAllowedRoles(path: string, method: HttpMethod): IsbRole[] {
+  const entry = authorizationMap[path];
+  if (!entry) {
+    return [];
+  }
+  const roles = entry[method];
+  if (roles && roles.length > 0) {
+    return roles;
+  }
+  return entry["ALL"] ?? [];
+}
+
+export function resolveAllowedRoles(
+  path: string,
+  method: HttpMethod,
+): IsbRole[] {
+  const exactRoles = getAllowedRoles(path, method);
+  if (exactRoles.length > 0) {
+    return exactRoles;
+  }
+
+  const segments = path.split("/").filter(Boolean);
+  if (segments.length < 2) {
+    return [];
+  }
+
+  // /resource/{param} — path parameter at end
+  const withParamEnd = "/" + [...segments.slice(0, -1), "{param}"].join("/");
+  const endRoles = getAllowedRoles(withParamEnd, method);
+  if (endRoles.length > 0) {
+    return endRoles;
+  }
+
+  // /resource/{param}/action — path parameter in middle
+  if (segments.length >= 3) {
+    const withParamMiddle =
+      "/" + [...segments.slice(0, -2), "{param}", segments.at(-1)].join("/");
+    const middleRoles = getAllowedRoles(withParamMiddle, method);
+    if (middleRoles.length > 0) {
+      return middleRoles;
+    }
+  }
+
+  return [];
+}

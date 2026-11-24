@@ -1,7 +1,6 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 import {
-  AwsAccountId,
   OptionalItem,
   PaginatedQueryResult,
   PutResult,
@@ -33,7 +32,7 @@ export abstract class SandboxAccountStore {
     });
   }
 
-  abstract delete(accountId: AwsAccountId): Promise<OptionalItem>;
+  abstract delete(accountId: string): Promise<OptionalItem>;
 
   abstract findByStatus(args: {
     status: SandboxAccountStatus;
@@ -47,7 +46,7 @@ export abstract class SandboxAccountStore {
   }): Promise<PaginatedQueryResult<PersistedSandboxAccount>>;
 
   abstract get(
-    accountId: AwsAccountId,
+    accountId: string,
   ): Promise<SingleItemResult<PersistedSandboxAccount>>;
 
   /**
@@ -61,7 +60,7 @@ export abstract class SandboxAccountStore {
    *   Only optional fields can be removed — required fields (`status`) are excluded.
    */
   abstract update(
-    accountId: AwsAccountId,
+    accountId: string,
     params: {
       set?: Partial<Omit<PersistedSandboxAccount, "awsAccountId" | "meta">>;
       remove?: Array<
@@ -71,7 +70,7 @@ export abstract class SandboxAccountStore {
   ): Promise<void>;
 
   abstract acquireLock(
-    accountId: AwsAccountId,
+    accountId: string,
     ownerId: string,
     timeoutSeconds: number,
     meta?: Record<string, string>,
@@ -82,8 +81,5 @@ export abstract class SandboxAccountStore {
    * held the lock and it was removed; false when the lock was absent, already
    * released, or owned by a different execution (a no-op).
    */
-  abstract releaseLock(
-    accountId: AwsAccountId,
-    ownerId: string,
-  ): Promise<boolean>;
+  abstract releaseLock(accountId: string, ownerId: string): Promise<boolean>;
 }

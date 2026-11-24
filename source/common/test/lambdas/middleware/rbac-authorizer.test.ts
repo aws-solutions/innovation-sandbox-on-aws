@@ -180,6 +180,28 @@ describe("per-path authorization", () => {
     },
   );
 
+  it.each(
+    [
+      "costSummary",
+      "costHistory",
+      "bedrockTokenHistory",
+      "breachHistory",
+    ].flatMap((route) =>
+      (["Admin", "Manager", "User"] as const).map((role) => ({
+        route,
+        role,
+        authorized: true,
+      })),
+    ),
+  )(
+    "GET /leases/{param}/$route for $role -> $authorized",
+    ({ route, role, authorized }) => {
+      expect(isAuthorized(`/leases/Lease101/${route}`, "GET", role)).toBe(
+        authorized,
+      );
+    },
+  );
+
   it.each([
     { role: "Admin" as const, authorized: true },
     { role: "Manager" as const, authorized: true },
@@ -290,6 +312,40 @@ describe("per-path authorization", () => {
     { role: "User" as const, authorized: false },
   ])("GET /blueprints for $role -> $authorized", ({ role, authorized }) => {
     expect(isAuthorized("/blueprints", "GET", role)).toBe(authorized);
+  });
+
+  it.each([
+    { role: "Admin" as const, authorized: true },
+    { role: "Manager" as const, authorized: true },
+    { role: "User" as const, authorized: false },
+  ])("GET /permissionSets for $role -> $authorized", ({ role, authorized }) => {
+    expect(isAuthorized("/permissionSets", "GET", role)).toBe(authorized);
+  });
+
+  it.each([
+    { path: "/sandboxAgent/history", role: "Admin" as const, authorized: true },
+    {
+      path: "/sandboxAgent/history",
+      role: "Manager" as const,
+      authorized: true,
+    },
+    { path: "/sandboxAgent/history", role: "User" as const, authorized: true },
+    { path: "/sandboxAgent/usage", role: "Admin" as const, authorized: true },
+    {
+      path: "/sandboxAgent/usage",
+      role: "Manager" as const,
+      authorized: true,
+    },
+    { path: "/sandboxAgent/usage", role: "User" as const, authorized: true },
+    { path: "/sandboxAgent/models", role: "Admin" as const, authorized: true },
+    {
+      path: "/sandboxAgent/models",
+      role: "Manager" as const,
+      authorized: false,
+    },
+    { path: "/sandboxAgent/models", role: "User" as const, authorized: false },
+  ])("GET $path for $role -> $authorized", ({ path, role, authorized }) => {
+    expect(isAuthorized(path, "GET", role)).toBe(authorized);
   });
 
   it.each([

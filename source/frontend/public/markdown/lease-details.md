@@ -16,15 +16,27 @@ View settings and status for this lease.
 
 **Cost Report Settings**: Cost allocation group assignment
 
-**Sharing Settings**: Whether the lease owner can share this lease with other users (visible when lease sharing is enabled globally)
+**Access settings**: Whether the lease owner can manage assignments, the default permission set, and additional permission sets available for assignments
+
+**Sandbox Spaces Settings**: AI chat access and available models
+
+---
+
+## Cost tab
+
+The **Cost** tab shows what this lease has spent, how fast it is spending, its top services, Amazon Bedrock token usage where token monitoring is on, and every threshold that has fired. Admins, Managers, and the lease owner see it while the lease is **Active** or **Frozen**, and after it has ended.
+
+Choose the **Cost** tab for detailed help with the cost figures and charts.
 
 ---
 
 ## Assignments tab
 
-The **Assignments** tab shows users and groups with access to this lease. Admins, Managers, and the lease owner (when lease sharing is enabled globally and the **Allow owner to share lease** setting is on) can add or remove access from this tab.
+The **Assignments** tab shows one row for each user or group with access to this lease. Each principal uses one permission set. Admins, Managers, and the lease owner (when lease sharing is enabled globally and **Allow owner to share lease** is on) can add, remove, or change access from this tab.
 
-Assignments can only be changed while the lease is **Active**. On a **Frozen** lease the tab is read-only and shows the access that will be restored when the lease is unfrozen. On a terminated lease it is read-only and kept as a record of who last had access.
+Assignments can only be changed while the lease is **Active**. On a **Frozen** lease the tab is read-only and shows the access that will be restored when the lease is unfrozen. On a terminated lease it shows the final assignment state for audit and remediation.
+
+Choose the **Assignments** tab for detailed help with staged changes and processing states.
 
 ---
 

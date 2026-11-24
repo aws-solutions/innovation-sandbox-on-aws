@@ -9,10 +9,11 @@ import {
 } from "aws-amplify/auth";
 
 import { resetApiSingletons } from "@amzn/innovation-sandbox-frontend/helpers/apiSingletons";
-
 import { getConfig } from "@amzn/innovation-sandbox-frontend/helpers/config";
 import {
+  COGNITO_IDC_DISPLAY_NAME_CLAIM,
   COGNITO_IDC_USER_ID_CLAIM,
+  COGNITO_IDC_USER_NAME_CLAIM,
   CognitoEmailClaims,
   type IdcIdentity,
   parseRolesClaim,
@@ -42,6 +43,9 @@ export class CognitoAuthService {
     const payload = idToken.payload;
     const email = resolveEmailFromClaims(payload as CognitoEmailClaims);
     const userId = payload[COGNITO_IDC_USER_ID_CLAIM] as string | undefined;
+    const displayName = payload[COGNITO_IDC_DISPLAY_NAME_CLAIM] as
+      string | undefined;
+    const userName = payload[COGNITO_IDC_USER_NAME_CLAIM] as string | undefined;
 
     if (!email || !userId) {
       return {
@@ -61,6 +65,8 @@ export class CognitoAuthService {
         type: "user" as const,
         email,
         userId,
+        displayName,
+        userName,
         roles,
       },
     };

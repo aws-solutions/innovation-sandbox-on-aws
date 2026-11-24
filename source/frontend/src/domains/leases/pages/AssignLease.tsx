@@ -22,7 +22,11 @@ import {
   showErrorToast,
   showSuccessToast,
 } from "@amzn/innovation-sandbox-frontend/components/Toast";
-import { AssignmentsForm } from "@amzn/innovation-sandbox-frontend/domains/leases/components/AssignmentsForm";
+import {
+  assignmentsFingerprint,
+  upsertOwnerAssignment,
+} from "@amzn/innovation-sandbox-frontend/domains/leases/assignments/assignmentPermissionSets";
+import { AssignmentsForm } from "@amzn/innovation-sandbox-frontend/domains/leases/assignments/components/AssignmentsForm";
 import { PendingAssignmentsList } from "@amzn/innovation-sandbox-frontend/domains/leases/components/PendingAssignmentsList";
 import { ReviewForm } from "@amzn/innovation-sandbox-frontend/domains/leases/components/ReviewForm";
 import { TemplateSelectionForm } from "@amzn/innovation-sandbox-frontend/domains/leases/components/TemplateSelectionForm";
@@ -40,6 +44,8 @@ import { useGetConfigurations } from "@amzn/innovation-sandbox-frontend/domains/
 import { useBreadcrumb } from "@amzn/innovation-sandbox-frontend/hooks/useBreadcrumb";
 import { DEFAULT_GROUP_ASSIGNMENT_MODE } from "@amzn/innovation-sandbox-shared/types/configuration.js";
 
+const CONFIGURE_ACCESS_STEP_INDEX = 2;
+
 export const AssignLease = () => {
   const navigate = useNavigate();
   const setBreadcrumb = useBreadcrumb();
@@ -50,13 +56,11 @@ export const AssignLease = () => {
 
   const [activeStepIndex, setActiveStepIndex] = useState(0);
 
-  // Initialize form with React Hook Form
   const methods = useForm<AssignLeaseFormValues>({
     resolver: zodResolver(AssignLeaseValidationSchema),
     mode: "all",
     defaultValues: {
       leaseTemplateUuid: "",
-      userEmail: "",
       acceptTerms: false,
       comments: "",
     },
@@ -64,28 +68,47 @@ export const AssignLease = () => {
 
   const { trigger, getFieldState, getValues, clearErrors, watch } = methods;
 
-  // Reset acceptTerms whenever the request changes
   const leaseTemplateUuid = watch("leaseTemplateUuid");
-  const assignmentsKey = (watch("assignments") ?? [])
-    .map((a) => a.principalId)
-    // Opaque IDC principal IDs: sort by code point for a deterministic,
-    // locale-independent key. This value only feeds the effect dependency
-    // below, so stable ordering matters, not human-readable collation.
-    .sort((a, b) => Number(a > b) - Number(a < b))
-    .join(",");
+  const assignmentsKey = assignmentsFingerprint(watch("assignments") ?? []);
   useEffect(() => {
     methods.resetField("acceptTerms");
   }, [leaseTemplateUuid, assignmentsKey, methods]);
 
   const { data: globalConfig } = useGetConfigurations();
-  const { isLoading: isTemplateLoading } = useGetLeaseTemplateById(
-    leaseTemplateUuid || undefined,
-  );
+  const { data: selectedTemplate, isLoading: isTemplateLoading } =
+    useGetLeaseTemplateById(leaseTemplateUuid || undefined);
+  const selectedUser = watch("selectedUser");
+  const defaultPermissionSetArn =
+    selectedTemplate?.defaultPermissionSet?.permissionSetArn;
+  const isConfigureAccessLoading =
+    activeStepIndex === CONFIGURE_ACCESS_STEP_INDEX && isTemplateLoading;
+
+  useEffect(() => {
+    if (!defaultPermissionSetArn) return;
+
+    const currentAssignments = getValues("assignments") ?? [];
+    const updatedAssignments = upsertOwnerAssignment(
+      currentAssignments,
+      selectedUser,
+      defaultPermissionSetArn,
+    );
+    if (updatedAssignments !== currentAssignments) {
+      methods.setValue("assignments", [...updatedAssignments], {
+        shouldValidate: true,
+      });
+    }
+  }, [
+    getValues,
+    leaseTemplateUuid,
+    methods,
+    defaultPermissionSetArn,
+    selectedUser,
+  ]);
 
   const stepFields: Array<Array<keyof AssignLeaseFormValues>> = [
     ["leaseTemplateUuid"], // Template selection
-    ["userEmail"], // User selection
-    ["assignments"], // Share access (always available for admin/manager)
+    ["selectedUser"], // User selection
+    ["assignments"], // Configure access (always available for admin/manager)
     ["acceptTerms"], // Terms of service
     [], // Review (no validation needed)
   ];
@@ -109,6 +132,8 @@ export const AssignLease = () => {
 
     // Only validate when moving forward
     if (requestedStepIndex > activeStepIndex) {
+      if (isConfigureAccessLoading) return;
+
       const currentStepFields = stepFields[activeStepIndex];
       const currentStepHasErrors = currentStepFields.some(
         (field) => getFieldState(field).error !== undefined,
@@ -140,14 +165,16 @@ export const AssignLease = () => {
     const request: NewLeaseRequest = {
       leaseTemplateUuid: values.leaseTemplateUuid,
       comments: values.comments,
-      userEmail: values.userEmail,
+      userEmail: values.selectedUser.email,
       ...(assignments ? { assignments } : {}),
     };
 
     try {
       await requestNewLease(request);
       navigate("/");
-      showSuccessToast(`Lease has been assigned to ${values.userEmail}.`);
+      showSuccessToast(
+        `Lease has been assigned to ${values.selectedUser.email}.`,
+      );
     } catch (error) {
       if (error instanceof Error) {
         showErrorToast(`Failed to submit lease assignment: ${error.message}`);
@@ -163,13 +190,17 @@ export const AssignLease = () => {
     {
       title: "Select lease template",
       content: (
-        <TemplateSelectionForm label="What lease template would you like to use for this assignment?" />
+        <TemplateSelectionForm
+          label="What lease template would you like to use for this assignment?"
+          clearAssignmentsOnChange
+        />
       ),
     },
     {
       title: "Select user",
       content: (
         <UserSelectionForm
+          clearAssignmentsOnChange
           enablePrincipalSearch={
             globalConfig?.leases?.enablePrincipalSearch ?? false
           }
@@ -177,9 +208,11 @@ export const AssignLease = () => {
       ),
     },
     {
-      title: "Share access",
+      title: "Configure access",
       isOptional: true,
-      content: (
+      content: isTemplateLoading ? (
+        <Loader label="Loading permission sets..." />
+      ) : (
         <AssignmentsForm
           enablePrincipalSearch={
             globalConfig?.leases?.enablePrincipalSearch ?? false
@@ -188,7 +221,17 @@ export const AssignLease = () => {
             globalConfig?.leases?.groupAssignmentMode ??
             DEFAULT_GROUP_ASSIGNMENT_MODE
           }
-          ownerEmail={watch("userEmail")}
+          owner={
+            selectedUser
+              ? {
+                  principalId: selectedUser.principalId,
+                  displayName: selectedUser.displayName,
+                  email: selectedUser.email,
+                }
+              : undefined
+          }
+          defaultPermissionSet={selectedTemplate?.defaultPermissionSet}
+          allowedPermissionSets={selectedTemplate?.allowedPermissionSets}
         />
       ),
     },
@@ -207,11 +250,14 @@ export const AssignLease = () => {
           <ReviewForm
             data={{
               leaseTemplateUuid: methods.watch("leaseTemplateUuid"),
-              userEmail: methods.watch("userEmail"),
+              userEmail: selectedUser?.email,
             }}
           />
           <PendingAssignmentsList
             desiredAssignments={methods.watch("assignments")}
+            defaultPermissionSet={selectedTemplate?.defaultPermissionSet}
+            allowedPermissionSets={selectedTemplate?.allowedPermissionSets}
+            ownerEmail={selectedUser?.email}
           />
           <Container>
             <TextareaField
@@ -253,7 +299,7 @@ export const AssignLease = () => {
           onNavigate={handleNavigate}
           onCancel={onCancel}
           onSubmit={handleSubmit}
-          isLoadingNextStep={isSubmitting}
+          isLoadingNextStep={isSubmitting || isConfigureAccessLoading}
           allowSkipTo
           i18nStrings={{
             stepNumberLabel: (stepNumber) => `Step ${stepNumber}`,

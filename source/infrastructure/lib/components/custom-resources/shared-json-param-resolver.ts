@@ -1,15 +1,17 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 import { Construct } from "constructs";
-import path from "path";
+import path from "node:path";
 
 import { SharedJsonParamEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/shared-json-param-parser-environment.js";
 import { IsbLambdaFunctionCustomResource } from "@amzn/innovation-sandbox-infrastructure/components/isb-lambda-function-custom-resource";
 import { SharedJsonParamArns } from "@amzn/innovation-sandbox-shared-json-param-parser/src/shared-json-param-parser-handler.js";
+import { Fn } from "aws-cdk-lib";
 import { Policy, PolicyStatement } from "aws-cdk-lib/aws-iam";
 
 export type SharedJsonParamResolverProps = SharedJsonParamArns & {
   namespace: string;
+  forceConfigurationUpdate: string;
 };
 
 export class SharedJsonParamResolver extends Construct {
@@ -25,6 +27,7 @@ export class SharedJsonParamResolver extends Construct {
   public readonly idcSolutionVersion: string;
   public readonly idcSupportedSchemas: string;
   //AccountPool
+  public readonly organizationId: string;
   public readonly sandboxOuId: string;
   public readonly availableOuId: string;
   public readonly activeOuId: string;
@@ -48,12 +51,15 @@ export class SharedJsonParamResolver extends Construct {
   public readonly blueprintTable: string;
   public readonly principalTable: string;
   public readonly cleanupReportTable: string;
+  public readonly sandboxSpacesUsageTable: string;
+  public readonly leaseCostHistoryTable: string;
   public readonly tableKmsKeyId: string;
   public readonly dataSolutionVersion: string;
   public readonly dataSupportedSchemas: string;
   public readonly cognitoUserPoolId: string;
   public readonly cognitoUserPoolArn: string;
   public readonly cognitoAppClientId: string;
+  public readonly cognitoMcpClientId: string;
   public readonly cognitoIdentityPoolId: string;
   public readonly cognitoDomain: string;
   public readonly awsAccessPortalUrl: string;
@@ -67,6 +73,8 @@ export class SharedJsonParamResolver extends Construct {
     props: SharedJsonParamResolverProps,
   ) {
     super(scope, id);
+
+    const { forceConfigurationUpdate, ...resourceProps } = props;
 
     const sharedJsonParamCR = new IsbLambdaFunctionCustomResource(
       this,
@@ -91,8 +99,12 @@ export class SharedJsonParamResolver extends Construct {
         environment: {},
         customResourceType: "Custom::ParseJsonConfiguration",
         customResourceProperties: {
-          ...props,
-          forceUpdate: new Date().getTime(), // forces the custom resource to run on all updates
+          ...resourceProps,
+          // Synth time re-reads on every new template; the parameter covers same-template updates.
+          forceUpdate: Fn.join("-", [
+            String(Date.now()),
+            forceConfigurationUpdate,
+          ]),
         },
       },
     );
@@ -137,6 +149,8 @@ export class SharedJsonParamResolver extends Construct {
       "idcSupportedSchemas",
     );
     //AccountPool
+    this.organizationId =
+      sharedJsonParamCR.customResource.getAttString("organizationId");
     this.sandboxOuId =
       sharedJsonParamCR.customResource.getAttString("sandboxOuId");
     this.availableOuId =
@@ -190,6 +204,11 @@ export class SharedJsonParamResolver extends Construct {
       sharedJsonParamCR.customResource.getAttString("principalTable");
     this.cleanupReportTable =
       sharedJsonParamCR.customResource.getAttString("cleanupReportTable");
+    this.sandboxSpacesUsageTable =
+      sharedJsonParamCR.customResource.getAttString("sandboxSpacesUsageTable");
+    this.leaseCostHistoryTable = sharedJsonParamCR.customResource.getAttString(
+      "leaseCostHistoryTable",
+    );
     this.tableKmsKeyId =
       sharedJsonParamCR.customResource.getAttString("tableKmsKeyId");
     this.dataSolutionVersion = sharedJsonParamCR.customResource.getAttString(
@@ -204,6 +223,8 @@ export class SharedJsonParamResolver extends Construct {
       sharedJsonParamCR.customResource.getAttString("cognitoUserPoolArn");
     this.cognitoAppClientId =
       sharedJsonParamCR.customResource.getAttString("cognitoAppClientId");
+    this.cognitoMcpClientId =
+      sharedJsonParamCR.customResource.getAttString("cognitoMcpClientId");
     this.cognitoIdentityPoolId = sharedJsonParamCR.customResource.getAttString(
       "cognitoIdentityPoolId",
     );

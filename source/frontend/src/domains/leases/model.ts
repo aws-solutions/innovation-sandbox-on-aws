@@ -9,24 +9,60 @@ import {
   MonitoredLeaseSchema,
   PendingLeaseSchema,
 } from "@amzn/innovation-sandbox-shared/types/lease.js";
+import {
+  MAX_ALLOWED_PERMISSION_SETS,
+  PermissionSetReferenceSchema,
+} from "@amzn/innovation-sandbox-shared/types/permission-set.js";
 import { PrincipalTypeSchema } from "@amzn/innovation-sandbox-shared/types/principal.js";
 
 // Frontend read models add API-only identifiers and assignment projections to
 // the neutral lease lifecycle types. Persistence version bounds stay backend-owned.
 const LeaseIdSchema = z.string().min(1);
+const LeasePermissionProfileViewFields = {
+  defaultPermissionSet: PermissionSetReferenceSchema,
+  allowedPermissionSets: z
+    .array(PermissionSetReferenceSchema)
+    .max(MAX_ALLOWED_PERMISSION_SETS),
+};
 
-export const PendingLeaseViewSchema = PendingLeaseSchema.extend({
-  leaseId: LeaseIdSchema,
+export const SelectableModelViewSchema = z.strictObject({
+  modelId: z.string().min(1),
+  displayName: z.string().min(1),
+  provider: z.string().min(1),
 });
-export const ApprovalDeniedLeaseViewSchema = ApprovalDeniedLeaseSchema.extend({
+export const SelectableModelListSchema = z.array(SelectableModelViewSchema);
+
+const LeaseViewFields = {
   leaseId: LeaseIdSchema,
-});
-export const MonitoredLeaseViewSchema = MonitoredLeaseSchema.extend({
-  leaseId: LeaseIdSchema,
-});
-export const ExpiredLeaseViewSchema = ExpiredLeaseSchema.extend({
-  leaseId: LeaseIdSchema,
-});
+  selectableModels: SelectableModelListSchema,
+  ...LeasePermissionProfileViewFields,
+};
+
+type LeasePermissionProfilePersistenceShape = {
+  defaultPermissionSetArn: z.ZodType;
+  allowedPermissionSetArns: z.ZodType;
+};
+
+const toLeaseViewSchema = <
+  T extends z.ZodRawShape & LeasePermissionProfilePersistenceShape,
+>(
+  schema: z.ZodObject<T>,
+) => {
+  const { defaultPermissionSetArn, allowedPermissionSetArns, ...viewShape } =
+    schema.shape;
+
+  return z.object({
+    ...viewShape,
+    ...LeaseViewFields,
+  });
+};
+
+export const PendingLeaseViewSchema = toLeaseViewSchema(PendingLeaseSchema);
+export const ApprovalDeniedLeaseViewSchema = toLeaseViewSchema(
+  ApprovalDeniedLeaseSchema,
+);
+export const MonitoredLeaseViewSchema = toLeaseViewSchema(MonitoredLeaseSchema);
+export const ExpiredLeaseViewSchema = toLeaseViewSchema(ExpiredLeaseSchema);
 
 export const LeaseViewSchema = z.discriminatedUnion("status", [
   PendingLeaseViewSchema,
@@ -54,6 +90,7 @@ export const LeaseAssignmentViewSchema = z.strictObject({
   isOwner: z.boolean(),
   isDesired: z.boolean(),
   syncStatus: AssignmentSyncStatusSchema,
+  permissionSet: PermissionSetReferenceSchema,
 });
 
 export const GetLeaseAssignmentsResponseSchema = z.strictObject({
@@ -85,6 +122,7 @@ export const SharedLeaseViewSchema = z.discriminatedUnion("status", [
 ]);
 
 export type LeaseView = z.infer<typeof LeaseViewSchema>;
+export type SelectableModelView = z.infer<typeof SelectableModelViewSchema>;
 export type PendingLeaseView = z.infer<typeof PendingLeaseViewSchema>;
 export type ApprovalDeniedLeaseView = z.infer<
   typeof ApprovalDeniedLeaseViewSchema

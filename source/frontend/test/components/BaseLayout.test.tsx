@@ -2,14 +2,18 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { screen } from "@testing-library/react";
+import type { ComponentProps } from "react";
 import { BrowserRouter as Router } from "react-router-dom";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
-import { authenticated } from "@amzn/innovation-sandbox-frontend-test/utils/cognitoFixtures";
-import { BaseLayout } from "@amzn/innovation-sandbox-frontend/components/AppLayout/BaseLayout";
+import {
+  BaseLayout,
+  TOP_NAVIGATION_SELECTOR,
+} from "@amzn/innovation-sandbox-frontend/components/AppLayout/BaseLayout";
 import { useGetConfigurations } from "@amzn/innovation-sandbox-frontend/domains/settings/hooks";
 import { AdminConfigurationView } from "@amzn/innovation-sandbox-frontend/domains/settings/model";
 import { CognitoAuthService } from "@amzn/innovation-sandbox-frontend/helpers/CognitoAuthService";
+import { useUser } from "@amzn/innovation-sandbox-frontend/hooks/useUser";
 import {
   adminConfigGetHandler,
   createAdminConfig,
@@ -17,6 +21,11 @@ import {
 import { server } from "@amzn/innovation-sandbox-frontend/mocks/server";
 import { renderWithQueryClient } from "@amzn/innovation-sandbox-frontend/setupTests";
 import { IdcIdentity } from "@amzn/innovation-sandbox-shared/utils/auth-utils";
+
+// Loaded dynamically because the configured Prettier and ESLint import sorters
+// disagree on ordering "@amzn/...-frontend-test" against "@amzn/...-frontend/".
+const { authenticated } =
+  await import("@amzn/innovation-sandbox-frontend-test/utils/cognitoFixtures");
 
 // Builds the aggregate configuration view with maintenance toggled on or off.
 const configWithMaintenance = (enabled: boolean): AdminConfigurationView => {
@@ -35,6 +44,11 @@ const configWithMaintenance = (enabled: boolean): AdminConfigurationView => {
 const ConfigSettledProbe = () => {
   const { isSuccess } = useGetConfigurations();
   return isSuccess ? <div data-testid="config-settled" /> : null;
+};
+
+const UserSettledProbe = () => {
+  const { isLoading } = useUser();
+  return isLoading ? null : <div data-testid="user-settled" />;
 };
 
 const userWithRoles = (roles: IdcIdentity["roles"]): IdcIdentity => ({
@@ -58,6 +72,22 @@ vi.mock(
   },
 );
 
+const recordToolbarProps = vi.hoisted(() => vi.fn());
+
+// Records the props BaseLayout passes to AppLayoutToolbar while still rendering
+// the real component, so navigation and content behave as in production.
+vi.mock("@cloudscape-design/components", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@cloudscape-design/components")>();
+  const { createElement } = await import("react");
+  const RealToolbar = actual.AppLayoutToolbar;
+  const AppLayoutToolbar = (props: ComponentProps<typeof RealToolbar>) => {
+    recordToolbarProps(props);
+    return createElement(RealToolbar, props);
+  };
+  return { ...actual, AppLayoutToolbar };
+});
+
 describe("BaseLayout", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -72,9 +102,47 @@ describe("BaseLayout", () => {
         <BaseLayout>
           <div data-testid="child-content">Child Content</div>
           <ConfigSettledProbe />
+          <UserSettledProbe />
         </BaseLayout>
       </Router>,
     );
+
+  test("marks the top navigation as the layout header outside the page content", async () => {
+    server.use(adminConfigGetHandler(configWithMaintenance(false)));
+
+    renderComponent();
+
+    await screen.findByTestId("user-settled");
+    const headers = document.querySelectorAll(TOP_NAVIGATION_SELECTOR);
+    expect(headers).toHaveLength(1);
+    const [header] = headers;
+    expect(header).toHaveTextContent("Innovation Sandbox on AWS");
+    expect(header).not.toContainElement(screen.getByTestId("child-content"));
+  });
+
+  test("keeps the marked top navigation pinned to the top of the viewport", async () => {
+    server.use(adminConfigGetHandler(configWithMaintenance(false)));
+
+    renderComponent();
+
+    await screen.findByTestId("user-settled");
+    expect(document.querySelector(TOP_NAVIGATION_SELECTOR)).toHaveStyle({
+      position: "sticky",
+      top: "0px",
+      zIndex: "1002",
+    });
+  });
+
+  test("sizes the layout below the marked top navigation", async () => {
+    server.use(adminConfigGetHandler(configWithMaintenance(false)));
+
+    renderComponent();
+
+    await screen.findByTestId("user-settled");
+    expect(recordToolbarProps).toHaveBeenLastCalledWith(
+      expect.objectContaining({ headerSelector: TOP_NAVIGATION_SELECTOR }),
+    );
+  });
 
   test("does not render maintenance banner when maintenance mode is disabled", async () => {
     server.use(adminConfigGetHandler(configWithMaintenance(false)));
@@ -94,34 +162,69 @@ describe("BaseLayout", () => {
     renderComponent();
 
     expect(await screen.findByText("Maintenance Mode")).toBeInTheDocument();
-    // The banner deep-links to the Maintenance section of the in-app Settings
-    // page (#maintenance selects the General tab and scrolls to the section).
+    // The banner deep-links to the maintenance control in General settings.
     // The Settings nav item is gated off for this User role, so the only
     // Settings link present is the banner's.
     expect(
       await screen.findByRole("link", { name: /settings/i }),
-    ).toHaveAttribute("href", "/settings#maintenance");
+    ).toHaveAttribute("href", "/settings#setting-maintenance-enabled");
   });
 
-  test("shows the Settings nav item with an attention badge for an admin", async () => {
-    vi.mocked(CognitoAuthService.getCurrentUser).mockResolvedValue(
-      authenticated(userWithRoles(["Admin"])),
-    );
-    // Two sections never saved -> the badge shows a count of 2. Maintenance is
-    // disabled so the banner's own "/settings" link is absent and the side-nav
-    // item is the only Settings link (the maintenance banner is covered by its
-    // own test above).
-    server.use(
-      adminConfigGetHandler({
-        ...createAdminConfig({ unsaved: ["leases", "cleanup"] }),
-        maintenance: { enabled: false, lastSavedBy: "admin@example.com" },
-      }),
-    );
+  test.each(["Admin", "Manager"] as const)(
+    "shows the default-review badge only to admins (%s)",
+    async (role) => {
+      vi.mocked(CognitoAuthService.getCurrentUser).mockResolvedValue(
+        authenticated(userWithRoles([role])),
+      );
+      // Maintenance is disabled so the banner's own "/settings" link is absent and the side-nav
+      // item is the only Settings link (the maintenance banner is covered by its
+      // own test above).
+      server.use(
+        adminConfigGetHandler({
+          ...createAdminConfig({ unsaved: ["leases", "cleanup"] }),
+          maintenance: { enabled: false, lastSavedBy: "admin@example.com" },
+        }),
+      );
+
+      renderComponent();
+
+      const settingsLink = await screen.findByRole("link", {
+        name: /settings/i,
+      });
+      expect(settingsLink).toHaveAttribute("href", "/settings");
+      await screen.findByTestId("config-settled");
+      const badges = screen.queryAllByRole("img", {
+        name: "3 settings pages have unsaved defaults",
+      });
+      expect(badges).toHaveLength(role === "Admin" ? 1 : 0);
+      if (role === "Admin") expect(badges[0]).toHaveTextContent("3");
+    },
+  );
+
+  test.each(["Manager", "Admin"] as const)(
+    "shows Permission Sets navigation for %s",
+    async (role) => {
+      vi.mocked(CognitoAuthService.getCurrentUser).mockResolvedValue(
+        authenticated(userWithRoles([role])),
+      );
+      server.use(adminConfigGetHandler(configWithMaintenance(false)));
+
+      renderComponent();
+
+      expect(
+        await screen.findByRole("link", { name: "Permission Sets" }),
+      ).toHaveAttribute("href", "/permission-sets");
+    },
+  );
+
+  test("hides Permission Sets navigation from users", async () => {
+    server.use(adminConfigGetHandler(configWithMaintenance(false)));
 
     renderComponent();
 
-    const settingsLink = await screen.findByRole("link", { name: /settings/i });
-    expect(settingsLink).toHaveAttribute("href", "/settings");
-    expect(await screen.findByText("2")).toBeInTheDocument();
+    await screen.findByTestId("user-settled");
+    expect(
+      screen.queryByRole("link", { name: "Permission Sets" }),
+    ).not.toBeInTheDocument();
   });
 });

@@ -4,7 +4,6 @@
 import {
   Box,
   Button,
-  Container,
   Header,
   SpaceBetween,
 } from "@cloudscape-design/components";
@@ -19,14 +18,19 @@ import { ErrorPanel } from "@amzn/innovation-sandbox-frontend/components/ErrorPa
 import {
   BudgetSettingsForm,
   BudgetSettingsFormValues,
+  parseRateLimitFormRows,
+  stripTriggerOn,
 } from "@amzn/innovation-sandbox-frontend/components/Forms/BudgetSettingsForm";
+import { hoursBetween } from "@amzn/innovation-sandbox-frontend/components/Forms/PredictiveDurationWarning";
 import { createBudgetSettingsValidationSchema } from "@amzn/innovation-sandbox-frontend/components/Forms/validation";
+import { InfoLink } from "@amzn/innovation-sandbox-frontend/components/InfoLink";
 import { Loader } from "@amzn/innovation-sandbox-frontend/components/Loader";
 import { Markdown } from "@amzn/innovation-sandbox-frontend/components/Markdown";
 import {
   showErrorToast,
   showSuccessToast,
 } from "@amzn/innovation-sandbox-frontend/components/Toast";
+import { getLeaseDisplayName } from "@amzn/innovation-sandbox-frontend/domains/leases/helpers";
 import {
   useGetLeaseById,
   useUpdateLease,
@@ -56,7 +60,10 @@ export const EditBudgetSettings = () => {
   } = useGetConfigurations();
   const globalMaxBudget = config?.leases.maxBudget;
   const requireMaxBudget = config?.leases.requireMaxBudget || false;
-
+  const allowPredictiveBudgetControls =
+    config?.leases.allowPredictiveBudgetControls || false;
+  const allowBedrockTokenMonitoring =
+    config?.leases.allowBedrockTokenMonitoring || false;
   // Create dynamic schema based on requirements
   const schema = useMemo(
     () =>
@@ -72,12 +79,15 @@ export const EditBudgetSettings = () => {
       maxBudgetEnabled: false,
       maxSpend: undefined,
       budgetThresholds: [],
+      predictiveBudgetEnabled: false,
+      bedrockTokenMonitoringEnabled: false,
     },
   });
 
   const {
     handleSubmit,
     reset,
+    trigger,
     formState: { isValid, isDirty },
   } = methods;
 
@@ -88,17 +98,36 @@ export const EditBudgetSettings = () => {
         maxBudgetEnabled:
           lease.maxSpend !== undefined && lease.maxSpend !== null,
         maxSpend: lease.maxSpend,
-        budgetThresholds: lease.budgetThresholds || [],
+        // The trigger-on selectors register `triggerOn` on mount, so it is
+        // seeded here too: a key only the live values carried would mark the
+        // form dirty after predictive controls are switched off and on.
+        budgetThresholds: (lease.budgetThresholds || []).map((threshold) => ({
+          ...threshold,
+          triggerOn: threshold.triggerOn,
+        })),
+        rateLimits: lease.rateLimits ?? [],
+        predictiveBudgetEnabled: lease.predictiveBudgetEnabled ?? false,
+        bedrockTokenMonitoringEnabled:
+          lease.bedrockTokenMonitoringEnabled ?? false,
       });
     }
   }, [lease, reset]);
+
+  useEffect(() => {
+    if (lease && config) {
+      trigger();
+    }
+  }, [lease, config, schema, trigger]);
 
   // Set page breadcrumb on page init
   useEffect(() => {
     setBreadcrumb([
       { text: "Home", href: "/" },
       { text: "Leases", href: "/leases" },
-      { text: lease?.userEmail ?? "...", href: `/leases/${leaseId}` },
+      {
+        text: lease ? getLeaseDisplayName(lease) : "...",
+        href: `/leases/${leaseId}`,
+      },
       { text: "Edit Budget Settings", href: "" },
     ]);
     setTools(<Markdown file="edit-lease-budget" />);
@@ -112,10 +141,23 @@ export const EditBudgetSettings = () => {
       // the form, so `maxBudgetEnabled` stays false even though the user entered
       // a value. Treat "required" as enabled so the value is sent, not dropped.
       const budgetEnabled = data.maxBudgetEnabled || requireMaxBudget;
+      const predictiveBudgetEnabled = data.predictiveBudgetEnabled ?? false;
       const leasePatchRequest: LeasePatchRequest = {
         leaseId: lease.leaseId,
-        budgetThresholds: data.budgetThresholds,
+        budgetThresholds: predictiveBudgetEnabled
+          ? data.budgetThresholds
+          : stripTriggerOn(data.budgetThresholds),
         maxSpend: budgetEnabled ? data.maxSpend : null,
+        predictiveBudgetEnabled,
+        bedrockTokenMonitoringEnabled:
+          data.bedrockTokenMonitoringEnabled ?? false,
+        // Omitted while predictive controls are off, which clears the stored
+        // limits.
+        ...(predictiveBudgetEnabled && {
+          // null clears; undefined would be dropped from the JSON body and
+          // leave the old value in place.
+          rateLimits: parseRateLimitFormRows(data.rateLimits) ?? null,
+        }),
       };
 
       await updateLease(leasePatchRequest);
@@ -162,18 +204,39 @@ export const EditBudgetSettings = () => {
   }
 
   return (
-    <ContentLayout>
+    <ContentLayout
+      header={
+        <Header
+          variant="h1"
+          info={<InfoLink markdown="edit-lease-budget" />}
+          description="Spending limit, thresholds and rate thresholds"
+        >
+          Edit Budget Settings
+        </Header>
+      }
+    >
       <FormProvider {...methods}>
         <form onSubmit={handleSubmit(onSubmit)}>
           <SpaceBetween size="l">
-            <Container
-              header={<Header variant="h2">Edit Budget Settings</Header>}
-            >
-              <BudgetSettingsForm
-                globalMaxBudget={globalMaxBudget}
-                requireMaxBudget={requireMaxBudget}
-              />
-            </Container>
+            <BudgetSettingsForm
+              globalMaxBudget={globalMaxBudget}
+              requireMaxBudget={requireMaxBudget}
+              variant="lease"
+              allowPredictiveBudgetControls={allowPredictiveBudgetControls}
+              persistedPredictiveBudgetEnabled={
+                lease.predictiveBudgetEnabled ?? false
+              }
+              allowBedrockTokenMonitoring={allowBedrockTokenMonitoring}
+              sandboxSpacesEnabled={lease.sandboxSpacesEnabled === true}
+              persistedBedrockTokenMonitoringEnabled={
+                lease.bedrockTokenMonitoringEnabled ?? false
+              }
+              leaseDurationInHours={
+                "startDate" in lease
+                  ? hoursBetween(lease.startDate, lease.expirationDate)
+                  : undefined
+              }
+            />
 
             <Box float="right">
               <SpaceBetween direction="horizontal" size="xs">

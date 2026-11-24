@@ -15,8 +15,8 @@ import {
   SingleItemResult,
 } from "@amzn/innovation-sandbox-commons/data/common-types.js";
 import {
-  base64DecodeCompositeKey,
   base64EncodeCompositeKey,
+  decodePageIdentifier,
 } from "@amzn/innovation-sandbox-commons/data/encoding.js";
 import {
   ConcurrentDataModificationException,
@@ -27,6 +27,7 @@ import { LeaseTemplateStore } from "@amzn/innovation-sandbox-commons/data/lease-
 import {
   LeaseTemplateSchemaVersion,
   PersistedLeaseTemplate,
+  PersistedLeaseTemplateKeySchema,
   PersistedLeaseTemplateSchema,
 } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template.js";
 import {
@@ -37,6 +38,30 @@ import {
   withMetadata,
 } from "@amzn/innovation-sandbox-commons/data/utils.js";
 import { ConditionalCheckFailedException } from "@aws-sdk/client-dynamodb";
+
+/**
+ * The condition an expected-version update writes under. Legacy rows may have
+ * no meta.lastEditTime (meta is optional in the schema): condition on its
+ * absence instead of binding an undefined value, so the row stays editable
+ * while a concurrent writer that adds a lastEditTime after our read is still
+ * rejected.
+ */
+function expectedWriteCondition(expectedTime: string | undefined): {
+  ConditionExpression: string;
+  ExpressionAttributeValues?: Record<string, string>;
+} {
+  if (expectedTime === undefined) {
+    return {
+      ConditionExpression:
+        "attribute_exists(#uid) and attribute_not_exists(meta.lastEditTime)",
+    };
+  }
+  return {
+    ConditionExpression:
+      "attribute_exists(#uid) and meta.lastEditTime = :expectedTime",
+    ExpressionAttributeValues: { ":expectedTime": expectedTime },
+  };
+}
 
 export class DynamoLeaseTemplateStore extends LeaseTemplateStore {
   private readonly tableName: string;
@@ -108,10 +133,7 @@ export class DynamoLeaseTemplateStore extends LeaseTemplateStore {
             TableName: this.tableName,
             Item: removeNullFieldsForDynamoDB(leaseTemplate),
             ReturnValues: "ALL_OLD",
-            ConditionExpression: `attribute_exists(#uid) and meta.lastEditTime = :expectedTime`,
-            ExpressionAttributeValues: {
-              ":expectedTime": expected.meta?.lastEditTime,
-            },
+            ...expectedWriteCondition(expected.meta?.lastEditTime),
             ExpressionAttributeNames: {
               "#uid": "uuid",
             },
@@ -178,7 +200,9 @@ export class DynamoLeaseTemplateStore extends LeaseTemplateStore {
     const result = await this.ddbClient.send(
       new ScanCommand({
         TableName: this.tableName,
-        ExclusiveStartKey: base64DecodeCompositeKey(pageIdentifier),
+        ExclusiveStartKey: decodePageIdentifier(pageIdentifier, (decoded) =>
+          PersistedLeaseTemplateKeySchema.parse(decoded),
+        ),
         Limit: pageSize,
       }),
     );
@@ -207,7 +231,10 @@ export class DynamoLeaseTemplateStore extends LeaseTemplateStore {
     // UUID. Instead we scan until we have enough PUBLIC items (or the table is
     // exhausted) and encode the last returned item's key as the token.
     const collected: PersistedLeaseTemplate[] = [];
-    let exclusiveStartKey = base64DecodeCompositeKey(pageIdentifier);
+    let exclusiveStartKey: Record<string, any> | undefined =
+      decodePageIdentifier(pageIdentifier, (decoded) =>
+        PersistedLeaseTemplateKeySchema.parse(decoded),
+      );
     let errorMessage: string | undefined;
 
     do {
@@ -283,7 +310,10 @@ export class DynamoLeaseTemplateStore extends LeaseTemplateStore {
         ExpressionAttributeValues: {
           ":manager": props.manager,
         },
-        ExclusiveStartKey: base64DecodeCompositeKey(props.pageIdentifier),
+        ExclusiveStartKey: decodePageIdentifier(
+          props.pageIdentifier,
+          (decoded) => PersistedLeaseTemplateKeySchema.parse(decoded),
+        ),
         Limit: props.pageSize,
       }),
     );

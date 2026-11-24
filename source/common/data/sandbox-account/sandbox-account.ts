@@ -28,8 +28,12 @@ const SandboxAccountItemWithMetadataSchema = createItemWithMetadataSchema(
   SandboxAccountSupportedVersionsSchema,
 );
 
-export const PersistedSandboxAccountSchema = z.strictObject({
+export const PersistedSandboxAccountKeySchema = z.strictObject({
   awsAccountId: AwsAccountIdSchema,
+});
+
+export const PersistedSandboxAccountSchema = z.strictObject({
+  ...PersistedSandboxAccountKeySchema.shape,
   email: z.email().optional(),
   name: z.string().max(50).optional(),
   /**

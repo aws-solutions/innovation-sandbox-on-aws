@@ -5,8 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Mocks for the modules `main.tsx` consumes at import time. Each test
 // resets the registry with `vi.resetModules()` before re-importing
-// `main.tsx`, so the top-level `loadConfig().then(...)` runs fresh per
-// case with the mocks below.
+// `main.tsx`, so application initialization runs fresh per case with
+// the mocks below.
 const loadConfig = vi.fn();
 vi.mock("@amzn/innovation-sandbox-frontend/helpers/config", () => ({
   loadConfig: (...args: unknown[]) => loadConfig(...args),
@@ -43,10 +43,6 @@ const completeConfig = {
 async function importMain(): Promise<void> {
   vi.resetModules();
   await import("@amzn/innovation-sandbox-frontend/main");
-  // main.tsx kicks off `loadConfig().then(...)` at module load — flush
-  // queued microtasks so the .then/.catch callback finishes before the
-  // assertions run.
-  await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 describe("main entry point", () => {

@@ -16,12 +16,12 @@ import {
 import { LeaseView } from "@amzn/innovation-sandbox-frontend/domains/leases/model";
 import { LeaseStatus } from "@amzn/innovation-sandbox-shared/types/lease.js";
 
-const ACTIVE_STATUSES: LeaseStatus[] = [
+const ACTIVE_STATUSES = new Set<LeaseStatus>([
   "PendingApproval",
   "Active",
   "Frozen",
   "Provisioning",
-];
+]);
 
 /**
  * Unified Home page section showing all active leases the user can access
@@ -78,7 +78,7 @@ export const ActiveLeases = () => {
     const seen = new Set<string>();
     return all.filter((lease) => {
       if (seen.has(lease.leaseId)) return false;
-      if (!ACTIVE_STATUSES.includes(lease.status)) return false;
+      if (!ACTIVE_STATUSES.has(lease.status)) return false;
       seen.add(lease.leaseId);
       return true;
     });

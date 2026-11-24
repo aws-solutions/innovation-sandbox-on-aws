@@ -324,6 +324,120 @@ describe("PrincipalTypeahead", () => {
       expect(onSelect).not.toHaveBeenCalled();
     });
 
+    it("uses the latest exclusion rule after an async resolve", async () => {
+      let releaseResolve!: () => void;
+      let markResolveStarted!: () => void;
+      const resolveGate = new Promise<void>((resolve) => {
+        releaseResolve = resolve;
+      });
+      const resolveStarted = new Promise<void>((resolve) => {
+        markResolveStarted = resolve;
+      });
+      server.use(
+        http.get(
+          `${getConfig().ApiUrl}/principals/search`,
+          async ({ request }) => {
+            const url = new URL(request.url);
+            if (url.searchParams.get("exact") === "true") {
+              markResolveStarted();
+              await resolveGate;
+              return HttpResponse.json({
+                status: "success",
+                data: { principals: [alice], totalMatches: 1 },
+              });
+            }
+            return HttpResponse.json({
+              status: "success",
+              data: { principals: [], totalMatches: 0 },
+            });
+          },
+        ),
+      );
+
+      const onSelect = vi.fn();
+      const Wrapper = createQueryClientWrapper();
+      const { rerender } = render(
+        <Wrapper>
+          <PrincipalTypeahead onSelect={onSelect} shouldExclude={() => false} />
+        </Wrapper>,
+      );
+
+      await triggerManualResolve("alice@example.com");
+      await resolveStarted;
+      rerender(
+        <Wrapper>
+          <PrincipalTypeahead
+            onSelect={onSelect}
+            shouldExclude={(principal) =>
+              principal.principalId === alice.principalId
+            }
+          />
+        </Wrapper>,
+      );
+      releaseResolve();
+
+      await waitFor(() => {
+        const formField = createWrapper().findFormField()!;
+        expect(formField.findError()?.getElement().textContent).toContain(
+          "already assigned",
+        );
+      });
+      expect(onSelect).not.toHaveBeenCalled();
+    });
+
+    it("does not select a principal if the control is disabled during resolve", async () => {
+      let releaseResolve!: () => void;
+      let markResolveStarted!: () => void;
+      const resolveGate = new Promise<void>((resolve) => {
+        releaseResolve = resolve;
+      });
+      const resolveStarted = new Promise<void>((resolve) => {
+        markResolveStarted = resolve;
+      });
+      server.use(
+        http.get(
+          `${getConfig().ApiUrl}/principals/search`,
+          async ({ request }) => {
+            const url = new URL(request.url);
+            if (url.searchParams.get("exact") === "true") {
+              markResolveStarted();
+              await resolveGate;
+              return HttpResponse.json({
+                status: "success",
+                data: { principals: [alice], totalMatches: 1 },
+              });
+            }
+            return HttpResponse.json({
+              status: "success",
+              data: { principals: [], totalMatches: 0 },
+            });
+          },
+        ),
+      );
+
+      const onSelect = vi.fn();
+      const Wrapper = createQueryClientWrapper();
+      const { rerender } = render(
+        <Wrapper>
+          <PrincipalTypeahead onSelect={onSelect} />
+        </Wrapper>,
+      );
+
+      await triggerManualResolve("alice@example.com");
+      await resolveStarted;
+      rerender(
+        <Wrapper>
+          <PrincipalTypeahead onSelect={onSelect} disabled />
+        </Wrapper>,
+      );
+      releaseResolve();
+
+      await waitFor(() =>
+        expect(createWrapper().findAutosuggest()?.isDisabled()).toBe(true),
+      );
+      expect(onSelect).not.toHaveBeenCalled();
+    });
+
     it("opens group confirmation when resolving a group name", async () => {
       stubPrincipalsEndpoint(() => []);
       server.use(

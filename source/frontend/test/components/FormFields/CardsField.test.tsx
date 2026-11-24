@@ -294,27 +294,19 @@ describe("CardsField", () => {
 
   describe("Value Extraction", () => {
     it("extracts specific value from selected item", async () => {
-      const SingleSelectionSchema = z.object({
-        selectedId: z.string(),
-      });
+      type SelectionFormValues = { selectedId: string };
 
       let extractedValue: string | undefined;
 
       function TestValueExtraction() {
-        const { control, watch } = useForm<
-          z.infer<typeof SingleSelectionSchema>
-        >({
+        const { control, watch } = useForm<SelectionFormValues>({
           defaultValues: { selectedId: "" },
         });
 
         extractedValue = watch("selectedId");
 
         return (
-          <CardsField<
-            TestItem,
-            z.infer<typeof SingleSelectionSchema>,
-            "selectedId"
-          >
+          <CardsField<TestItem, SelectionFormValues, "selectedId">
             controllerProps={{ control, name: "selectedId" }}
             formFieldProps={{ label: "Select an item" }}
             cardsProps={{

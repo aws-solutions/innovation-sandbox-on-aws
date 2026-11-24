@@ -9,15 +9,17 @@ import {
 
 import { updateCleanupStatus } from "../utils/update-cleanup-status.js";
 import { cleanupAccountAccess } from "./cleanup-account-access.js";
-import { runStep } from "./run-step.js";
+import { hasPendingAccountGrants } from "./pending-account-grants.js";
+import { CleanupStepError, runStep } from "./run-step.js";
 import type { CleanupContext } from "./types.js";
 
-// Maximum time to wait for the lease lock to be released before falling
-// through to the authoritative sweep. With exponential backoff starting at
-// 5s and doubling up to 60s, 20 attempts covers ~10 minutes.
-const MAX_POLL_ATTEMPTS = 20;
-const INITIAL_DELAY_SECONDS = 5;
-const MAX_DELAY_SECONDS = 60;
+// Lease-lock polling uses bounded exponential backoff before falling through
+// to the authoritative sweep.
+const MAX_LEASE_LOCK_POLL_ATTEMPTS = 20;
+const LEASE_LOCK_INITIAL_DELAY_SECONDS = 5;
+const LEASE_LOCK_MAX_DELAY_SECONDS = 60;
+const GRANT_POLL_INTERVAL_SECONDS = 15;
+const MAX_GRANT_POLL_ATTEMPTS = 20;
 
 interface LeaseLockPollState {
   cleared: boolean;
@@ -42,9 +44,10 @@ interface LeaseLockPollState {
  * On max attempts reached, the step proceeds (does NOT quarantine) — the
  * authoritative sweep (cleanupAccountAccess) is the backstop.
  *
- * After the poll resolves (or times out), the authoritative sweep runs:
- * ListAccountAssignments + DeleteAccountAssignment for any remnants.
- * Quarantines the account on sweep failure.
+ * After the lease lock poll, wait for reported pending IDC creations on the
+ * account before taking the sweep's assignment snapshot. Pending creations
+ * that exceed the bounded wait, status lookup errors, and sweep failures
+ * quarantine the account.
  */
 export async function revokeAccess(ctx: CleanupContext): Promise<void> {
   const {
@@ -106,18 +109,18 @@ export async function revokeAccess(ctx: CleanupContext): Promise<void> {
         },
         {
           initialState: { cleared: false },
-          // Exponential backoff capped at MAX_DELAY_SECONDS.
-          // Max total wait: 5+10+20+40+(16×60) = ~17 minutes (exceeds 15-min lock TTL).
+          // Exponential backoff capped at LEASE_LOCK_MAX_DELAY_SECONDS.
+          // Total backoff is ~17 minutes (exceeds 15-min lock TTL).
           waitStrategy: (state, attempt) => {
             if (state.cleared) {
               return { shouldContinue: false };
             }
-            if (attempt >= MAX_POLL_ATTEMPTS) {
+            if (attempt >= MAX_LEASE_LOCK_POLL_ATTEMPTS) {
               return { shouldContinue: false };
             }
             const delay = Math.min(
-              INITIAL_DELAY_SECONDS * Math.pow(2, attempt),
-              MAX_DELAY_SECONDS,
+              LEASE_LOCK_INITIAL_DELAY_SECONDS * Math.pow(2, attempt),
+              LEASE_LOCK_MAX_DELAY_SECONDS,
             );
             return { shouldContinue: true, delay: { seconds: delay } };
           },
@@ -143,7 +146,37 @@ export async function revokeAccess(ctx: CleanupContext): Promise<void> {
     );
   }
 
-  // Authoritative sweep: revoke any remaining IDC assignments.
+  // A worker's successful callback only means IDC accepted its request. Wait
+  // for accepted creations to finish before taking the assignment snapshot.
+  // Use durable polling so the wait survives replay and Lambda timeouts.
+  try {
+    const pending = await durableContext.waitForCondition<boolean>(
+      "wait-for-pending-idc-grants",
+      async () => {
+        await accountStore.acquireLock(accountId, executionArn, 300, {
+          step: "revoke-access",
+          reason: cleanupReason,
+        });
+        return hasPendingAccountGrants(ctx);
+      },
+      {
+        initialState: true,
+        waitStrategy: (pending, attempt) => ({
+          shouldContinue: pending && attempt < MAX_GRANT_POLL_ATTEMPTS,
+          delay: { seconds: GRANT_POLL_INTERVAL_SECONDS },
+        }),
+      },
+    );
+    if (pending) {
+      throw new Error(
+        `IDC account assignment creations are still pending for account ${accountId}`,
+      );
+    }
+  } catch (error) {
+    throw new CleanupStepError("revoke-access", error);
+  }
+
+  // Authoritative sweep: revoke assignments after accepted grants have settled.
   // Part of the same report step (skipReport). Quarantines on failure.
   await runStep(ctx, "revoke-access-sweep", () => cleanupAccountAccess(ctx), {
     skipReport: true,

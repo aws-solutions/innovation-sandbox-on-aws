@@ -12,9 +12,10 @@ import styles from "./styles.module.scss";
 interface InfoLinkProps {
   text?: string;
   markdown: string;
+  ariaLabel?: string;
 }
 
-export const InfoLink = ({ text, markdown }: InfoLinkProps) => {
+export const InfoLink = ({ text, markdown, ariaLabel }: InfoLinkProps) => {
   const { setTools, setToolsOpen } = useAppLayoutContext();
 
   const onClick = () => {
@@ -23,7 +24,7 @@ export const InfoLink = ({ text, markdown }: InfoLinkProps) => {
   };
 
   return (
-    <TextLink onClick={onClick}>
+    <TextLink onClick={onClick} ariaLabel={ariaLabel}>
       <div className={styles.container}>
         <ImInfo size={18} />
         {text && <span className={styles.text}>{text}</span>}

@@ -25,6 +25,7 @@ export class IdentityTokenError extends Error {
 export interface IdentityVerifierEnv {
   COGNITO_USER_POOL_ID: string;
   COGNITO_APP_CLIENT_ID: string;
+  COGNITO_MCP_CLIENT_ID: string;
 }
 
 // Cache the verifier across invocations: aws-jwt-verify holds the JWKS in
@@ -34,7 +35,7 @@ let verifier: ReturnType<
   typeof CognitoJwtVerifier.create<{
     userPoolId: string;
     tokenUse: "id";
-    clientId: string;
+    clientId: string[];
   }>
 > | null = null;
 
@@ -43,7 +44,7 @@ function getVerifier(env: IdentityVerifierEnv) {
   verifier = CognitoJwtVerifier.create({
     userPoolId: env.COGNITO_USER_POOL_ID,
     tokenUse: "id",
-    clientId: env.COGNITO_APP_CLIENT_ID,
+    clientId: [env.COGNITO_APP_CLIENT_ID, env.COGNITO_MCP_CLIENT_ID],
   });
   return verifier;
 }
@@ -54,7 +55,7 @@ export function extractSubFromAuthProvider(
   providerString: string | undefined | null,
 ): string | null {
   if (!providerString) return null;
-  const match = providerString.match(COGNITO_SIGN_IN_REGEX);
+  const match = COGNITO_SIGN_IN_REGEX.exec(providerString);
   return match?.[1] ?? null;
 }
 

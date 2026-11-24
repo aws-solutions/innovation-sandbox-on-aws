@@ -7,7 +7,10 @@ import { mockClient } from "aws-sdk-client-mock";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { DynamoSandboxAccountStore } from "@amzn/innovation-sandbox-commons/data/sandbox-account/dynamo-sandbox-account-store.js";
-import { PersistedSandboxAccountSchema } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account.js";
+import {
+  PersistedSandboxAccountKeySchema,
+  PersistedSandboxAccountSchema,
+} from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account.js";
 
 const mockDynamoClient = mockClient(DynamoDBDocumentClient);
 
@@ -301,5 +304,22 @@ describe("PersistedSandboxAccountSchema - resourceLock field", () => {
         phase: "nuke",
       });
     }
+  });
+});
+
+describe("PersistedSandboxAccountKeySchema", () => {
+  test("accepts a valid AWS account ID", () => {
+    expect(
+      PersistedSandboxAccountKeySchema.safeParse({
+        awsAccountId: "123456789012",
+      }).success,
+    ).toBe(true);
+  });
+
+  test.each([
+    { awsAccountId: "not-an-account-id" },
+    { awsAccountId: "123456789012", unexpected: true },
+  ])("rejects an invalid table key", (key) => {
+    expect(PersistedSandboxAccountKeySchema.safeParse(key).success).toBe(false);
   });
 });

@@ -90,6 +90,7 @@ export const BasicDetailsValidationSchema = z.object({
       z.object({
         key: z
           .string()
+          .trim()
           .min(
             BLUEPRINT_TAG_CONSTRAINTS.KEY_MIN_LENGTH,
             BLUEPRINT_TAG_CONSTRAINTS.ERROR_KEY_EMPTY,
@@ -147,7 +148,7 @@ export const createBasicDetailsValidationRefinement = () => {
       if (indices.length > 1) {
         indices.forEach((index) => {
           ctx.addIssue({
-            code: z.ZodIssueCode.custom,
+            code: "custom",
             message: BLUEPRINT_TAG_CONSTRAINTS.ERROR_DUPLICATE_KEY,
             path: ["tags", index, "key"],
           });
@@ -238,8 +239,10 @@ export const DeploymentConfigurationValidationSchema = z.object({
  * Combines all step schemas with native Zod validation.
  */
 export const createBlueprintWizardValidationSchema = () => {
-  return BasicDetailsValidationSchema.merge(StackSetSelectionValidationSchema)
-    .merge(DeploymentConfigurationValidationSchema)
+  return BasicDetailsValidationSchema.extend(
+    StackSetSelectionValidationSchema.shape,
+  )
+    .extend(DeploymentConfigurationValidationSchema.shape)
     .superRefine(createBasicDetailsValidationRefinement());
 };
 

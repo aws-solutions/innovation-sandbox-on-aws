@@ -76,6 +76,16 @@ describe("DeploymentStrategyForm", () => {
       expect(screen.getByText(/Concurrent deployments:/i)).toBeInTheDocument();
       expect(screen.getByText(/Failure tolerance:/i)).toBeInTheDocument();
       expect(screen.getByText(/Concurrency mode/i)).toBeInTheDocument();
+      expect(
+        screen.getByText(
+          "Percentage of target accounts to deploy concurrently in each Region",
+        ),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText(
+          "Percentage of target accounts that can fail in each Region before deployment stops",
+        ),
+      ).toBeInTheDocument();
     });
   });
 

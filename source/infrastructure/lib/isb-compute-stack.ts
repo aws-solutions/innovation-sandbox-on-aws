@@ -1,5 +1,6 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
+import { SES_IDENTITY_ARN_REGEX } from "@amzn/innovation-sandbox-shared/utils/ses-identity-arn.js";
 import { Stack, type StackProps } from "aws-cdk-lib";
 import { Construct } from "constructs";
 
@@ -19,11 +20,14 @@ import {
 } from "@amzn/innovation-sandbox-infrastructure/helpers/shared-ssm-params";
 import { applyIsbTag } from "@amzn/innovation-sandbox-infrastructure/helpers/tagging-helper";
 import { IsbComputeResources } from "@amzn/innovation-sandbox-infrastructure/isb-compute-resources";
-import fs from "fs";
-import path from "path";
+import fs from "node:fs";
+import path from "node:path";
 
 export class IsbComputeStack extends Stack {
-  public static sharedSpokeConfig: SharedSpokeConfig;
+  private static sharedSpokeConfigValue: SharedSpokeConfig;
+  public static get sharedSpokeConfig(): SharedSpokeConfig {
+    return IsbComputeStack.sharedSpokeConfigValue;
+  }
 
   constructor(scope: Construct, id: string, props?: StackProps) {
     super(scope, id, props);
@@ -45,8 +49,7 @@ export class IsbComputeStack extends Stack {
           "Comma separated list of CIDR ranges that allow access to the API. To allow all the entire internet, leave" +
           " the default 0.0.0.0/1,128.0.0.0/1",
         default: "0.0.0.0/1,128.0.0.0/1",
-        allowedPattern:
-          "^((\\d{1,3}\\.){3}\\d{1,3}/([0-9]|[1-2][0-9]|3[0-2]))(\\s*,\\s*((\\d{1,3}\\.){3}\\d{1,3}/([0-9]|[1-2][0-9]|3[0-2])))*$",
+        allowedPattern: String.raw`^((\d{1,3}\.){3}\d{1,3}/([0-9]|[1-2][0-9]|3[0-2]))(\s*,\s*((\d{1,3}\.){3}\d{1,3}/([0-9]|[1-2][0-9]|3[0-2])))*$`,
       },
     );
 
@@ -105,6 +108,31 @@ export class IsbComputeStack extends Stack {
       },
     );
 
+    // AllowedPattern only checks ARN format at deploy time; SES itself
+    // authorizes the identity and cross-account access at send time.
+    const sesIdentityArn = new ParameterWithLabel(this, "SesIdentityArn", {
+      label: "Delegated SES Identity ARN (Optional)",
+      description:
+        "Optional SES identity ARN for delegated sending. Leave empty to send from the hub account.",
+      default: "",
+      allowedPattern: `^$|${SES_IDENTITY_ARN_REGEX.source}`,
+      constraintDescription:
+        "Must be an SES identity ARN (arn:aws:ses:REGION:ACCOUNT:identity/VALUE), or empty",
+    });
+
+    // Same-template updates otherwise leave the shared config resolver unchanged.
+    const forceConfigurationUpdate = new ParameterWithLabel(
+      this,
+      "ForceConfigurationUpdate",
+      {
+        label: "Force configuration update (optional)",
+        description:
+          "Leave unchanged on normal updates. To force this stack to update the configuration it " +
+          "reads from the Account Pool, IDC, and Data stacks, change it to any new value, " +
+          "for example after you change the Account Pool managed Regions or the Data stack AWS Access Portal URL.",
+        default: "0",
+      },
+    );
     addParameterGroup(this, {
       label: "Compute Stack Configuration",
       parameters: [
@@ -116,14 +144,17 @@ export class IsbComputeStack extends Stack {
         acceptTerms,
         customDomainName,
         customDomainCertificateArn,
+        sesIdentityArn,
+        forceConfigurationUpdate,
       ],
     });
 
-    IsbComputeStack.sharedSpokeConfig = getSharedSsmParamValues(
+    IsbComputeStack.sharedSpokeConfigValue = getSharedSsmParamValues(
       this,
       namespaceParam.valueAsString,
       idcAccountId.valueAsString,
       orgMgtAccountId.valueAsString,
+      forceConfigurationUpdate.valueAsString,
     );
 
     new IsbComputeResources(this, {
@@ -138,6 +169,8 @@ export class IsbComputeStack extends Stack {
         IsbComputeStack.sharedSpokeConfig.data.cognitoUserPoolArn,
       cognitoAppClientId:
         IsbComputeStack.sharedSpokeConfig.data.cognitoAppClientId,
+      cognitoMcpClientId:
+        IsbComputeStack.sharedSpokeConfig.data.cognitoMcpClientId,
       cognitoIdentityPoolId:
         IsbComputeStack.sharedSpokeConfig.data.cognitoIdentityPoolId,
       cognitoDomain: IsbComputeStack.sharedSpokeConfig.data.cognitoDomain,
@@ -151,6 +184,10 @@ export class IsbComputeStack extends Stack {
         IsbComputeStack.sharedSpokeConfig.data.identityPoolUserRoleName,
       customDomainName: customDomainName.valueAsString,
       customDomainCertificateArn: customDomainCertificateArn.valueAsString,
+      idcConfigParamArn:
+        IsbComputeStack.sharedSpokeConfig.parameterArns.idcConfigParamArn,
+      principalTable: IsbComputeStack.sharedSpokeConfig.data.principalTable,
+      sesIdentityArn: sesIdentityArn.valueAsString,
     });
 
     applyIsbTag(this, `${namespaceParam.valueAsString}`);

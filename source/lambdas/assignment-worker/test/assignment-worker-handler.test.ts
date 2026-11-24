@@ -1,5 +1,6 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
+import { ValidationException } from "@amzn/innovation-sandbox-commons/data/global-config/global-config-utils.js";
 import { AssignmentWorkerEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/assignment-worker-environment.js";
 import { generateSchemaData } from "@amzn/innovation-sandbox-commons/test/generate-schema-data.js";
 import { mockContext } from "@amzn/innovation-sandbox-commons/test/lambdas/fixtures.js";
@@ -26,8 +27,14 @@ const TEST_LEASE_ID = "550e8400-e29b-41d4-a716-446655440000";
 const TEST_OWNER_EMAIL = "owner@example.com";
 const TEST_REQUESTER_EMAIL = "admin@example.com";
 const TEST_ACCOUNT_ID = "999888777666";
+const TEST_BUILT_IN_PERMISSION_SET_ARN =
+  "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-1111111111111111";
 const TEST_PERMISSION_SET_ARN =
-  "arn:aws:sso:::permissionSet/ssoins-123/ps-user";
+  "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-2222222222222222";
+const TEST_ADMIN_PERMISSION_SET_ARN =
+  "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-3333333333333333";
+const TEST_MANAGER_PERMISSION_SET_ARN =
+  "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-4444444444444444";
 const TEST_EXECUTION_ARN =
   "arn:aws:states:us-east-1:123456789012:execution:AssignmentWorker:abc123";
 const TEST_USER_ID = "a1b2c3d4e5-550e8400-e29b-41d4-a716-446655440000";
@@ -40,6 +47,7 @@ const TEST_USER_ID = "a1b2c3d4e5-550e8400-e29b-41d4-a716-446655440000";
 const mockResolveAssignmentAction = vi.fn();
 const mockProcessAssignment = vi.fn();
 const mockSfnSend = vi.fn();
+const mockIdcConfigGet = vi.fn();
 
 let handler: typeof import("@amzn/innovation-sandbox-assignment-worker/assignment-worker-handler.js").handler;
 
@@ -65,7 +73,7 @@ beforeAll(async () => {
     IsbServices: {
       principalStore: vi.fn(() => ({})),
       leaseStore: vi.fn(() => ({})),
-      idcStackConfigStore: vi.fn(() => ({ get: vi.fn() })),
+      idcStackConfigStore: vi.fn(() => ({ get: mockIdcConfigGet })),
     },
   }));
 
@@ -95,6 +103,11 @@ afterAll(() => {
 beforeEach(() => {
   vi.clearAllMocks();
   mockSfnSend.mockResolvedValue({});
+  mockIdcConfigGet.mockResolvedValue({
+    userPermissionSetArn: TEST_BUILT_IN_PERMISSION_SET_ARN,
+    adminPermissionSetArn: TEST_ADMIN_PERMISSION_SET_ARN,
+    managerPermissionSetArn: TEST_MANAGER_PERMISSION_SET_ARN,
+  });
 });
 
 // --- Test Helpers ---
@@ -147,16 +160,65 @@ function sfnCommandInputs(): Record<string, unknown>[] {
 }
 
 describe("action handling", () => {
-  it("reports success without touching IDC on NO_OP", async () => {
+  it("uses the ARN-only message contract and resolves lookup context locally", async () => {
     mockResolveAssignmentAction.mockResolvedValue("NO_OP");
 
     const result = await handler(createSqsEvent(createMessage()), testContext);
 
     expect(mockProcessAssignment).not.toHaveBeenCalled();
+    expect(mockResolveAssignmentAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        permissionSetArn: TEST_PERMISSION_SET_ARN,
+        defaultPermissionSetArn: TEST_BUILT_IN_PERMISSION_SET_ARN,
+        builtInPermissionSetArn: TEST_BUILT_IN_PERMISSION_SET_ARN,
+      }),
+      expect.anything(),
+    );
     const inputs = sfnCommandInputs();
     expect(inputs).toHaveLength(1);
     expect(inputs[0]!.output).toContain("SKIPPED");
     expect(result.batchItemFailures).toHaveLength(0);
+  });
+
+  it.each(["UPDATE", "PUBLISH", "UNFREEZE"])(
+    "fails a deregistered %s grant immediately without retrying the denied operation",
+    async (intent) => {
+      mockResolveAssignmentAction.mockResolvedValue("GRANT");
+      mockProcessAssignment.mockRejectedValue(
+        new ValidationException("Permission set is not registered"),
+      );
+      const result = await handler(
+        createSqsEvent(createMessage({ intent })),
+        testContext,
+      );
+      expect(result.batchItemFailures).toEqual([]);
+      expect(sfnCommandInputs()).toEqual([
+        expect.objectContaining({
+          error: "ValidationException",
+          cause: "Permission set is not registered",
+        }),
+      ]);
+    },
+  );
+
+  it("retries a policy rejection only if reporting the task failure fails", async () => {
+    mockResolveAssignmentAction.mockResolvedValue("GRANT");
+    mockProcessAssignment.mockRejectedValue(
+      new ValidationException("Permission set is not registered"),
+    );
+    mockSfnSend.mockRejectedValueOnce(new Error("callback unavailable"));
+    const result = await handler(createSqsEvent(createMessage()), testContext);
+    expect(result.batchItemFailures).toEqual([{ itemIdentifier: "msg-0" }]);
+  });
+
+  it("retries a transient registration read failure without reporting success", async () => {
+    mockResolveAssignmentAction.mockResolvedValue("GRANT");
+    mockProcessAssignment.mockRejectedValue(
+      new Error("registration read unavailable"),
+    );
+    const result = await handler(createSqsEvent(createMessage()), testContext);
+    expect(result.batchItemFailures).toEqual([{ itemIdentifier: "msg-0" }]);
+    expect(sfnCommandInputs()).toEqual([]);
   });
 
   it("performs the IDC operation and reports success for GRANT", async () => {
@@ -197,6 +259,82 @@ describe("action handling", () => {
       expect.anything(),
     );
   });
+
+  it.each([
+    ["administrator", TEST_ADMIN_PERMISSION_SET_ARN],
+    ["manager", TEST_MANAGER_PERMISSION_SET_ARN],
+  ])(
+    "rejects a %s system-role grant before calling the IDC operation",
+    async (_role, permissionSetArn) => {
+      mockResolveAssignmentAction.mockResolvedValue("GRANT");
+
+      const result = await handler(
+        createSqsEvent(createMessage({ permissionSetArn })),
+        testContext,
+      );
+
+      expect(mockProcessAssignment).not.toHaveBeenCalled();
+      expect(sfnCommandInputs()).toEqual([
+        expect.objectContaining({
+          taskToken: "task-token-1",
+          error: "SystemPermissionSetGrantDenied",
+          cause: expect.stringContaining(
+            `Refusing to grant ISB system permission set ${permissionSetArn}`,
+          ),
+        }),
+      ]);
+      expect(result.batchItemFailures).toEqual([]);
+    },
+  );
+
+  it("retries a system-role rejection only when its task-failure callback fails", async () => {
+    mockResolveAssignmentAction.mockResolvedValue("GRANT");
+    mockSfnSend.mockRejectedValueOnce(
+      new Error("SendTaskFailure temporarily unavailable"),
+    );
+
+    const result = await handler(
+      createSqsEvent(
+        createMessage({ permissionSetArn: TEST_ADMIN_PERMISSION_SET_ARN }),
+      ),
+      testContext,
+    );
+
+    expect(mockProcessAssignment).not.toHaveBeenCalled();
+    expect(sfnCommandInputs()).toEqual([
+      expect.objectContaining({
+        taskToken: "task-token-1",
+        error: "SystemPermissionSetGrantDenied",
+      }),
+    ]);
+    expect(result.batchItemFailures).toEqual([{ itemIdentifier: "msg-0" }]);
+  });
+
+  it.each([
+    ["administrator", TEST_ADMIN_PERMISSION_SET_ARN],
+    ["manager", TEST_MANAGER_PERMISSION_SET_ARN],
+  ])(
+    "allows a %s system-role revocation for remediation",
+    async (_role, permissionSetArn) => {
+      mockResolveAssignmentAction.mockResolvedValue("REVOKE");
+      mockProcessAssignment.mockResolvedValue({
+        status: "SUCCEEDED",
+        principalId: TEST_USER_ID,
+        principalType: "USER",
+        action: "REVOKE",
+      });
+
+      await handler(
+        createSqsEvent(createMessage({ permissionSetArn })),
+        testContext,
+      );
+
+      expect(mockProcessAssignment).toHaveBeenCalledWith(
+        expect.objectContaining({ action: "REVOKE", permissionSetArn }),
+        expect.anything(),
+      );
+    },
+  );
 });
 
 describe("failure handling", () => {
@@ -258,6 +396,26 @@ describe("failure handling", () => {
     );
     expect(failureInputs).toHaveLength(1);
     expect(failureInputs[0]!.error).toBe("InvalidMessage");
+    expect(result.batchItemFailures).toEqual([{ itemIdentifier: "msg-0" }]);
+  });
+
+  it("rejects a malformed permission set ARN before resolving the action", async () => {
+    const result = await handler(
+      createSqsEvent(
+        createMessage({ permissionSetArn: "not-a-permission-set-arn" }),
+      ),
+      testContext,
+    );
+
+    expect(mockIdcConfigGet).not.toHaveBeenCalled();
+    expect(mockResolveAssignmentAction).not.toHaveBeenCalled();
+    expect(mockProcessAssignment).not.toHaveBeenCalled();
+    expect(sfnCommandInputs()).toEqual([
+      expect.objectContaining({
+        taskToken: "task-token-1",
+        error: "InvalidMessage",
+      }),
+    ]);
     expect(result.batchItemFailures).toEqual([{ itemIdentifier: "msg-0" }]);
   });
 

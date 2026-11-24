@@ -8,15 +8,19 @@ View and edit all settings for this lease template.
 
 ## Template sections
 
-**Basic Details**: Name, description, visibility, approval requirements, and sharing settings
+**Basic Details**: Name, description, visibility, and approval requirements
 
 **Blueprint Details**: Associated blueprint for automatic infrastructure deployment
+
+**Access and sharing**: Lease sharing, the default permission set, and additional permission sets available for assignments
 
 **Budget Settings**: Spending limits and threshold-based alerts or freezes
 
 **Duration Settings**: Time limits and duration-based alerts or freezes
 
 **Cost Report Settings**: Cost allocation group assignment
+
+**Sandbox Spaces Settings**: AI chat access and available models
 
 ---
 

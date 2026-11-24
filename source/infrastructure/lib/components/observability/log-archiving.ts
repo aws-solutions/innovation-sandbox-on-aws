@@ -25,7 +25,7 @@ import {
 } from "aws-cdk-lib/aws-s3";
 import { CfnSchedule } from "aws-cdk-lib/aws-scheduler";
 import { Construct } from "constructs";
-import path from "path";
+import path from "node:path";
 
 interface LogArchivingProps {
   readonly namespace: string;

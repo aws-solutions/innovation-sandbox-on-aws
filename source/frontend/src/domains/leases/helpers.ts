@@ -11,6 +11,8 @@ import type {
 import { getLeaseExpiryInfo } from "@amzn/innovation-sandbox-frontend/helpers/LeaseExpiryInfo";
 import {
   CriticalLockIntents,
+  getCurrentLeaseSpend,
+  isExpiredLease,
   isMonitoredLease,
   Lease,
   LeaseStatus,
@@ -25,6 +27,9 @@ export const getLeaseDisplayName = (lease: {
   uuid: string;
   originalLeaseTemplateName: string;
 }): string => `${lease.originalLeaseTemplateName} (${lease.uuid.slice(0, 8)})`;
+
+export const getLeaseAssignmentsPath = (leaseId: string): string =>
+  `/leases/${leaseId}?tab=assignments`;
 
 /** A lease record enriched with the derived display name for filtering/display. */
 export type LeaseWithName<T extends { uuid: string }> = T & { name: string };
@@ -227,24 +232,32 @@ export const leaseExpirySortingComparator = (a: Lease, b: Lease): number => {
   );
 };
 
+// A lease that was never monitored has no spend and sorts as zero.
+const getSpendSortValue = (lease: Lease): number =>
+  isMonitoredLease(lease) || isExpiredLease(lease)
+    ? getCurrentLeaseSpend(lease)
+    : 0;
+
+export const leaseSpendSortingComparator = (a: Lease, b: Lease): number =>
+  getSpendSortValue(a) - getSpendSortValue(b);
+
 /**
- * Strips display fields (displayName / email) from staged assignment rows
- * to produce the wire shape the backend accepts on POST /leases (schema is
- * .strict() on {principalId, principalType} only). Returns undefined when
- * there are no assignments so the caller can conditionally spread it into
- * the request body.
+ * Removes display-only fields from assignments before submission.
+ * Returns undefined when there are no assignments.
  */
 export const toAssignmentRefs = (
   assignments:
     | Array<{
         principalId: string;
         principalType: "USER" | "GROUP";
+        permissionSetArn?: string;
       }>
     | undefined,
 ) =>
   assignments?.length
-    ? assignments.map(({ principalId, principalType }) => ({
+    ? assignments.map(({ principalId, principalType, permissionSetArn }) => ({
         principalId,
         principalType,
+        ...(permissionSetArn ? { permissionSetArn } : {}),
       }))
     : undefined;

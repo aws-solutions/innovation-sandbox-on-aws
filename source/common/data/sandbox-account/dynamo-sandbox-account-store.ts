@@ -10,19 +10,19 @@ import {
 } from "@aws-sdk/lib-dynamodb";
 
 import {
-  AwsAccountId,
   OptionalItem,
   PaginatedQueryResult,
   PutResult,
   SingleItemResult,
 } from "@amzn/innovation-sandbox-commons/data/common-types.js";
 import {
-  base64DecodeCompositeKey,
   base64EncodeCompositeKey,
+  decodePageIdentifier,
 } from "@amzn/innovation-sandbox-commons/data/encoding.js";
 import { SandboxAccountStore } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account-store.js";
 import {
   PersistedSandboxAccount,
+  PersistedSandboxAccountKeySchema,
   PersistedSandboxAccountSchema,
   SandboxAccountSchemaVersion,
 } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account.js";
@@ -72,7 +72,7 @@ export class DynamoSandboxAccountStore extends SandboxAccountStore {
     };
   }
 
-  public async delete(accountId: AwsAccountId): Promise<OptionalItem> {
+  public async delete(accountId: string): Promise<OptionalItem> {
     const result = await this.ddbClient.send(
       new DeleteCommand({
         TableName: this.tableName,
@@ -101,7 +101,10 @@ export class DynamoSandboxAccountStore extends SandboxAccountStore {
         ExpressionAttributeValues: {
           ":status": args.status,
         },
-        ExclusiveStartKey: base64DecodeCompositeKey(args.pageIdentifier),
+        ExclusiveStartKey: decodePageIdentifier(
+          args.pageIdentifier,
+          (decoded) => PersistedSandboxAccountKeySchema.parse(decoded),
+        ),
         Limit: args.pageSize,
       }),
     );
@@ -119,7 +122,10 @@ export class DynamoSandboxAccountStore extends SandboxAccountStore {
     const result = await this.ddbClient.send(
       new ScanCommand({
         TableName: this.tableName,
-        ExclusiveStartKey: base64DecodeCompositeKey(args.pageIdentifier),
+        ExclusiveStartKey: decodePageIdentifier(
+          args.pageIdentifier,
+          (decoded) => PersistedSandboxAccountKeySchema.parse(decoded),
+        ),
         Limit: args.pageSize,
       }),
     );
@@ -131,7 +137,7 @@ export class DynamoSandboxAccountStore extends SandboxAccountStore {
   }
 
   public async get(
-    accountId: AwsAccountId,
+    accountId: string,
   ): Promise<SingleItemResult<PersistedSandboxAccount>> {
     const result = await this.ddbClient.send(
       new GetCommand({
@@ -146,7 +152,7 @@ export class DynamoSandboxAccountStore extends SandboxAccountStore {
   }
 
   public async update(
-    accountId: AwsAccountId,
+    accountId: string,
     params: {
       set?: Partial<Omit<PersistedSandboxAccount, "awsAccountId" | "meta">>;
       remove?: Array<
@@ -205,7 +211,7 @@ export class DynamoSandboxAccountStore extends SandboxAccountStore {
   }
 
   public async acquireLock(
-    accountId: AwsAccountId,
+    accountId: string,
     ownerId: string,
     timeoutSeconds: number,
     meta?: Record<string, string>,
@@ -242,7 +248,7 @@ export class DynamoSandboxAccountStore extends SandboxAccountStore {
   }
 
   public async releaseLock(
-    accountId: AwsAccountId,
+    accountId: string,
     ownerId: string,
   ): Promise<boolean> {
     try {

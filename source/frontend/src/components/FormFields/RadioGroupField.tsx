@@ -5,10 +5,10 @@ import { FormField, RadioGroup } from "@cloudscape-design/components";
 import type { FormFieldProps } from "@cloudscape-design/components/form-field";
 import type { RadioGroupProps } from "@cloudscape-design/components/radio-group";
 import {
-  useController,
-  UseControllerProps,
   type FieldPath,
   type FieldValues,
+  useController,
+  UseControllerProps,
 } from "react-hook-form";
 
 export interface RadioGroupFieldProps<
@@ -30,7 +30,7 @@ export default function RadioGroupField<
   controllerProps,
   formFieldProps,
   radioGroupProps,
-}: RadioGroupFieldProps<TFieldValues, TName>) {
+}: Readonly<RadioGroupFieldProps<TFieldValues, TName>>) {
   const {
     field: {
       onChange: onFieldChange,

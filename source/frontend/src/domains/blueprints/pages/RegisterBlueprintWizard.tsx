@@ -147,7 +147,7 @@ export const RegisterBlueprintWizard = () => {
         (acc, tag) => {
           // Include tags with keys, even if value is empty (AWS allows empty values)
           if (tag.key && tag.key.trim() !== "") {
-            acc[tag.key] = tag.value || ""; // Use empty string if value is undefined
+            acc[tag.key.trim()] = tag.value || ""; // Use empty string if value is undefined
           }
           return acc;
         },

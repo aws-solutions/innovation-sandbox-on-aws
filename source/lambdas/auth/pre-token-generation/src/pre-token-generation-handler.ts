@@ -13,7 +13,9 @@ import baseMiddlewareBundle from "@amzn/innovation-sandbox-commons/lambda/middle
 import { ValidatedEnvironment } from "@amzn/innovation-sandbox-commons/lambda/middleware/environment-validator.js";
 import { fromTemporaryIsbIdcCredentials } from "@amzn/innovation-sandbox-commons/utils/cross-account-roles.js";
 import {
+  COGNITO_IDC_DISPLAY_NAME_CLAIM,
   COGNITO_IDC_USER_ID_CLAIM,
+  COGNITO_IDC_USER_NAME_CLAIM,
   COGNITO_ISB_ROLES_CLAIM,
   COGNITO_USERNAME_CLAIM,
   resolveEmailFromClaims,
@@ -51,8 +53,18 @@ const preTokenGenerationHandler = async (
     fromTemporaryIsbIdcCredentials(context.env),
   );
 
-  const isbUser = await idcService.getUserFromEmail(email);
-  const roles = isbUser?.roles ?? [];
+  const idcUser = await idcService.getUserFromEmail(email);
+  if (!idcUser) {
+    logger.error(
+      "User was not found in IAM Identity Center — blocking token generation",
+      { email },
+    );
+    throw new Error(
+      "User could not be found in IAM Identity Center. Please contact your administrator to request access.",
+    );
+  }
+
+  const roles = idcUser.roles ?? [];
 
   logger.debug("Resolved ISB roles", { email, roles });
 
@@ -69,21 +81,22 @@ const preTokenGenerationHandler = async (
   }
 
   const rolesClaimValue = JSON.stringify(roles);
-  const idcUserId = isbUser?.userId ?? "";
+  const idcUserId = idcUser.userId;
+  const identityClaims = {
+    [COGNITO_ISB_ROLES_CLAIM]: rolesClaimValue,
+    [COGNITO_IDC_USER_ID_CLAIM]: idcUserId,
+    ...(idcUser.displayName
+      ? { [COGNITO_IDC_DISPLAY_NAME_CLAIM]: idcUser.displayName }
+      : {}),
+    ...(idcUser.userName
+      ? { [COGNITO_IDC_USER_NAME_CLAIM]: idcUser.userName }
+      : {}),
+  };
 
   const response: PreTokenGenerationV2Response = {
     claimsAndScopeOverrideDetails: {
       idTokenGeneration: {
-        claimsToAddOrOverride: {
-          [COGNITO_ISB_ROLES_CLAIM]: rolesClaimValue,
-          [COGNITO_IDC_USER_ID_CLAIM]: idcUserId,
-        },
-      },
-      accessTokenGeneration: {
-        claimsToAddOrOverride: {
-          [COGNITO_ISB_ROLES_CLAIM]: rolesClaimValue,
-          [COGNITO_IDC_USER_ID_CLAIM]: idcUserId,
-        },
+        claimsToAddOrOverride: identityClaims,
       },
     },
   };

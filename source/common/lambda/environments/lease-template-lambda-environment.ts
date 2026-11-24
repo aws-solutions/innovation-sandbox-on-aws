@@ -9,6 +9,8 @@ export const LeaseTemplateLambdaEnvironmentSchema =
     CONFIG_TABLE_NAME: z.string(),
     LEASE_TEMPLATE_TABLE_NAME: z.string(),
     BLUEPRINT_TABLE_NAME: z.string(),
+    PRINCIPAL_TABLE_NAME: z.string(),
+    IDC_CONFIG_PARAM_ARN: z.string(),
   });
 
 export type LeaseTemplateLambdaEnvironment = z.infer<

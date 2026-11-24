@@ -1,9 +1,10 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
+import { Aws } from "aws-cdk-lib";
 import { Role } from "aws-cdk-lib/aws-iam";
 import { IFunction } from "aws-cdk-lib/aws-lambda";
 import { Construct } from "constructs";
-import path from "path";
+import path from "node:path";
 
 import { PrincipalsLambdaEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/principals-lambda-environment.js";
 import type { RestApiProps } from "@amzn/innovation-sandbox-infrastructure/components/api/rest-api-all";
@@ -29,6 +30,7 @@ export class PrincipalsApi {
       principalTable,
       cognitoUserPoolId,
       cognitoAppClientId,
+      cognitoMcpClientId,
     } = IsbComputeStack.sharedSpokeConfig.data;
 
     const principalsLambdaFunction = new IsbApiLambdaFunction(
@@ -56,6 +58,8 @@ export class PrincipalsApi {
           CONFIG_TABLE_NAME: configTableName,
           COGNITO_USER_POOL_ID: cognitoUserPoolId,
           COGNITO_APP_CLIENT_ID: cognitoAppClientId,
+          COGNITO_MCP_CLIENT_ID: cognitoMcpClientId,
+          HUB_ACCOUNT_ID: Aws.ACCOUNT_ID,
           ISB_NAMESPACE: namespace,
           INTERMEDIATE_ROLE_ARN: IntermediateRole.getRoleArn(),
           IDC_ROLE_ARN: getIdcRoleArn(scope, namespace, props.idcAccountId),

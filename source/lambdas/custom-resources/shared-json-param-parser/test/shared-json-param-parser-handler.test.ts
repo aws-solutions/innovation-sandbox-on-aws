@@ -55,6 +55,7 @@ describe("lambda handler", () => {
   };
 
   const testAccountPoolConfig = {
+    organizationId: "o-a1b2c3d4e5",
     sandboxOuId: "ou-00000000",
     availableOuId: "ou-11111111",
     activeOuId: "ou-22222222",
@@ -81,6 +82,8 @@ describe("lambda handler", () => {
     blueprintTable: "test-blueprint-table",
     principalTable: "test-principal-table",
     cleanupReportTable: "CleanupReportTable",
+    sandboxSpacesUsageTable: "SandboxSpacesUsageTable",
+    leaseCostHistoryTable: "LeaseCostHistoryTable",
     tableKmsKeyId: "KmsKeyId",
     solutionVersion: "v3.0.0",
     supportedSchemas: ["1"],
@@ -88,6 +91,7 @@ describe("lambda handler", () => {
     cognitoUserPoolArn:
       "arn:aws:cognito-idp:us-east-1:123456789012:userpool/us-east-1_abc123",
     cognitoAppClientId: "1234567890abcdef",
+    cognitoMcpClientId: "fedcba0987654321",
     cognitoIdentityPoolId: "us-east-1:00000000-0000-0000-0000-000000000000",
     cognitoDomain: "test-isb",
     awsAccessPortalUrl: "https://d-0000000000.awsapps.com/start",
@@ -146,6 +150,7 @@ describe("lambda handler", () => {
     idcSolutionVersion: testIdcConfig.solutionVersion,
     idcSupportedSchemas: JSON.stringify(testIdcConfig.supportedSchemas),
     // Account Pool config with prefixed keys
+    organizationId: testAccountPoolConfig.organizationId,
     sandboxOuId: testAccountPoolConfig.sandboxOuId,
     availableOuId: testAccountPoolConfig.availableOuId,
     activeOuId: testAccountPoolConfig.activeOuId,
@@ -173,12 +178,15 @@ describe("lambda handler", () => {
     blueprintTable: testDataConfig.blueprintTable,
     principalTable: testDataConfig.principalTable,
     cleanupReportTable: testDataConfig.cleanupReportTable,
+    sandboxSpacesUsageTable: testDataConfig.sandboxSpacesUsageTable,
+    leaseCostHistoryTable: testDataConfig.leaseCostHistoryTable,
     tableKmsKeyId: testDataConfig.tableKmsKeyId,
     dataSolutionVersion: testDataConfig.solutionVersion,
     dataSupportedSchemas: JSON.stringify(testDataConfig.supportedSchemas),
     cognitoUserPoolId: testDataConfig.cognitoUserPoolId,
     cognitoUserPoolArn: testDataConfig.cognitoUserPoolArn,
     cognitoAppClientId: testDataConfig.cognitoAppClientId,
+    cognitoMcpClientId: testDataConfig.cognitoMcpClientId,
     cognitoIdentityPoolId: testDataConfig.cognitoIdentityPoolId,
     cognitoDomain: testDataConfig.cognitoDomain,
     awsAccessPortalUrl: testDataConfig.awsAccessPortalUrl,

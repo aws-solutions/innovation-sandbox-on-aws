@@ -4,6 +4,7 @@
 import { Alert } from "@cloudscape-design/components";
 
 import { TextLink } from "@amzn/innovation-sandbox-frontend/components/TextLink";
+import { MAINTENANCE_MODE_HREF } from "@amzn/innovation-sandbox-frontend/domains/settings/components/forms/MaintenanceForm";
 import { useGetConfigurations } from "@amzn/innovation-sandbox-frontend/domains/settings/hooks";
 
 export const MaintenanceBanner = () => {
@@ -15,7 +16,7 @@ export const MaintenanceBanner = () => {
         Innovation Sandbox on AWS is currently in maintenance mode. Access to
         the web application is limited to admin users. To disable maintenance
         mode, admins can update the{" "}
-        <TextLink to="/settings#maintenance">Settings</TextLink> page.
+        <TextLink to={MAINTENANCE_MODE_HREF}>Settings</TextLink> page.
       </Alert>
     );
   }

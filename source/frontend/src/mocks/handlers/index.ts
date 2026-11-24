@@ -6,6 +6,7 @@ import { blueprintHandlers } from "@amzn/innovation-sandbox-frontend/mocks/handl
 import { configurationHandlers } from "@amzn/innovation-sandbox-frontend/mocks/handlers/configurationHandlers";
 import { leaseHandlers } from "@amzn/innovation-sandbox-frontend/mocks/handlers/leaseHandlers";
 import { leaseTemplateHandlers } from "@amzn/innovation-sandbox-frontend/mocks/handlers/leaseTemplateHandlers";
+import { sandboxAgentHandlers } from "@amzn/innovation-sandbox-frontend/mocks/handlers/sandboxAgentHandlers";
 
 export const handlers = [
   ...leaseHandlers,
@@ -13,4 +14,5 @@ export const handlers = [
   ...configurationHandlers,
   ...accountHandlers,
   ...blueprintHandlers,
+  ...sandboxAgentHandlers,
 ];

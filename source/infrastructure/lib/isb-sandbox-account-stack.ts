@@ -7,7 +7,7 @@ import {
   HubAccountIdParam,
   NamespaceParam,
 } from "@amzn/innovation-sandbox-infrastructure/helpers/shared-cfn-params";
-import { IsbSandboxAccountResources } from "@amzn/innovation-sandbox-infrastructure/isb-sandbox-account-resources";
+import { addIsbSandboxAccountResources } from "@amzn/innovation-sandbox-infrastructure/isb-sandbox-account-resources";
 
 export class IsbSandboxAccountStack extends Stack {
   constructor(scope: Construct, id: string, props?: StackProps) {
@@ -16,7 +16,7 @@ export class IsbSandboxAccountStack extends Stack {
     const namespaceParam = new NamespaceParam(this);
     const hubAccountIdParam = new HubAccountIdParam(this);
 
-    new IsbSandboxAccountResources(this, {
+    addIsbSandboxAccountResources(this, {
       hubAccountId: hubAccountIdParam.valueAsString,
       namespace: namespaceParam.valueAsString,
     });

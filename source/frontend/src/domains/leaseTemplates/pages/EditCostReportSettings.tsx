@@ -173,6 +173,7 @@ export const EditCostReportSettings = () => {
               <CostReportSettingsForm
                 requireCostReportGroup={requireCostReportGroup}
                 costReportGroups={costReportGroups}
+                variant="template"
               />
             </Container>
 

@@ -8,17 +8,15 @@ Create leases directly on behalf of other users without requiring approval. Usef
 
 ## Wizard steps
 
-**Step 1: Select Lease Template**
-Choose any available lease template (public or private).
+**Select lease template**: Choose any available lease template (public or private). The template defines the permission sets available for assignments.
 
-**Step 2: Select User**
-Enter the user's email address (must exist within AWS IAM Identity Center).
+**Select user**: Choose the lease owner from AWS IAM Identity Center.
 
-**Step 3: Terms of Service**
-Accept terms on behalf of the assigned user.
+**Configure access**: Review the lease owner's access and optionally add users or groups. Choose one permission set for each principal. The lease owner uses the template's default permission set unless you choose another allowed permission set.
 
-**Step 4: Review & Submit**
-Review details and optionally add comments for audit purposes.
+**Terms of Service**: Accept terms on behalf of the assigned user.
+
+**Review & Submit**: Review the template, access assignments, and optional audit comments before creating the lease.
 
 ---
 

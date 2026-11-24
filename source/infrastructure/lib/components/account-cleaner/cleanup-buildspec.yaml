@@ -14,7 +14,7 @@ phases:
       - ISB_MANAGED_REGIONS=$(aws ssm get-parameter --name $ACCOUNT_POOL_CONFIG_PARAM_ARN --query 'Parameter.Value' --output text | jq -r '.isbManagedRegions')
       # Substitutes placeholders, then structurally merges the ISB-required entries
       # (shipped in this image) and the managed regions. See isb-prepare-nuke-config.sh.
-      - isb-prepare-nuke-config --config nuke-config.yaml --account-id $CLEANUP_ACCOUNT_ID --hub-account-id $HUB_ACCOUNT_ID --role-name $CLEANUP_ROLE_NAME --regions $ISB_MANAGED_REGIONS
+      - isb-prepare-nuke-config --config nuke-config.yaml --account-id $CLEANUP_ACCOUNT_ID --hub-account-id $HUB_ACCOUNT_ID --role-name $CLEANUP_ROLE_NAME --namespace $ISB_NAMESPACE --regions $ISB_MANAGED_REGIONS
       - cat nuke-config.yaml
       - echo ------------------------ Assuming IAM role $INTERMEDIATE_ROLE_ARN ------------------------
       - export INTERMEDIATE_ROLE_CREDS=$(aws sts assume-role --role-arn $INTERMEDIATE_ROLE_ARN --role-session-name AccountCleanup)

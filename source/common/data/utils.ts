@@ -1,14 +1,26 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
+import { AttributeValue } from "@aws-sdk/client-dynamodb";
+import {
+  BatchWriteCommand,
+  BatchWriteCommandInput,
+  DynamoDBDocumentClient,
+} from "@aws-sdk/lib-dynamodb";
+import { marshall } from "@aws-sdk/util-dynamodb";
+import { backOff } from "exponential-backoff";
+import { isDeepStrictEqual } from "node:util";
+import pMap from "p-map";
+import { z } from "zod";
+
 import {
   PaginatedQueryResult,
   SingleItemResult,
 } from "@amzn/innovation-sandbox-commons/data/common-types.js";
+import { BatchUnprocessedItemsError } from "@amzn/innovation-sandbox-commons/data/errors.js";
 import {
   ItemWithMetadata,
   withUpdatedMetadata,
 } from "@amzn/innovation-sandbox-commons/data/metadata.js";
-import { z } from "zod";
 
 export async function* stream<Args extends { pageIdentifier?: string }, T>(
   thisRef: object,
@@ -73,11 +85,69 @@ export function removeNullFieldsForDynamoDB<T extends Record<string, any>>(
 }
 
 /**
+ * Compare top-level stored fields using aliases for attribute names.
+ * Undefined requires absence; null requires a stored NULL unless the field
+ * explicitly opts into treating null and absence as equivalent.
+ */
+export function buildExpectedFieldsCondition(
+  expected: Record<string, unknown>,
+  options: { nullMatchesMissing?: readonly string[] } = {},
+): {
+  conditionExpression: string;
+  expressionAttributeNames: Record<string, string>;
+  expressionAttributeValues: Record<string, unknown>;
+} {
+  const expressionAttributeNames: Record<string, string> = {};
+  const expressionAttributeValues: Record<string, unknown> = {};
+  const conditions = Object.entries(expected).map(([field, value]) => {
+    const name = `#expected_${field}`;
+    const placeholder = `:expected_${field}`;
+    expressionAttributeNames[name] = field;
+    if (value === undefined) {
+      return `attribute_not_exists(${name})`;
+    }
+    expressionAttributeValues[placeholder] = value;
+    return value === null && options.nullMatchesMissing?.includes(field)
+      ? `(attribute_not_exists(${name}) OR ${name} = ${placeholder})`
+      : `${name} = ${placeholder}`;
+  });
+  return {
+    conditionExpression: conditions.join(" AND "),
+    expressionAttributeNames,
+    expressionAttributeValues,
+  };
+}
+
+/**
+ * Compare a DynamoDB item image with native expected fields. Undefined requires
+ * absence. Exact comparison also rejects stored fields outside the expected set.
+ */
+export function matchesExpectedFields(
+  storedFields: Record<string, AttributeValue> | undefined,
+  expected: Record<string, unknown>,
+  options: { exact?: boolean } = {},
+): boolean {
+  if (!storedFields) {
+    return false;
+  }
+  const expectedFields = marshall(expected, { removeUndefinedValues: true });
+  if (
+    options.exact &&
+    Object.keys(storedFields).length !== Object.keys(expectedFields).length
+  ) {
+    return false;
+  }
+  return Object.keys(expected).every((field) =>
+    isDeepStrictEqual(expectedFields[field], storedFields[field]),
+  );
+}
+
+/**
  * returns a decorator that validates the item against the provided schema
  * The schema should include version validation in its metadata field
  * @param schema zod schema for data validation (including version validation)
  */
-export function validateItem<U extends z.ZodSchema<any>>(schema: U) {
+export function validateItem<U extends z.ZodType<any>>(schema: U) {
   return function <
     T extends ItemWithMetadata,
     OtherParams extends any[],
@@ -127,7 +197,7 @@ function formatErrors(errors: z.ZodError[]) {
   return `${errorCount} invalid records found: ${errorMessages}`;
 }
 
-export function parseResults<T extends z.ZodSchema>(
+export function parseResults<T extends z.ZodType>(
   items: Record<string, any>[] | undefined,
   schema: T,
 ): {
@@ -157,7 +227,7 @@ export function parseResults<T extends z.ZodSchema>(
   };
 }
 
-export function parseSingleItemResult<T extends z.ZodSchema>(
+export function parseSingleItemResult<T extends z.ZodType>(
   item: Record<string, any> | undefined,
   schema: T,
 ): SingleItemResult<z.infer<T>> {
@@ -167,14 +237,14 @@ export function parseSingleItemResult<T extends z.ZodSchema>(
     };
   }
   const parsedItem = schema.safeParse(item);
-  if (!parsedItem.success) {
+  if (parsedItem.success) {
     return {
-      result: undefined,
-      error: `Invalid record found: ${parsedItem.error.message}`,
+      result: parsedItem.data,
     };
   } else {
     return {
-      result: parsedItem.data,
+      result: undefined,
+      error: `Invalid record found: ${parsedItem.error.message}`,
     };
   }
 }
@@ -183,5 +253,61 @@ export function parseSingleItemResult<T extends z.ZodSchema>(
 export function chunk<T>(items: T[], size: number): T[][] {
   return Array.from({ length: Math.ceil(items.length / size) }, (_, i) =>
     items.slice(i * size, (i + 1) * size),
+  );
+}
+
+type WriteRequest = NonNullable<
+  BatchWriteCommandInput["RequestItems"]
+>[string][number];
+
+export interface BatchWriteWithRetryProps {
+  client: DynamoDBDocumentClient;
+  tableName: string;
+  batches: WriteRequest[][];
+  concurrency?: number;
+  numOfAttempts?: number;
+  startingDelay?: number;
+}
+
+/**
+ * Executes DynamoDB batch writes concurrently, retrying only the unprocessed
+ * requests returned by each call.
+ */
+export async function batchWriteWithRetry({
+  client,
+  tableName,
+  batches,
+  concurrency = 2,
+  numOfAttempts = 5,
+  startingDelay = 1000,
+}: BatchWriteWithRetryProps): Promise<void> {
+  await pMap(
+    batches,
+    async (batch) => {
+      let requestItems: BatchWriteCommandInput["RequestItems"] = {
+        [tableName]: batch,
+      };
+
+      await backOff(
+        async () => {
+          const result = await client.send(
+            new BatchWriteCommand({ RequestItems: requestItems }),
+          );
+          const unprocessed = result.UnprocessedItems?.[tableName];
+          if (unprocessed && unprocessed.length > 0) {
+            requestItems = { [tableName]: unprocessed };
+            throw new BatchUnprocessedItemsError(unprocessed.length);
+          }
+        },
+        {
+          numOfAttempts,
+          startingDelay,
+          jitter: "full",
+          retry: (error: unknown) =>
+            error instanceof BatchUnprocessedItemsError,
+        },
+      );
+    },
+    { concurrency },
   );
 }

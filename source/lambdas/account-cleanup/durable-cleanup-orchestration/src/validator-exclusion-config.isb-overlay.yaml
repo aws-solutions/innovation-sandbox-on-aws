@@ -24,10 +24,22 @@ validation:
     # ignore it as well.
     - "arn:aws:access-analyzer:*:*:analyzer/_AccessAnalyzerForSecurityHubV2*"
 
+    # Amazon Keyspaces creates these system keyspaces and tables in every
+    # account and region. They can't be deleted, and Resource Explorer can
+    # index them.
+    - "arn:aws:cassandra:*:*:/keyspace/system/*"
+    - "arn:aws:cassandra:*:*:/keyspace/system_schema/*"
+    - "arn:aws:cassandra:*:*:/keyspace/system_schema_mcs/*"
+    - "arn:aws:cassandra:*:*:/keyspace/system_multiregion_info/*"
+
     # AWS auto-creates these alongside the ElastiCache service-linked role. The
     # nuke overlay preserves them, so Resource Explorer keeps reporting them.
     - "arn:aws:elasticache:*:*:user:default.iam-user"
     - "arn:aws:elasticache:*:*:usergroup:default.iam-user-group"
+
+    # IAMRole filter: SandboxAgentRole-%NAMESPACE% (this deployment's Sandbox
+    # Spaces role). Its inline and attached policies are not indexed.
+    - "arn:aws:iam::*:role/SandboxAgentRole-%NAMESPACE%"
 
     # AWS creates this X-Ray group in every region. It cannot be deleted, so
     # aws-nuke skips it and validation must ignore it as well.

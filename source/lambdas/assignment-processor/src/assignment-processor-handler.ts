@@ -30,7 +30,10 @@ import {
   DesiredAssignmentWithDisplay,
   LeaseLockIntentSchema,
 } from "@amzn/innovation-sandbox-shared/types/lease.js";
-import { PrincipalTypeSchema } from "@amzn/innovation-sandbox-shared/types/principal.js";
+import {
+  PrincipalTypeSchema,
+  type PrincipalType,
+} from "@amzn/innovation-sandbox-shared/types/principal.js";
 
 const serviceName = "AssignmentProcessor";
 const tracer = new Tracer({ serviceName });
@@ -39,6 +42,10 @@ const logger = new Logger({ serviceName });
 const FannedOutPrincipalSchema = z.object({
   principalId: z.string(),
   principalType: PrincipalTypeSchema,
+});
+
+const FannedOutTupleSchema = FannedOutPrincipalSchema.extend({
+  permissionSetArn: z.string(),
 });
 
 const FanOutInputSchema = z.object({
@@ -60,8 +67,8 @@ const HandleCompletionInputSchema = z.object({
   requestedBy: z.email(),
   accountId: AwsAccountIdSchema,
   executionArn: z.string(),
-  fannedOutPrincipals: z.array(FannedOutPrincipalSchema).optional(),
-  preExistingPrincipalIds: z.array(z.string()).optional(),
+  fannedOutPrincipals: z.array(FannedOutTupleSchema).optional(),
+  preExistingPrincipals: z.array(FannedOutPrincipalSchema).optional(),
 });
 
 const AssignmentProcessorInputSchema = z.discriminatedUnion("action", [
@@ -71,15 +78,57 @@ const AssignmentProcessorInputSchema = z.discriminatedUnion("action", [
 
 type ProcessorContext = IsbLambdaContext<AssignmentProcessorEnvironment>;
 
+type PrincipalIdentity = {
+  principalId: string;
+  principalType: PrincipalType;
+};
+
+type AssignmentTuple = PrincipalIdentity & {
+  permissionSetArn: string;
+};
+
+function principalKey(principal: PrincipalIdentity): string {
+  return `${principal.principalType}|${principal.principalId}`;
+}
+
+function tupleKey(
+  principal: PrincipalIdentity,
+  permissionSetArn: string,
+): string {
+  return `${principalKey(principal)}|${permissionSetArn}`;
+}
+
+function principalFromRecord(
+  record: PersistedUserAssignment | PersistedGroupAssignment,
+): PrincipalIdentity {
+  return {
+    principalId:
+      record.principalType === "USER" ? record.userId : record.groupId,
+    principalType: record.principalType,
+  };
+}
+
+function uniquePrincipals<T extends PrincipalIdentity>(
+  principals: readonly T[],
+): T[] {
+  return [...new Map(principals.map((p) => [principalKey(p), p])).values()];
+}
+
+function uniqueTuples<T extends AssignmentTuple>(tuples: readonly T[]): T[] {
+  return [
+    ...new Map(
+      tuples.map((tuple) => [tupleKey(tuple, tuple.permissionSetArn), tuple]),
+    ).values(),
+  ];
+}
+
 /**
- * A single principal to process, emitted by FAN_OUT for the Step Function Map state.
- * Extends the lease's desired-assignment display shape with the runtime-resolved
- * permissionSetArn so the worker doesn't need to read IDC config. A single permission
- * set is used today; per-principal permission sets can be resolved in FAN_OUT later.
+ * A single (principal, permission set) tuple emitted by FAN_OUT for the Step
+ * Function Map state.
  *
- * displayName and email are required strings (empty when unknown) — the Step Function
- * ItemSelector references them with `$.item.*`, which throws States.Runtime if a field
- * is absent. JSON serialization drops undefined, so these must never be undefined.
+ * The permission set ARN is concrete, while unknown display values use the
+ * empty string because JSON serialization drops `undefined`, which would make
+ * the Step Function ItemSelector fail with States.Runtime.
  */
 type FanOutWorkItem = Omit<
   DesiredAssignmentWithDisplay,
@@ -102,9 +151,9 @@ export const handler = baseMiddlewareBundle({
  *
  * Actions:
  * - FAN_OUT: Read desiredAssignments from the lease record and current assignment records
- *   from the Principal Table (LeaseIndex GSI). Union all unique principal IDs and return
- *   them for the Map state to fan out. No diff computation, no action determination —
- *   workers decide GRANT/REVOKE/NO-OP at execution time via JIT diff.
+ *   from the Principal Table (LeaseIndex GSI). Union all unique principal-permission-set
+ *   tuples and return them for the Map state to fan out. No diff computation, no action
+ *   determination — workers decide GRANT/REVOKE/NO-OP at execution time via JIT diff.
  * - HANDLE_COMPLETION: Publish AssignmentCreated/AssignmentRemoved events based on
  *   pre/post state comparison, emit OrphanedAccessDetected metric when TERMINATE intent
  *   has lingering records, then clear resourceLock on the lease record.
@@ -136,7 +185,7 @@ async function handleFanOut(
 ): Promise<{
   workItems: FanOutWorkItem[];
   accountId: string;
-  preExistingPrincipalIds: string[];
+  preExistingPrincipals: PrincipalIdentity[];
 }> {
   const { env } = context;
   const leaseStore = IsbServices.leaseStore(env);
@@ -180,10 +229,11 @@ async function handleFanOut(
     leaseId: input.leaseId,
   });
 
-  const { workItems, preExistingPrincipalIds } = await buildWorkItems(
+  const { workItems, preExistingPrincipals } = await buildWorkItems(
     desiredAssignments,
     currentRecords.result,
     idcStackConfigStore,
+    lease.defaultPermissionSetArn,
   );
 
   logger.info("FAN_OUT complete", {
@@ -192,7 +242,7 @@ async function handleFanOut(
     workItemCount: workItems.length,
   });
 
-  return { workItems, accountId, preExistingPrincipalIds };
+  return { workItems, accountId, preExistingPrincipals };
 }
 
 async function handleCompletion(
@@ -203,6 +253,7 @@ async function handleCompletion(
   const leaseStore = IsbServices.leaseStore(env);
   const principalStore = IsbServices.principalStore(env);
   const eventBridgeClient = IsbServices.isbEventBridge(env);
+  const idcStackConfigStore = IsbServices.idcStackConfigStore(env);
 
   addCorrelationContext(
     logger,
@@ -235,8 +286,8 @@ async function handleCompletion(
     const isCriticalIntent = (
       CriticalLockIntents as readonly string[]
     ).includes(input.intent);
-    const desiredPrincipalIds = new Set(
-      isCriticalIntent ? [] : desiredAssignments.map((d) => d.principalId),
+    const desiredPrincipalKeys = new Set(
+      isCriticalIntent ? [] : desiredAssignments.map(principalKey),
     );
 
     // Read current assignment records (post-processing state)
@@ -244,32 +295,40 @@ async function handleCompletion(
       leaseId: input.leaseId,
     });
 
-    const currentPrincipalIds = new Set(
-      currentRecords.result.map((r) =>
-        r.principalType === "USER" ? r.userId : r.groupId,
+    const currentPrincipalKeys = new Set(
+      currentRecords.result.map((record) =>
+        principalKey(principalFromRecord(record)),
       ),
     );
 
     // Derive events: only emit for principals that were actually processed in this execution
-    const fannedOutIds = new Set(
-      (input.fannedOutPrincipals ?? []).map((p) => p.principalId),
+    const fannedOutPrincipals = uniquePrincipals(
+      input.fannedOutPrincipals ?? [],
     );
-    const preExistingIds = new Set(input.preExistingPrincipalIds ?? []);
+    const fannedOutKeys = new Set(fannedOutPrincipals.map(principalKey));
+    const preExistingKeys = new Set(
+      (input.preExistingPrincipals ?? []).map(principalKey),
+    );
 
     // AssignmentCreated: was fanned out, is in desired, has a record, AND was NOT pre-existing
-    const createdEvents = currentRecords.result
+    const createdEvents = [
+      ...new Map(
+        currentRecords.result.map((record) => [
+          principalKey(principalFromRecord(record)),
+          record,
+        ]),
+      ).values(),
+    ]
       .filter((record) => {
-        const principalId =
-          record.principalType === "USER" ? record.userId : record.groupId;
+        const principal = principalFromRecord(record);
         return (
-          fannedOutIds.has(principalId) &&
-          desiredPrincipalIds.has(principalId) &&
-          !preExistingIds.has(principalId)
+          fannedOutKeys.has(principalKey(principal)) &&
+          desiredPrincipalKeys.has(principalKey(principal)) &&
+          !preExistingKeys.has(principalKey(principal))
         );
       })
       .map((record) => {
-        const principalId =
-          record.principalType === "USER" ? record.userId : record.groupId;
+        const { principalId } = principalFromRecord(record);
         return new AssignmentCreatedEvent({
           leaseId: input.leaseId,
           principalId,
@@ -283,11 +342,12 @@ async function handleCompletion(
       });
 
     // AssignmentRemoved: was fanned out, NOT in desired, AND no longer has a record (confirmed revoke)
-    const removedEvents = (input.fannedOutPrincipals ?? [])
+    const removedEvents = fannedOutPrincipals
       .filter(
         (p) =>
-          !currentPrincipalIds.has(p.principalId) &&
-          !desiredPrincipalIds.has(p.principalId),
+          preExistingKeys.has(principalKey(p)) &&
+          !currentPrincipalKeys.has(principalKey(p)) &&
+          !desiredPrincipalKeys.has(principalKey(p)),
       )
       .map(
         (p) =>
@@ -314,10 +374,12 @@ async function handleCompletion(
       logger.info("No completion events to publish (no state changes)");
     }
 
-    emitCompletionMetrics({
+    await emitCompletionMetrics({
       input,
-      desiredPrincipalIds,
-      currentPrincipalIds,
+      desiredAssignments: isCriticalIntent ? [] : desiredAssignments,
+      currentRecords: currentRecords.result,
+      leaseDefaultPermissionSetArn: leaseResult.result?.defaultPermissionSetArn,
+      idcStackConfigStore,
     });
 
     return { status: "SUCCESS", eventsPublished: events.length };
@@ -352,8 +414,7 @@ function recordToWorkItem(
   record: PersistedUserAssignment | PersistedGroupAssignment,
   permissionSetArn: string,
 ): FanOutWorkItem {
-  const principalId =
-    record.principalType === "USER" ? record.userId : record.groupId;
+  const { principalId } = principalFromRecord(record);
   return {
     principalId,
     principalType: record.principalType,
@@ -366,30 +427,76 @@ function recordToWorkItem(
   };
 }
 
+async function resolveEffectivePermissionSetArns(
+  desiredAssignments: DesiredAssignmentWithDisplay[],
+  currentRecords: Array<PersistedUserAssignment | PersistedGroupAssignment>,
+  leaseDefaultPermissionSetArn: string | undefined,
+  idcStackConfigStore: {
+    get: () => Promise<{ userPermissionSetArn: string }>;
+  },
+): Promise<{
+  desiredDefaultPermissionSetArn?: string;
+  builtInPermissionSetArn?: string;
+}> {
+  const needsBuiltInPermissionSetArn =
+    currentRecords.some((record) => record.permissionSetArn === undefined) ||
+    (leaseDefaultPermissionSetArn === undefined &&
+      desiredAssignments.some(
+        (assignment) => assignment.permissionSetArn === undefined,
+      ));
+
+  if (!needsBuiltInPermissionSetArn) {
+    return {
+      desiredDefaultPermissionSetArn: leaseDefaultPermissionSetArn,
+    };
+  }
+
+  const builtInPermissionSetArn = (await idcStackConfigStore.get())
+    .userPermissionSetArn;
+  return {
+    desiredDefaultPermissionSetArn:
+      leaseDefaultPermissionSetArn ?? builtInPermissionSetArn,
+    builtInPermissionSetArn,
+  };
+}
+
 /**
- * Unions desired + current principal IDs into enriched work items for the Map state.
- * Desired is iterated first so its displayName/email take precedence over the
- * record's denormalized values (they come from the principal cache at request time
- * and are more authoritative than the record's assigneeEmail).
+ * Unions desired + current assignment tuples into enriched work items for the
+ * Map state. Desired is iterated first so its display values win for an
+ * identical tuple.
  */
 async function buildWorkItems(
   desiredAssignments: DesiredAssignmentWithDisplay[],
   currentRecords: Array<PersistedUserAssignment | PersistedGroupAssignment>,
   idcStackConfigStore: { get: () => Promise<{ userPermissionSetArn: string }> },
-): Promise<{ workItems: FanOutWorkItem[]; preExistingPrincipalIds: string[] }> {
-  // Nothing to process — skip the IDC config SSM read.
+  leaseDefaultPermissionSetArn?: string,
+): Promise<{
+  workItems: FanOutWorkItem[];
+  preExistingPrincipals: PrincipalIdentity[];
+}> {
   if (desiredAssignments.length === 0 && currentRecords.length === 0) {
-    return { workItems: [], preExistingPrincipalIds: [] };
+    return {
+      workItems: [],
+      preExistingPrincipals: [],
+    };
   }
 
-  const idcConfig = await idcStackConfigStore.get();
-  const permissionSetArn = idcConfig.userPermissionSetArn;
+  const { desiredDefaultPermissionSetArn, builtInPermissionSetArn } =
+    await resolveEffectivePermissionSetArns(
+      desiredAssignments,
+      currentRecords,
+      leaseDefaultPermissionSetArn,
+      idcStackConfigStore,
+    );
 
-  const principalMap = new Map<string, FanOutWorkItem>();
+  const workItemMap = new Map<string, FanOutWorkItem>();
 
   for (const desired of desiredAssignments) {
-    if (!principalMap.has(desired.principalId)) {
-      principalMap.set(desired.principalId, {
+    const permissionSetArn =
+      desired.permissionSetArn ?? desiredDefaultPermissionSetArn!;
+    const key = tupleKey(desired, permissionSetArn);
+    if (!workItemMap.has(key)) {
+      workItemMap.set(key, {
         principalId: desired.principalId,
         principalType: desired.principalType,
         displayName: desired.displayName ?? "",
@@ -400,42 +507,85 @@ async function buildWorkItems(
   }
 
   for (const record of currentRecords) {
+    const permissionSetArn =
+      record.permissionSetArn ?? builtInPermissionSetArn!;
     const workItem = recordToWorkItem(record, permissionSetArn);
-    if (!principalMap.has(workItem.principalId)) {
-      principalMap.set(workItem.principalId, workItem);
+    const key = tupleKey(workItem, permissionSetArn);
+    if (!workItemMap.has(key)) {
+      workItemMap.set(key, workItem);
     }
   }
 
-  const workItems = Array.from(principalMap.values());
-  const preExistingPrincipalIds = currentRecords.map((r) =>
-    r.principalType === "USER" ? r.userId : r.groupId,
+  const workItems = Array.from(workItemMap.values());
+  const preExistingPrincipals = uniquePrincipals(
+    currentRecords.map(principalFromRecord),
   );
 
-  return { workItems, preExistingPrincipalIds };
+  return { workItems, preExistingPrincipals };
 }
 
 /**
  * Emits completion metrics for the assignment execution. Called once per
  * Step Function run from HANDLE_COMPLETION.
  */
-function emitCompletionMetrics(props: {
+async function emitCompletionMetrics(props: {
   input: z.infer<typeof HandleCompletionInputSchema>;
-  desiredPrincipalIds: Set<string>;
-  currentPrincipalIds: Set<string>;
-}): void {
-  const { input, desiredPrincipalIds, currentPrincipalIds } = props;
-  const fannedOut = input.fannedOutPrincipals ?? [];
-  const principalsProcessed = fannedOut.length;
+  desiredAssignments: DesiredAssignmentWithDisplay[];
+  currentRecords: Array<PersistedUserAssignment | PersistedGroupAssignment>;
+  leaseDefaultPermissionSetArn?: string;
+  idcStackConfigStore: {
+    get: () => Promise<{ userPermissionSetArn: string }>;
+  };
+}): Promise<void> {
+  const {
+    input,
+    desiredAssignments,
+    currentRecords,
+    leaseDefaultPermissionSetArn,
+    idcStackConfigStore,
+  } = props;
+  const fannedOutTuples = uniqueTuples(input.fannedOutPrincipals ?? []);
+  const fannedOutPrincipals = uniquePrincipals(fannedOutTuples);
+  const principalsProcessed = fannedOutPrincipals.length;
 
-  if (principalsProcessed > 0) {
-    // Failed = post-processing state doesn't match desired
-    const failed = fannedOut.filter((p) => {
-      const inDesired = desiredPrincipalIds.has(p.principalId);
-      const hasRecord = currentPrincipalIds.has(p.principalId);
-      // Wanted but no record = failed grant; not wanted but has record = failed revoke
-      return inDesired !== hasRecord;
-    }).length;
+  if (principalsProcessed === 0) {
+    return;
+  }
 
+  try {
+    const { desiredDefaultPermissionSetArn, builtInPermissionSetArn } =
+      await resolveEffectivePermissionSetArns(
+        desiredAssignments,
+        currentRecords,
+        leaseDefaultPermissionSetArn,
+        idcStackConfigStore,
+      );
+    const desiredTupleKeys = new Set(
+      desiredAssignments.map((desired) =>
+        tupleKey(
+          desired,
+          desired.permissionSetArn ?? desiredDefaultPermissionSetArn!,
+        ),
+      ),
+    );
+    const currentTupleKeys = new Set(
+      currentRecords.map((record) =>
+        tupleKey(
+          principalFromRecord(record),
+          record.permissionSetArn ?? builtInPermissionSetArn!,
+        ),
+      ),
+    );
+    const failedPrincipalKeys = new Set<string>();
+
+    for (const tuple of fannedOutTuples) {
+      const key = tupleKey(tuple, tuple.permissionSetArn);
+      if (desiredTupleKeys.has(key) !== currentTupleKeys.has(key)) {
+        failedPrincipalKeys.add(principalKey(tuple));
+      }
+    }
+
+    const failed = failedPrincipalKeys.size;
     logger.info("Assignment execution completed", {
       logDetailType: "AssignmentExecutionCompleted",
       leaseId: input.leaseId,
@@ -445,5 +595,12 @@ function emitCompletionMetrics(props: {
       succeeded: principalsProcessed - failed,
       failed,
     } satisfies SubscribableLog);
+  } catch (error: unknown) {
+    // Completion events and lock release must not fail because an operational
+    // metric could not be calculated.
+    logger.error("Failed to calculate tuple-aware completion metrics", {
+      executionArn: input.executionArn,
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 }

@@ -3,6 +3,7 @@
 
 import {
   AppLayoutToolbar,
+  Box,
   BreadcrumbGroup,
   SideNavigation,
   SideNavigationProps,
@@ -27,6 +28,9 @@ import { useUser } from "@amzn/innovation-sandbox-frontend/hooks/useUser";
 import { useVersionCheck } from "@amzn/innovation-sandbox-frontend/hooks/useVersion";
 
 const LARGE_DISPLAY_MINIMUM_WIDTH = 688;
+
+// Let AppLayoutToolbar size content below the top navigation.
+export const TOP_NAVIGATION_SELECTOR = "[data-isb-top-navigation]";
 
 export const BaseLayout = ({ children }: AppLayoutProps) => {
   const queryClient = useQueryClient();
@@ -62,28 +66,37 @@ export const BaseLayout = ({ children }: AppLayoutProps) => {
     const navigationItems: SideNavigationProps.Item[] = [];
 
     // Home (all users)
-    navigationItems.push({ href: "/", text: "Home", type: "link" });
-    navigationItems.push({ href: "/leases", text: "Leases", type: "link" });
+    navigationItems.push(
+      { href: "/", text: "Home", type: "link" },
+      { href: "/leases", text: "Leases", type: "link" },
+    );
 
     // Manager and Admin items
     if (isManager || isAdmin) {
-      navigationItems.push({ type: "divider" });
-      navigationItems.push({
-        href: "/approvals",
-        text: "Approvals",
-        type: "link",
-        info: <ApprovalsBadge />,
-      });
-      navigationItems.push({
-        href: "/lease_templates",
-        text: "Lease Templates",
-        type: "link",
-      });
-      navigationItems.push({
-        href: "/blueprints",
-        text: "Blueprints",
-        type: "link",
-      });
+      navigationItems.push(
+        { type: "divider" },
+        {
+          href: "/approvals",
+          text: "Approvals",
+          type: "link",
+          info: <ApprovalsBadge />,
+        },
+        {
+          href: "/lease_templates",
+          text: "Lease Templates",
+          type: "link",
+        },
+        {
+          href: "/blueprints",
+          text: "Blueprints",
+          type: "link",
+        },
+        {
+          href: "/permission-sets",
+          text: "Permission Sets",
+          type: "link",
+        },
+      );
     }
 
     // Admin-only items
@@ -101,7 +114,7 @@ export const BaseLayout = ({ children }: AppLayoutProps) => {
         href: "/settings",
         text: "Settings",
         type: "link",
-        info: <SettingsBadge />,
+        info: isAdmin ? <SettingsBadge /> : undefined,
       });
     }
 
@@ -153,13 +166,25 @@ export const BaseLayout = ({ children }: AppLayoutProps) => {
       onToolsChange={setToolsOpen}
       onToolsContentChange={setToolsContent}
     >
-      <NavHeader
-        title="Innovation Sandbox on AWS"
-        logo={logo}
-        user={user}
-        onExit={onExit}
-      />
+      {/* AppLayoutToolbar offsets its sticky toolbar by this element's
+          height, so this element must stay sticky too. zIndex 1002 keeps it
+          and its menus above Cloudscape's toolbar (1000) and mobile
+          navigation (1001), and below popovers and modals. */}
+      <Box
+        nativeAttributes={{
+          "data-isb-top-navigation": "true",
+          style: { position: "sticky", top: 0, zIndex: 1002 },
+        }}
+      >
+        <NavHeader
+          title="Innovation Sandbox on AWS"
+          logo={logo}
+          user={user}
+          onExit={onExit}
+        />
+      </Box>
       <AppLayoutToolbar
+        headerSelector={TOP_NAVIGATION_SELECTOR}
         disableContentPaddings
         navigation={navigation}
         navigationOpen={navigationOpen}

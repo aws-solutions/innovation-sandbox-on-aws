@@ -10,6 +10,7 @@ import type { SQSBatchResponse, SQSEvent, SQSRecord } from "aws-lambda";
 import pThrottle from "p-throttle";
 import { z } from "zod";
 
+import { ValidationException } from "@amzn/innovation-sandbox-commons/data/global-config/global-config-utils.js";
 import { IsbServices } from "@amzn/innovation-sandbox-commons/isb-services/index.js";
 import {
   processAssignment,
@@ -30,6 +31,7 @@ import {
 import { IsbClients } from "@amzn/innovation-sandbox-commons/sdk-clients/index.js";
 import { fromTemporaryIsbIdcCredentials } from "@amzn/innovation-sandbox-commons/utils/cross-account-roles.js";
 import { LeaseLockIntentSchema } from "@amzn/innovation-sandbox-shared/types/lease.js";
+import { PermissionSetArnSchema } from "@amzn/innovation-sandbox-shared/types/permission-set.js";
 import { PrincipalTypeSchema } from "@amzn/innovation-sandbox-shared/types/principal.js";
 
 const serviceName = "AssignmentWorker";
@@ -57,7 +59,7 @@ const AssignmentMessageSchema = z.object({
   principalId: z.string(),
   principalType: PrincipalTypeSchema,
   accountId: z.string(),
-  permissionSetArn: z.string(),
+  permissionSetArn: PermissionSetArnSchema,
   leaseOwnerEmail: z.email(),
   email: z.string().optional(),
   displayName: z.string().optional(),
@@ -65,6 +67,13 @@ const AssignmentMessageSchema = z.object({
 });
 
 type AssignmentMessage = z.infer<typeof AssignmentMessageSchema>;
+
+class SystemPermissionSetGrantError extends Error {
+  constructor(permissionSetArn: string) {
+    super(`Refusing to grant ISB system permission set ${permissionSetArn}`);
+    this.name = "SystemPermissionSetGrantDenied";
+  }
+}
 
 export const handler = baseMiddlewareBundle({
   logger,
@@ -145,6 +154,8 @@ async function processRecord(
   try {
     // 2. JIT diff — decide the action at execution time
     const principalStore = IsbServices.principalStore(env);
+    const idcStackConfigStore = IsbServices.idcStackConfigStore(env);
+    const idcConfig = await idcStackConfigStore.get();
 
     const action = await resolveAssignmentAction(
       {
@@ -153,6 +164,9 @@ async function processRecord(
         principalId: message.principalId,
         principalType: message.principalType,
         intent: message.intent,
+        permissionSetArn: message.permissionSetArn,
+        defaultPermissionSetArn: idcConfig.userPermissionSetArn,
+        builtInPermissionSetArn: idcConfig.userPermissionSetArn,
       },
       {
         principalStore,
@@ -170,12 +184,20 @@ async function processRecord(
         action,
       };
     } else {
+      if (
+        action === "GRANT" &&
+        (message.permissionSetArn === idcConfig.adminPermissionSetArn ||
+          message.permissionSetArn === idcConfig.managerPermissionSetArn)
+      ) {
+        throw new SystemPermissionSetGrantError(message.permissionSetArn);
+      }
+
       // 3. Perform the IDC operation (rate-limited to 1/sec per instance)
       const credentials = fromTemporaryIsbIdcCredentials(env);
       const serviceContext: ProcessAssignmentServices = {
         principalStore,
         ssoAdminClient: IsbClients.ssoAdmin(env, credentials),
-        idcStackConfigStore: IsbServices.idcStackConfigStore(env),
+        idcStackConfigStore,
         logger,
       };
 
@@ -198,28 +220,7 @@ async function processRecord(
       };
     }
   } catch (error: unknown) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    const errorName = error instanceof Error ? error.name : "UnknownError";
-    const receiveCount = Number(record.attributes.ApproximateReceiveCount);
-    const isLastAttempt =
-      receiveCount >= Number(env.ASSIGNMENT_MAX_RECEIVE_COUNT);
-
-    logger.error("Assignment processing failed", {
-      errorName,
-      errorMessage,
-      receiveCount,
-      isLastAttempt,
-    });
-
-    // Final attempt: fail the task so the Map branch unblocks immediately
-    // rather than waiting for the heartbeat timeout. Earlier attempts stay
-    // pending for SQS to retry.
-    if (isLastAttempt) {
-      await sendTaskFailure(env, message.taskToken, errorName, errorMessage);
-    }
-
-    // Rethrow so SQS retries, then DLQ at maxReceiveCount.
-    throw error;
+    return handleAssignmentFailure(error, record, message, env);
   }
 
   await sendTaskSuccess(env, message.taskToken, outcome);
@@ -227,6 +228,49 @@ async function processRecord(
     action: outcome.action,
     status: outcome.status,
   });
+}
+
+async function handleAssignmentFailure(
+  error: unknown,
+  record: SQSRecord,
+  message: AssignmentMessage,
+  env: AssignmentWorkerEnvironment,
+): Promise<void> {
+  const errorMessage = error instanceof Error ? error.message : String(error);
+  const errorName = error instanceof Error ? error.name : "UnknownError";
+
+  if (
+    error instanceof SystemPermissionSetGrantError ||
+    error instanceof ValidationException
+  ) {
+    logger.error("Assignment processing rejected", {
+      errorName,
+      errorMessage,
+    });
+    await sendTaskFailure(env, message.taskToken, errorName, errorMessage);
+    return;
+  }
+
+  const receiveCount = Number(record.attributes.ApproximateReceiveCount);
+  const isLastAttempt =
+    receiveCount >= Number(env.ASSIGNMENT_MAX_RECEIVE_COUNT);
+
+  logger.error("Assignment processing failed", {
+    errorName,
+    errorMessage,
+    receiveCount,
+    isLastAttempt,
+  });
+
+  // Final attempt: fail the task so the Map branch unblocks immediately
+  // rather than waiting for the heartbeat timeout. Earlier attempts stay
+  // pending for SQS to retry.
+  if (isLastAttempt) {
+    await sendTaskFailure(env, message.taskToken, errorName, errorMessage);
+  }
+
+  // Rethrow so SQS retries, then DLQ at maxReceiveCount.
+  throw error;
 }
 
 function parseMessage(body: string): AssignmentMessage | null {

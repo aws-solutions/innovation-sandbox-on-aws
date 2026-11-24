@@ -4,7 +4,7 @@ import { Aws } from "aws-cdk-lib";
 import { PolicyStatement, Role } from "aws-cdk-lib/aws-iam";
 import { IFunction } from "aws-cdk-lib/aws-lambda";
 import { Construct } from "constructs";
-import path from "path";
+import path from "node:path";
 
 import { AccountLambdaEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/account-lambda-environment.js";
 import type { RestApiProps } from "@amzn/innovation-sandbox-infrastructure/components/api/rest-api-all";
@@ -37,6 +37,7 @@ export class AccountsApi {
       cleanupReportTable,
       cognitoUserPoolId,
       cognitoAppClientId,
+      cognitoMcpClientId,
     } = IsbComputeStack.sharedSpokeConfig.data;
 
     const accountsLambdaFunction = new IsbApiLambdaFunction(
@@ -85,6 +86,9 @@ export class AccountsApi {
           HUB_ACCOUNT_ID: Aws.ACCOUNT_ID,
           COGNITO_USER_POOL_ID: cognitoUserPoolId,
           COGNITO_APP_CLIENT_ID: cognitoAppClientId,
+          COGNITO_MCP_CLIENT_ID: cognitoMcpClientId,
+          SANDBOX_SPACES_USAGE_TABLE_NAME:
+            IsbComputeStack.sharedSpokeConfig.data.sandboxSpacesUsageTable,
         },
         envSchema: AccountLambdaEnvironmentSchema,
       },
@@ -106,6 +110,7 @@ export class AccountsApi {
       IsbComputeStack.sharedSpokeConfig.data.leaseTable,
       IsbComputeStack.sharedSpokeConfig.data.blueprintTable,
       IsbComputeStack.sharedSpokeConfig.data.cleanupReportTable,
+      IsbComputeStack.sharedSpokeConfig.data.sandboxSpacesUsageTable,
     );
     grantIsbDbReadOnly(scope, accountsLambdaFunction, configTableName);
     props.isbEventBus.grantPutEventsTo(accountsLambdaFunction.lambdaFunction);

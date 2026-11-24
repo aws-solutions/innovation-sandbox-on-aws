@@ -2,12 +2,27 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { CleanupForm } from "@amzn/innovation-sandbox-frontend/domains/settings/components/forms/CleanupForm";
-import { CONFIG_CONSTRAINTS } from "@amzn/innovation-sandbox-frontend/domains/settings/validation";
+import {
+  CleanupForm as CleanupFormFields,
+  cleanupFormSearchFields,
+} from "@amzn/innovation-sandbox-frontend/domains/settings/components/forms/CleanupForm";
+import type { ConfigurationSectionView } from "@amzn/innovation-sandbox-frontend/domains/settings/model";
 import { mockAdminConfig } from "@amzn/innovation-sandbox-frontend/mocks/handlers/configurationHandlers";
 import { createQueryClientWrapper } from "@amzn/innovation-sandbox-frontend/setupTests";
+import { CONFIG_BOUNDS } from "@amzn/innovation-sandbox-shared/types/configuration.js";
+
+import { ConfigurationFormHarness } from "./ConfigurationFormHarness";
+
+function CleanupForm({ data }: { data: ConfigurationSectionView<"cleanup"> }) {
+  return (
+    <ConfigurationFormHarness section="cleanup" data={data}>
+      <CleanupFormFields />
+    </ConfigurationFormHarness>
+  );
+}
 
 const adminUser = {
   status: "authenticated",
@@ -39,6 +54,22 @@ beforeEach(() => {
 });
 
 describe("CleanupForm", () => {
+  it("renders exactly the anchors exposed by its search definitions", async () => {
+    const { container } = render(
+      <CleanupForm data={mockAdminConfig.cleanup} />,
+      { wrapper: createQueryClientWrapper() },
+    );
+    await screen.findByRole("button", { name: /save/i });
+    const rendered = Array.from(
+      container.querySelectorAll('[id^="setting-cleanup-"]'),
+      (element) => element.id,
+    );
+    expect(rendered).toHaveLength(cleanupFormSearchFields.length);
+    expect(new Set(rendered)).toEqual(
+      new Set(cleanupFormSearchFields.map((field) => field.id)),
+    );
+  });
+
   it("renders editable fields and a Save button for an admin", async () => {
     render(<CleanupForm data={mockAdminConfig.cleanup} />, {
       wrapper: createQueryClientWrapper(),
@@ -62,11 +93,11 @@ describe("CleanupForm", () => {
     const input = screen.getByLabelText(/account cooldown \(hours\)/i);
     expect(input).toHaveAttribute(
       "min",
-      String(CONFIG_CONSTRAINTS.MIN_COOLDOWN_PERIOD_HOURS),
+      String(CONFIG_BOUNDS.MIN_COOLDOWN_PERIOD_HOURS),
     );
     expect(input).toHaveAttribute(
       "max",
-      String(CONFIG_CONSTRAINTS.MAX_COOLDOWN_PERIOD_HOURS),
+      String(CONFIG_BOUNDS.MAX_COOLDOWN_PERIOD_HOURS),
     );
   });
 
@@ -80,7 +111,7 @@ describe("CleanupForm", () => {
     const input = screen.getByLabelText(/failed attempts before quarantine/i);
     expect(input).toHaveAttribute(
       "min",
-      String(CONFIG_CONSTRAINTS.MIN_CLEANUP_VALUE),
+      String(CONFIG_BOUNDS.MIN_CLEANUP_VALUE),
     );
   });
 
@@ -112,22 +143,21 @@ describe("CleanupForm", () => {
     const input = screen.getByLabelText(/cleanup report retention \(days\)/i);
     expect(input).toHaveAttribute(
       "min",
-      String(CONFIG_CONSTRAINTS.MIN_REPORT_RETENTION_DAYS),
+      String(CONFIG_BOUNDS.MIN_REPORT_RETENTION_DAYS),
     );
     expect(input).toHaveAttribute(
       "max",
-      String(CONFIG_CONSTRAINTS.MAX_REPORT_RETENTION_DAYS),
+      String(CONFIG_BOUNDS.MAX_REPORT_RETENTION_DAYS),
     );
   });
 
-  it("renders a read-only summary for a manager (no Save button)", async () => {
+  it("renders cleanup inputs and radio choices read-only for a manager", async () => {
     getCurrentUser.mockResolvedValue(managerUser);
 
     render(<CleanupForm data={mockAdminConfig.cleanup} />, {
       wrapper: createQueryClientWrapper(),
     });
 
-    // Read-only KeyValuePairs labels — including the newly surfaced fields.
     expect(
       await screen.findByText(/account cooldown \(hours\)/i),
     ).toBeInTheDocument();
@@ -135,6 +165,19 @@ describe("CleanupForm", () => {
       screen.getByText(/cleanup report retention \(days\)/i),
     ).toBeInTheDocument();
     expect(screen.getByText(/on validation failure/i)).toBeInTheDocument();
+    for (const input of screen.getAllByRole("spinbutton"))
+      expect(input).toHaveAttribute("readonly");
+    expect(screen.getByRole("radiogroup")).toHaveAttribute(
+      "aria-readonly",
+      "true",
+    );
+    const selected = screen.getByRole("radio", { checked: true });
+    const other = screen
+      .getAllByRole("radio")
+      .find((radio) => radio !== selected)!;
+    await userEvent.click(other);
+    expect(selected).toBeChecked();
+    expect(other).not.toBeChecked();
     expect(
       screen.queryByRole("button", { name: /save/i }),
     ).not.toBeInTheDocument();

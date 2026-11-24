@@ -29,7 +29,7 @@ const SIGV4_ALGORITHM = "AWS4-HMAC-SHA256";
 
 class MockApi<T> {
   private mockData: T | T[] | null = null;
-  private endpoint: string;
+  private readonly endpoint: string;
 
   constructor(endpoint: string) {
     this.endpoint = endpoint;
@@ -65,7 +65,7 @@ class MockApi<T> {
   }
 
   private handleSingleResource(result: T[]) {
-    const singleItem = result[0] as T;
+    const singleItem = result[0];
     return this.createSuccessResponse(singleItem);
   }
 
@@ -215,7 +215,7 @@ class MockApi<T> {
           });
           this.mockData = updatedData;
         } else {
-          updatedData = { ...this.mockData, ...requestBody } as T;
+          updatedData = { ...this.mockData, ...requestBody };
           this.mockData = updatedData;
         }
 

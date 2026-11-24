@@ -11,6 +11,8 @@ export type ConfigData = {
   AwsAccessPortalUrl: string;
   ApiGatewayHost: string;
   ApiGatewayStage: string;
+  SandboxAgentWebSocketUrl: string;
+  SandboxAgentMcpGatewayUrl: string;
 };
 
 let cachedConfig: ConfigData | undefined;

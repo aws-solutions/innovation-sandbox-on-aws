@@ -9,17 +9,20 @@ import type { CleanupContext } from "@amzn/innovation-sandbox-durable-cleanup-or
 // Mock external dependencies
 const mockSsoAdminSend = vi.fn();
 const mockGetIdcConfig = vi.fn();
+const mockListPermissionSetsProvisionedToAccount = vi.fn();
 const mockGetAssignmentsForLease = vi.fn();
-const mockDeleteUserAssignment = vi.fn().mockResolvedValue(undefined);
-const mockDeleteGroupAssignment = vi.fn().mockResolvedValue(undefined);
+const mockDeleteAssignment = vi.fn().mockResolvedValue(true);
 
 vi.mock("@amzn/innovation-sandbox-commons/isb-services/index.js", () => ({
   IsbServices: {
     idcStackConfigStore: () => ({ get: mockGetIdcConfig }),
+    idcService: () => ({
+      listPermissionSetsProvisionedToAccount:
+        mockListPermissionSetsProvisionedToAccount,
+    }),
     principalStore: () => ({
       getAssignmentsForLease: mockGetAssignmentsForLease,
-      deleteUserAssignment: mockDeleteUserAssignment,
-      deleteGroupAssignment: mockDeleteGroupAssignment,
+      deleteAssignment: mockDeleteAssignment,
     }),
   },
 }));
@@ -67,12 +70,28 @@ vi.mock("exponential-backoff", () => ({
   },
 }));
 
-import { paginateListAccountAssignments } from "@aws-sdk/client-sso-admin";
+import {
+  DeleteAccountAssignmentCommand,
+  DescribeAccountAssignmentDeletionStatusCommand,
+  ListAccountAssignmentsCommandInput,
+  paginateListAccountAssignments,
+  SSOAdminPaginationConfiguration,
+} from "@aws-sdk/client-sso-admin";
 
 const TEST_ACCOUNT_ID = "123456789012";
 const TEST_INSTANCE_ARN = "arn:aws:sso:::instance/ssoins-1234567890abcdef0";
 const TEST_PERMISSION_SET_ARN =
   "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef0/ps-0123456789abcdef0";
+const TEST_CUSTOM_PERMISSION_SET_ARN =
+  "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef0/ps-1123456789abcdef0";
+const TEST_SECOND_CUSTOM_PERMISSION_SET_ARN =
+  "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef0/ps-2123456789abcdef0";
+const TEST_ADMIN_PERMISSION_SET_ARN =
+  "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef0/ps-a123456789abcdef0";
+const TEST_MANAGER_PERMISSION_SET_ARN =
+  "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef0/ps-b123456789abcdef0";
+const TEST_ADMIN_GROUP_ID = "admin-group-id";
+const TEST_MANAGER_GROUP_ID = "manager-group-id";
 const TEST_LEASE_ID = "a1b2c3d4-e5f6-7890-abcd-ef1234567890";
 
 function createMockContext(
@@ -117,13 +136,29 @@ function createMockContext(
 }
 
 function setupPaginator(pages: { AccountAssignments: any[] }[]) {
-  vi.mocked(paginateListAccountAssignments).mockImplementation(
-    async function* () {
-      for (const page of pages) {
-        yield page;
-      }
-    } as any,
-  );
+  setupPaginators({ [TEST_PERMISSION_SET_ARN]: pages });
+}
+
+function setupPaginators(
+  pagesByPermissionSet: Record<string, { AccountAssignments?: any[] }[]>,
+) {
+  vi.mocked(paginateListAccountAssignments).mockImplementation(async function* (
+    _config: SSOAdminPaginationConfiguration,
+    input: ListAccountAssignmentsCommandInput,
+  ) {
+    for (const page of pagesByPermissionSet[input.PermissionSetArn!] ?? []) {
+      yield page;
+    }
+  } as any);
+}
+
+function mockSuccessfulDeletionLifecycle() {
+  mockSsoAdminSend.mockResolvedValue({
+    AccountAssignmentDeletionStatus: {
+      RequestId: "request-id",
+      Status: "SUCCEEDED",
+    },
+  });
 }
 
 describe("cleanupAccountAccess()", () => {
@@ -133,8 +168,15 @@ describe("cleanupAccountAccess()", () => {
     mockGetIdcConfig.mockResolvedValue({
       ssoInstanceArn: TEST_INSTANCE_ARN,
       userPermissionSetArn: TEST_PERMISSION_SET_ARN,
+      adminPermissionSetArn: TEST_ADMIN_PERMISSION_SET_ARN,
+      adminGroupId: TEST_ADMIN_GROUP_ID,
+      managerPermissionSetArn: TEST_MANAGER_PERMISSION_SET_ARN,
+      managerGroupId: TEST_MANAGER_GROUP_ID,
       identityStoreId: "d-1234567890",
     });
+    mockListPermissionSetsProvisionedToAccount.mockResolvedValue([
+      TEST_PERMISSION_SET_ARN,
+    ]);
 
     mockGetAssignmentsForLease.mockResolvedValue({
       result: [],
@@ -153,7 +195,131 @@ describe("cleanupAccountAccess()", () => {
       assignmentsDeleted: 0,
       principalRecordsFound: 0,
       principalRecordsDeleted: 0,
+      failed: false,
     });
+    expect(mockListPermissionSetsProvisionedToAccount).toHaveBeenCalledWith(
+      TEST_ACCOUNT_ID,
+    );
+  });
+
+  it("deletes assignments across every permission set provisioned to the account", async () => {
+    const ctx = createMockContext();
+    mockListPermissionSetsProvisionedToAccount.mockResolvedValue([
+      TEST_PERMISSION_SET_ARN,
+      TEST_CUSTOM_PERMISSION_SET_ARN,
+      TEST_SECOND_CUSTOM_PERMISSION_SET_ARN,
+    ]);
+    setupPaginators({
+      [TEST_PERMISSION_SET_ARN]: [
+        {
+          AccountAssignments: [
+            { PrincipalId: "user-id-1", PrincipalType: "USER" },
+          ],
+        },
+      ],
+      [TEST_CUSTOM_PERMISSION_SET_ARN]: [
+        {
+          AccountAssignments: [
+            { PrincipalId: "group-id-1", PrincipalType: "GROUP" },
+          ],
+        },
+      ],
+      [TEST_SECOND_CUSTOM_PERMISSION_SET_ARN]: [
+        {
+          AccountAssignments: [
+            { PrincipalId: "user-id-2", PrincipalType: "USER" },
+          ],
+        },
+      ],
+    });
+    mockSuccessfulDeletionLifecycle();
+
+    const result = await cleanupAccountAccess(ctx);
+
+    expect(result.assignmentsFound).toBe(3);
+    expect(result.assignmentsDeleted).toBe(3);
+    expect(
+      mockSsoAdminSend.mock.calls
+        .map(([command]) => command)
+        .filter((command) => command instanceof DeleteAccountAssignmentCommand)
+        .map((command) => command.input.PermissionSetArn),
+    ).toEqual([
+      TEST_PERMISSION_SET_ARN,
+      TEST_CUSTOM_PERMISSION_SET_ARN,
+      TEST_SECOND_CUSTOM_PERMISSION_SET_ARN,
+    ]);
+  });
+
+  it("preserves only the configured admin and manager group tuples", async () => {
+    const ctx = createMockContext();
+    mockListPermissionSetsProvisionedToAccount.mockResolvedValue([
+      TEST_ADMIN_PERMISSION_SET_ARN,
+      TEST_MANAGER_PERMISSION_SET_ARN,
+    ]);
+    setupPaginators({
+      [TEST_ADMIN_PERMISSION_SET_ARN]: [
+        {
+          AccountAssignments: [
+            {
+              PrincipalId: TEST_ADMIN_GROUP_ID,
+              PrincipalType: "GROUP",
+            },
+            { PrincipalId: "unexpected-admin-user", PrincipalType: "USER" },
+          ],
+        },
+      ],
+      [TEST_MANAGER_PERMISSION_SET_ARN]: [
+        {
+          AccountAssignments: [
+            {
+              PrincipalId: TEST_MANAGER_GROUP_ID,
+              PrincipalType: "GROUP",
+            },
+            { PrincipalId: "unexpected-manager-group", PrincipalType: "GROUP" },
+          ],
+        },
+      ],
+    });
+    mockSuccessfulDeletionLifecycle();
+
+    const result = await cleanupAccountAccess(ctx);
+
+    expect(result.assignmentsFound).toBe(2);
+    expect(result.assignmentsDeleted).toBe(2);
+    expect(
+      mockSsoAdminSend.mock.calls
+        .map(([command]) => command)
+        .filter((command) => command instanceof DeleteAccountAssignmentCommand)
+        .map((command) => ({
+          permissionSetArn: command.input.PermissionSetArn,
+          principalId: command.input.PrincipalId,
+          principalType: command.input.PrincipalType,
+        })),
+    ).toEqual([
+      {
+        permissionSetArn: TEST_ADMIN_PERMISSION_SET_ARN,
+        principalId: "unexpected-admin-user",
+        principalType: "USER",
+      },
+      {
+        permissionSetArn: TEST_MANAGER_PERMISSION_SET_ARN,
+        principalId: "unexpected-manager-group",
+        principalType: "GROUP",
+      },
+    ]);
+  });
+
+  it("propagates permission set enumeration failure for quarantine handling", async () => {
+    const ctx = createMockContext();
+    mockListPermissionSetsProvisionedToAccount.mockRejectedValue(
+      new Error("AccessDenied"),
+    );
+    setupPaginator([]);
+
+    await expect(cleanupAccountAccess(ctx)).rejects.toThrow("AccessDenied");
+    expect(paginateListAccountAssignments).not.toHaveBeenCalled();
+    expect(mockSsoAdminSend).not.toHaveBeenCalled();
+    expect(mockGetAssignmentsForLease).not.toHaveBeenCalled();
   });
 
   it("deletes lingering IDC assignments and polls for completion", async () => {
@@ -177,26 +343,39 @@ describe("cleanupAccountAccess()", () => {
       },
     ]);
 
-    // Each assignment: DeleteAccountAssignment → Describe (SUCCEEDED)
-    mockSsoAdminSend
-      .mockResolvedValueOnce({
-        AccountAssignmentDeletionStatus: { RequestId: "req-1" },
-      })
-      .mockResolvedValueOnce({
-        AccountAssignmentDeletionStatus: { Status: "SUCCEEDED" },
-      })
-      .mockResolvedValueOnce({
-        AccountAssignmentDeletionStatus: { RequestId: "req-2" },
-      })
-      .mockResolvedValueOnce({
-        AccountAssignmentDeletionStatus: { Status: "SUCCEEDED" },
-      });
+    let nextRequestId = 1;
+    mockSsoAdminSend.mockImplementation((command) => {
+      if (command instanceof DeleteAccountAssignmentCommand) {
+        return Promise.resolve({
+          AccountAssignmentDeletionStatus: {
+            RequestId: `req-${nextRequestId++}`,
+          },
+        });
+      }
+      if (command instanceof DescribeAccountAssignmentDeletionStatusCommand) {
+        return Promise.resolve({
+          AccountAssignmentDeletionStatus: { Status: "SUCCEEDED" },
+        });
+      }
+      return Promise.reject(new Error("Unexpected SSO Admin command"));
+    });
 
     const result = await cleanupAccountAccess(ctx);
 
     expect(result.assignmentsFound).toBe(2);
     // 2 deletes + 2 describe polls
     expect(mockSsoAdminSend).toHaveBeenCalledTimes(4);
+    expect(
+      mockSsoAdminSend.mock.calls.filter(
+        ([command]) => command instanceof DeleteAccountAssignmentCommand,
+      ),
+    ).toHaveLength(2);
+    expect(
+      mockSsoAdminSend.mock.calls.filter(
+        ([command]) =>
+          command instanceof DescribeAccountAssignmentDeletionStatusCommand,
+      ),
+    ).toHaveLength(2);
     expect(mockSsoAdminSend).toHaveBeenCalledWith(
       expect.objectContaining({
         input: expect.objectContaining({
@@ -282,7 +461,7 @@ describe("cleanupAccountAccess()", () => {
       },
     ]);
 
-    mockSsoAdminSend.mockResolvedValue({});
+    mockSuccessfulDeletionLifecycle();
 
     const result = await cleanupAccountAccess(ctx);
 
@@ -412,7 +591,7 @@ describe("cleanupAccountAccess()", () => {
       );
     });
 
-    it("skips polling when no RequestId is returned", async () => {
+    it("counts deletion as failed when no RequestId is returned", async () => {
       const ctx = createMockContext();
       setupPaginator([
         {
@@ -427,14 +606,92 @@ describe("cleanupAccountAccess()", () => {
         },
       ]);
 
-      // Delete returns without RequestId — no polling needed
       mockSsoAdminSend.mockResolvedValueOnce({});
+
+      await expect(cleanupAccountAccess(ctx)).rejects.toThrow(
+        "1/1 IDC assignment deletions failed",
+      );
+      expect(mockSsoAdminSend).toHaveBeenCalledTimes(1);
+      expect(ctx.reportWriter.updateReport).toHaveBeenCalledWith(
+        ctx.reportKey,
+        expect.objectContaining({
+          accessCleanupSummary: expect.objectContaining({
+            assignmentsFound: 1,
+            assignmentsDeleted: 0,
+            failed: true,
+          }),
+        }),
+      );
+    });
+
+    it("treats ResourceNotFoundException as idempotent success", async () => {
+      const ctx = createMockContext();
+      setupPaginator([
+        {
+          AccountAssignments: [
+            {
+              AccountId: TEST_ACCOUNT_ID,
+              PermissionSetArn: TEST_PERMISSION_SET_ARN,
+              PrincipalId: "already-deleted-user",
+              PrincipalType: "USER",
+            },
+          ],
+        },
+      ]);
+      const notFoundError = Object.assign(new Error("Assignment not found"), {
+        name: "ResourceNotFoundException",
+        $metadata: {},
+      });
+      Object.setPrototypeOf(
+        notFoundError,
+        (await import("@aws-sdk/client-sso-admin")).ResourceNotFoundException
+          .prototype,
+      );
+      mockSsoAdminSend.mockRejectedValueOnce(notFoundError);
 
       const result = await cleanupAccountAccess(ctx);
 
       expect(result.assignmentsFound).toBe(1);
-      // Only the delete call, no describe call
+      expect(result.assignmentsDeleted).toBe(1);
       expect(mockSsoAdminSend).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not treat ResourceNotFoundException from status polling as success", async () => {
+      const ctx = createMockContext();
+      setupPaginator([
+        {
+          AccountAssignments: [
+            {
+              AccountId: TEST_ACCOUNT_ID,
+              PermissionSetArn: TEST_PERMISSION_SET_ARN,
+              PrincipalId: "user-id-1",
+              PrincipalType: "USER",
+            },
+          ],
+        },
+      ]);
+      const notFoundError = Object.assign(
+        new Error("Deletion request not found"),
+        {
+          name: "ResourceNotFoundException",
+          $metadata: {},
+        },
+      );
+      Object.setPrototypeOf(
+        notFoundError,
+        (await import("@aws-sdk/client-sso-admin")).ResourceNotFoundException
+          .prototype,
+      );
+      mockSsoAdminSend
+        .mockResolvedValueOnce({
+          AccountAssignmentDeletionStatus: { RequestId: "req-not-found" },
+        })
+        .mockRejectedValueOnce(notFoundError);
+
+      await expect(cleanupAccountAccess(ctx)).rejects.toThrow(
+        "1/1 IDC assignment deletions failed",
+      );
+      expect(mockSsoAdminSend).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -461,6 +718,7 @@ describe("cleanupAccountAccess()", () => {
             userId: "user-id-1",
             principalType: "USER",
             leaseId: TEST_LEASE_ID,
+            sk: `lease#${TEST_LEASE_ID}`,
           },
         ],
         nextPageIdentifier: null,
@@ -469,10 +727,12 @@ describe("cleanupAccountAccess()", () => {
       const result = await cleanupAccountAccess(ctx);
 
       expect(result.principalRecordsDeleted).toBe(1);
-      expect(mockDeleteUserAssignment).toHaveBeenCalledWith(
-        "user-id-1",
-        TEST_LEASE_ID,
-      );
+      expect(mockDeleteAssignment).toHaveBeenCalledWith({
+        principalId: "user-id-1",
+        principalType: "USER",
+        sk: `lease#${TEST_LEASE_ID}`,
+        expectedLastEditTime: undefined,
+      });
     });
 
     it("deletes group assignment records when leaseId is on account record", async () => {
@@ -497,6 +757,7 @@ describe("cleanupAccountAccess()", () => {
             groupId: "group-id-1",
             principalType: "GROUP",
             leaseId: TEST_LEASE_ID,
+            sk: `lease#${TEST_LEASE_ID}`,
           },
         ],
         nextPageIdentifier: null,
@@ -505,10 +766,66 @@ describe("cleanupAccountAccess()", () => {
       const result = await cleanupAccountAccess(ctx);
 
       expect(result.principalRecordsDeleted).toBe(1);
-      expect(mockDeleteGroupAssignment).toHaveBeenCalledWith(
-        "group-id-1",
-        TEST_LEASE_ID,
-      );
+      expect(mockDeleteAssignment).toHaveBeenCalledWith({
+        principalId: "group-id-1",
+        principalType: "GROUP",
+        sk: `lease#${TEST_LEASE_ID}`,
+        expectedLastEditTime: undefined,
+      });
+    });
+
+    it("deletes legacy and tuple-keyed records by their exact keys", async () => {
+      const ctx = createMockContext({
+        accountStore: {
+          get: vi.fn().mockResolvedValue({
+            result: {
+              awsAccountId: TEST_ACCOUNT_ID,
+              currentLease: {
+                leaseId: TEST_LEASE_ID,
+                ownerEmail: "owner@example.com",
+              },
+            },
+          }),
+        } as unknown as CleanupContext["accountStore"],
+      });
+      setupPaginator([{ AccountAssignments: [] }]);
+
+      mockGetAssignmentsForLease.mockResolvedValue({
+        result: [
+          {
+            userId: "user-id-1",
+            principalType: "USER",
+            leaseId: TEST_LEASE_ID,
+            sk: `lease#${TEST_LEASE_ID}`,
+          },
+          {
+            userId: "user-id-1",
+            principalType: "USER",
+            leaseId: TEST_LEASE_ID,
+            permissionSetArn: TEST_CUSTOM_PERMISSION_SET_ARN,
+            permissionSetId: "ps-1123456789abcdef0",
+            sk: `lease#${TEST_LEASE_ID}#ps#ps-1123456789abcdef0`,
+          },
+        ],
+        nextPageIdentifier: null,
+      });
+      const result = await cleanupAccountAccess(ctx);
+
+      expect(result.principalRecordsFound).toBe(2);
+      expect(result.principalRecordsDeleted).toBe(2);
+      expect(mockDeleteAssignment).toHaveBeenCalledTimes(2);
+      expect(mockDeleteAssignment).toHaveBeenNthCalledWith(1, {
+        principalId: "user-id-1",
+        principalType: "USER",
+        sk: `lease#${TEST_LEASE_ID}`,
+        expectedLastEditTime: undefined,
+      });
+      expect(mockDeleteAssignment).toHaveBeenNthCalledWith(2, {
+        principalId: "user-id-1",
+        principalType: "USER",
+        sk: `lease#${TEST_LEASE_ID}#ps#ps-1123456789abcdef0`,
+        expectedLastEditTime: undefined,
+      });
     });
 
     it("skips Principal Table cleanup when no leaseId on account", async () => {
@@ -543,12 +860,13 @@ describe("cleanupAccountAccess()", () => {
             userId: "user-id-1",
             principalType: "USER",
             leaseId: TEST_LEASE_ID,
+            sk: `lease#${TEST_LEASE_ID}`,
           },
         ],
         nextPageIdentifier: null,
       });
 
-      mockDeleteUserAssignment.mockRejectedValueOnce(
+      mockDeleteAssignment.mockRejectedValueOnce(
         new Error("ConditionalCheckFailed"),
       );
 

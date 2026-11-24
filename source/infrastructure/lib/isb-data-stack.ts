@@ -12,7 +12,7 @@ import { applyIsbTag } from "@amzn/innovation-sandbox-infrastructure/helpers/tag
 import { IsbDataResources } from "@amzn/innovation-sandbox-infrastructure/isb-data-resources";
 
 export class IsbDataStack extends Stack {
-  public static cfnMapping: CfnMapping;
+  public static readonly cfnMapping: CfnMapping;
   constructor(scope: Construct, id: string, props?: StackProps) {
     super(scope, id, props);
 
@@ -37,7 +37,8 @@ export class IsbDataStack extends Stack {
       {
         label: "AWS Access Portal URL",
         description:
-          "The AWS Access Portal URL for IAM Identity Center SSO (e.g. https://d-xxxxxxxxxx.awsapps.com/start)",
+          "The AWS Access Portal URL for IAM Identity Center SSO (e.g. https://d-xxxxxxxxxx.awsapps.com/start). " +
+          "If you change it on an existing deployment, update the Compute stack with a new ForceConfigurationUpdate value.",
         allowedPattern: "^https://.*$",
         constraintDescription:
           "Must be a valid HTTPS URL (e.g., https://d-xxxxxxxxxx.awsapps.com/start)",
@@ -136,6 +137,12 @@ export class IsbDataStack extends Stack {
       exportName: `${this.stackName}-${namespaceParam.valueAsString}-CognitoAppClientId`,
       key: `CognitoAppClientId`,
       value: dataResources.userPoolClient.userPoolClientId,
+    });
+
+    new CfnOutput(this, "CognitoMcpClientIdOut", {
+      exportName: `${this.stackName}-${namespaceParam.valueAsString}-CognitoMcpClientId`,
+      key: `CognitoMcpClientId`,
+      value: dataResources.mcpUserPoolClient.userPoolClientId,
     });
 
     new CfnOutput(this, "CognitoIdentityPoolIdOut", {

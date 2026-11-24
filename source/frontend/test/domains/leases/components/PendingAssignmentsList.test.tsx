@@ -6,6 +6,22 @@ import { describe, expect, it } from "vitest";
 
 import { PendingAssignmentsList } from "@amzn/innovation-sandbox-frontend/domains/leases/components/PendingAssignmentsList";
 import { DesiredAssignmentWithDisplay } from "@amzn/innovation-sandbox-shared/types/lease.js";
+import type { PermissionSetReference } from "@amzn/innovation-sandbox-shared/types/permission-set.js";
+
+const developerPermissionSet: PermissionSetReference = {
+  permissionSetArn:
+    "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-0123456789abcdef",
+  permissionSetId: "ps-0123456789abcdef",
+  name: "DeveloperAccess",
+  availability: "AVAILABLE",
+};
+const auditorPermissionSet: PermissionSetReference = {
+  permissionSetArn:
+    "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-1123456789abcdef",
+  permissionSetId: "ps-1123456789abcdef",
+  name: "AuditorAccess",
+  availability: "AVAILABLE",
+};
 
 describe("PendingAssignmentsList", () => {
   it("renders nothing when there are no desiredAssignments", () => {
@@ -14,7 +30,7 @@ describe("PendingAssignmentsList", () => {
     // a Container header. Asserting on the absence of the header text is
     // the easiest invariant.
     expect(container).toBeEmptyDOMElement();
-    expect(screen.queryByText("Pre-approval sharing")).not.toBeInTheDocument();
+    expect(screen.queryByText("Planned access")).not.toBeInTheDocument();
   });
 
   it("renders nothing when desiredAssignments is empty", () => {
@@ -41,7 +57,7 @@ describe("PendingAssignmentsList", () => {
 
     render(<PendingAssignmentsList desiredAssignments={desiredAssignments} />);
 
-    expect(screen.getByText("Pre-approval sharing")).toBeInTheDocument();
+    expect(screen.getByText("Planned access")).toBeInTheDocument();
 
     // Alice's row has the display name (Name col) and email (Email/Group col).
     // alice@example.com appears in both the Name fallback and the Email/Group
@@ -76,5 +92,97 @@ describe("PendingAssignmentsList", () => {
     // shows in the Email/Group column for users, so getAllByText.
     expect(screen.getAllByText("noname@example.com").length).toBeGreaterThan(0);
     expect(screen.getByText("user-with-only-id")).toBeInTheDocument();
+  });
+
+  it("renders the selected permission set and the default fallback", async () => {
+    const desiredAssignments: DesiredAssignmentWithDisplay[] = [
+      {
+        principalId: "user-1",
+        principalType: "USER",
+        displayName: "Alice Smith",
+        permissionSetArn: developerPermissionSet.permissionSetArn,
+      },
+      {
+        principalId: "user-2",
+        principalType: "USER",
+        displayName: "Bob Smith",
+      },
+    ];
+
+    render(
+      <PendingAssignmentsList
+        desiredAssignments={desiredAssignments}
+        defaultPermissionSet={developerPermissionSet}
+        allowedPermissionSets={[developerPermissionSet]}
+      />,
+    );
+
+    expect(screen.getAllByText("DeveloperAccess")).toHaveLength(2);
+  });
+
+  it("resolves an explicit default ARN when the default is not in the allowed list", () => {
+    render(
+      <PendingAssignmentsList
+        desiredAssignments={[
+          {
+            principalId: "user-1",
+            principalType: "USER",
+            permissionSetArn: developerPermissionSet.permissionSetArn,
+          },
+        ]}
+        defaultPermissionSet={developerPermissionSet}
+        allowedPermissionSets={[auditorPermissionSet]}
+      />,
+    );
+
+    expect(screen.getByText("DeveloperAccess")).toBeInTheDocument();
+  });
+
+  it("keeps USER and GROUP rows distinct when their IDs match", () => {
+    render(
+      <PendingAssignmentsList
+        desiredAssignments={[
+          {
+            principalId: "shared-id",
+            principalType: "USER",
+            displayName: "Shared user",
+            permissionSetArn: developerPermissionSet.permissionSetArn,
+          },
+          {
+            principalId: "shared-id",
+            principalType: "GROUP",
+            displayName: "Shared group",
+            permissionSetArn: auditorPermissionSet.permissionSetArn,
+          },
+        ]}
+        defaultPermissionSet={developerPermissionSet}
+        allowedPermissionSets={[developerPermissionSet, auditorPermissionSet]}
+      />,
+    );
+
+    expect(screen.getAllByText("Shared user")).toHaveLength(1);
+    expect(screen.getByText("Shared group")).toBeInTheDocument();
+    expect(screen.getByText("DeveloperAccess")).toBeInTheDocument();
+    expect(screen.getByText("AuditorAccess")).toBeInTheDocument();
+  });
+
+  it("preserves an explicit ARN when its hydrated reference is unavailable", () => {
+    const permissionSetArn =
+      "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-2123456789abcdef";
+
+    render(
+      <PendingAssignmentsList
+        desiredAssignments={[
+          {
+            principalId: "user-1",
+            principalType: "USER",
+            permissionSetArn,
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText(permissionSetArn)).toBeInTheDocument();
+    expect(screen.queryByText("Default")).not.toBeInTheDocument();
   });
 });

@@ -16,15 +16,31 @@ import { HttpRequest } from "@smithy/core/protocols";
 
 import type {
   AssignmentView,
+  BedrockTokenHistoryData as SmithyBedrockTokenHistoryData,
+  BreachEntry as SmithyBreachEntry,
+  BreachHistoryData as SmithyBreachHistoryData,
+  BreachInsight as SmithyBreachInsight,
+  CostHistoryCurrent as SmithyCostHistoryCurrent,
+  CostHistoryData as SmithyCostHistoryData,
+  CostHistoryResultRow as SmithyCostHistoryResultRow,
+  CostSummaryData as SmithyCostSummaryData,
+  CurrentServiceEntry as SmithyCurrentServiceEntry,
   LeaseAssignmentsView,
   LeaseWithId,
+  RateLimitEntry as SmithyRateLimitEntry,
+  SelectableModel,
   SharedLease,
+  TokenSeriesRow as SmithyTokenSeriesRow,
   UpdateLeaseAssignmentsResult,
 } from "@amzn/innovation-sandbox-api-client";
 import {
   FreezeLeaseCommand,
   GetLeaseAssignmentsCommand,
+  GetLeaseBedrockTokenHistoryCommand,
+  GetLeaseBreachHistoryCommand,
   GetLeaseCommand,
+  GetLeaseCostHistoryCommand,
+  GetLeaseCostSummaryCommand,
   IsbClient,
   ListLeasesCommand,
   ListSharedLeasesCommand,
@@ -47,8 +63,19 @@ import {
 } from "@amzn/innovation-sandbox-frontend/domains/leases/model";
 import {
   AssignmentPrincipalRef,
+  BedrockTokenHistoryData,
+  BreachEntry,
+  BreachHistoryData,
+  BreachInsight,
+  CostHistoryCurrent,
+  CostHistoryData,
+  CostHistoryPageOptions,
+  CostHistoryResultRow,
+  CostSummaryData,
+  CurrentServiceEntry,
   LeasePatchRequest,
   NewLeaseRequest,
+  TokenSeriesRow,
 } from "@amzn/innovation-sandbox-frontend/domains/leases/types";
 import { ApiPaginatedResult } from "@amzn/innovation-sandbox-frontend/types";
 
@@ -90,6 +117,19 @@ export interface SmithyLeaseApi {
     maxResults: number,
     pageIdentifier?: string,
   ): Promise<ApiPaginatedResult<SharedLeaseView>>;
+  getLeaseCostSummary(leaseId: string): Promise<CostSummaryData>;
+  getLeaseCostHistory(
+    leaseId: string,
+    options: CostHistoryPageOptions,
+  ): Promise<CostHistoryData>;
+  getLeaseBedrockTokenHistory(
+    leaseId: string,
+    options: CostHistoryPageOptions,
+  ): Promise<BedrockTokenHistoryData>;
+  getLeaseBreachHistory(
+    leaseId: string,
+    options: CostHistoryPageOptions,
+  ): Promise<BreachHistoryData>;
 }
 
 /**
@@ -131,10 +171,18 @@ export function reinjectNullMembers(
   return JSON.stringify(body);
 }
 
+function mapRateLimitEntry(entry: SmithyRateLimitEntry) {
+  return {
+    basis: entry.basis,
+    rate: entry.rate,
+    action: entry.action,
+  } satisfies Record<keyof SmithyRateLimitEntry, unknown>;
+}
+
 function mapLease(lease: LeaseWithId) {
   // Keep every generated member explicit so additions to the Smithy response
   // cannot be silently dropped at the frontend boundary.
-  return {
+  const generatedLease = {
     userEmail: lease.userEmail,
     uuid: lease.uuid,
     status: lease.status,
@@ -145,6 +193,16 @@ function mapLease(lease: LeaseWithId) {
     blueprintId: lease.blueprintId,
     blueprintName: lease.blueprintName,
     allowOwnerToShareLease: lease.allowOwnerToShareLease,
+    predictiveBudgetEnabled: lease.predictiveBudgetEnabled,
+    bedrockTokenMonitoringEnabled: lease.bedrockTokenMonitoringEnabled,
+    sandboxSpacesEnabled: lease.sandboxSpacesEnabled,
+    allowedModelIds: lease.allowedModelIds,
+    defaultModelId: lease.defaultModelId,
+    rateLimits: lease.rateLimits?.map(mapRateLimitEntry),
+    lastPredictedSpend: lease.lastPredictedSpend,
+    lastEvaluatedSpend: lease.lastEvaluatedSpend,
+    lastEvaluatedHourlySpendRate: lease.lastEvaluatedHourlySpendRate,
+    lastEvaluatedDailySpendRate: lease.lastEvaluatedDailySpendRate,
     desiredAssignments: lease.desiredAssignments,
     resourceLock: lease.resourceLock,
     maxSpend: lease.maxSpend,
@@ -162,15 +220,33 @@ function mapLease(lease: LeaseWithId) {
     endDate: lease.endDate,
     ttl: lease.ttl,
     leaseId: lease.leaseId,
+    defaultPermissionSet: lease.defaultPermissionSet,
+    allowedPermissionSets: lease.allowedPermissionSets,
+    selectableModels: lease.selectableModels,
   } satisfies Record<keyof LeaseWithId, unknown>;
+
+  const { selectableModels, ...frontendLease } = generatedLease;
+  return {
+    ...frontendLease,
+    selectableModels: (selectableModels ?? []).map(toSelectableModel),
+  };
+}
+
+function toSelectableModel(model: SelectableModel) {
+  return {
+    modelId: model.modelId,
+    displayName: model.displayName,
+    provider: model.provider,
+  } satisfies Record<keyof SelectableModel, unknown>;
 }
 
 function mapSharedLease(lease: SharedLease) {
-  return {
-    ...mapLease(lease),
+  const sharedFields = {
     accessType: lease.accessType,
     sourceGroupName: lease.sourceGroupName,
-  } satisfies Record<keyof SharedLease, unknown>;
+  } satisfies Record<Exclude<keyof SharedLease, keyof LeaseWithId>, unknown>;
+
+  return { ...mapLease(lease), ...sharedFields };
 }
 
 function mapAssignment(assignment: AssignmentView) {
@@ -184,6 +260,7 @@ function mapAssignment(assignment: AssignmentView) {
     isOwner: assignment.isOwner,
     isDesired: assignment.isDesired,
     syncStatus: assignment.syncStatus,
+    permissionSet: assignment.permissionSet,
   } satisfies Record<keyof AssignmentView, unknown>;
 }
 
@@ -198,6 +275,123 @@ function mapUpdateAssignments(result: UpdateLeaseAssignmentsResult) {
   return {
     desiredCount: result.desiredCount,
   } satisfies Record<keyof UpdateLeaseAssignmentsResult, unknown>;
+}
+
+// The cost summary and history pages are mapped onto the shared contract the
+// panels read. Each mapper lists every member of both the generated shape and
+// the contract, so a member added to only one of them fails to compile here.
+// The generated shapes type even a required member `| undefined`; the server
+// always sends one, so it is asserted present, as the contract types it. An
+// optional member passes through as it came: absent where the server sent no
+// value or a null, which restJson1 drops. As the assertion would hide a member
+// that turns optional on one side only, the two must also mark the same members
+// optional, or the mapper fails to satisfy `never`.
+type OptionalMembers<T> = {
+  [K in keyof T]-?: object extends Pick<T, K> ? K : never;
+}[keyof T];
+type EveryMember<Generated, Shared> = [OptionalMembers<Generated>] extends [
+  OptionalMembers<Shared>,
+]
+  ? [OptionalMembers<Shared>] extends [OptionalMembers<Generated>]
+    ? Record<keyof Generated | keyof Shared, unknown>
+    : never
+  : never;
+
+function mapCurrentServiceEntry(
+  entry: SmithyCurrentServiceEntry,
+): CurrentServiceEntry {
+  return {
+    service: entry.service!,
+    amount: entry.amount!,
+    shareOfBilledCost: entry.shareOfBilledCost!,
+    changePercent: entry.changePercent,
+  } satisfies EveryMember<SmithyCurrentServiceEntry, CurrentServiceEntry>;
+}
+
+function mapCostHistoryCurrent(
+  current: SmithyCostHistoryCurrent,
+): CostHistoryCurrent {
+  return {
+    billedCostAccrued: current.billedCostAccrued!,
+    predictedCost: current.predictedCost!,
+    hourlyRate: current.hourlyRate,
+    dailyRate: current.dailyRate,
+    hourlyRateWindowHours: current.hourlyRateWindowHours,
+    dailyRateWindowHours: current.dailyRateWindowHours,
+    rateSource: current.rateSource,
+    hoursToBudgetExhaustion: current.hoursToBudgetExhaustion,
+    latestPeriodStart: current.latestPeriodStart!,
+    lastReportedAt: current.lastReportedAt!,
+    lastCheckedAt: current.lastCheckedAt!,
+    // Empty where absent, as the services table already reads it.
+    services: (current.services ?? []).map(mapCurrentServiceEntry),
+  } satisfies EveryMember<SmithyCostHistoryCurrent, CostHistoryCurrent>;
+}
+
+function mapCostHistoryResultRow(
+  row: SmithyCostHistoryResultRow,
+): CostHistoryResultRow {
+  return {
+    timestamp: row.timestamp!,
+    billedCostAccrued: row.billedCostAccrued!,
+    predictedCostAtRefresh: row.predictedCostAtRefresh,
+    serviceBreakdown: row.serviceBreakdown,
+  } satisfies EveryMember<SmithyCostHistoryResultRow, CostHistoryResultRow>;
+}
+
+function mapTokenSeriesRow(row: SmithyTokenSeriesRow): TokenSeriesRow {
+  return {
+    timestamp: row.timestamp!,
+    region: row.region!,
+    modelId: row.modelId!,
+    input: row.input!,
+    output: row.output!,
+    cacheRead: row.cacheRead!,
+    cacheWrite: row.cacheWrite!,
+    monitoredBedrockTokenCost: row.monitoredBedrockTokenCost,
+  } satisfies EveryMember<SmithyTokenSeriesRow, TokenSeriesRow>;
+}
+
+function mapBreachInsight(insight: SmithyBreachInsight): BreachInsight {
+  return {
+    kind: insight.kind!,
+    service: insight.service!,
+    amount: insight.amount!,
+    shareOfComparedSpend: insight.shareOfComparedSpend,
+    changePercent: insight.changePercent,
+  } satisfies EveryMember<SmithyBreachInsight, BreachInsight>;
+}
+
+function mapBreachEntry(entry: SmithyBreachEntry): BreachEntry {
+  return {
+    timestamp: entry.timestamp!,
+    triggeredBy: entry.triggeredBy!,
+    action: entry.action!,
+    thresholdDollars: entry.thresholdDollars,
+    thresholdRate: entry.thresholdRate,
+    thresholdRateBasis: entry.thresholdRateBasis,
+    thresholdHoursRemaining: entry.thresholdHoursRemaining,
+    billedCostAtFire: entry.billedCostAtFire!,
+    predictedCostAtFire: entry.predictedCostAtFire,
+    rateAtFire: entry.rateAtFire,
+    rateSourceAtFire: entry.rateSourceAtFire,
+    evaluatedBy: entry.evaluatedBy!,
+    evaluatedSpendAtFire: entry.evaluatedSpendAtFire,
+    monitoredBedrockTokenCostAtFire: entry.monitoredBedrockTokenCostAtFire,
+    insight:
+      entry.insight === undefined ? undefined : mapBreachInsight(entry.insight),
+  } satisfies EveryMember<SmithyBreachEntry, BreachEntry>;
+}
+
+// The input the cost, Bedrock token and breach history commands all take.
+function toHistoryPageInput(leaseId: string, options: CostHistoryPageOptions) {
+  return {
+    leaseId,
+    maxResults: options.maxResults,
+    pageIdentifier: options.pageIdentifier,
+    afterTimestamp: options.afterTimestamp,
+    beforeTimestamp: options.beforeTimestamp,
+  };
 }
 
 export class SmithyLeaseClient implements SmithyLeaseApi {
@@ -265,7 +459,9 @@ export class SmithyLeaseClient implements SmithyLeaseApi {
   async updateLease(request: LeasePatchRequest): Promise<void> {
     const { leaseId, ...rest } = request;
     // The edit forms send an explicit `null` to CLEAR
-    // maxSpend/expirationDate/costReportGroup (vs. an absent member = leave
+    // maxSpend/expirationDate/costReportGroup/rateLimits/
+    // allowedModelIds/defaultModelId
+    // (vs. an absent member = leave
     // unchanged); the server's Zod re-parse reads a body `null` as clear. The
     // generated `restJson1` serializer OMITS null members, so it cannot carry the
     // clear signal on its own. Rather than delegate to `ApiProxy` (retired once
@@ -293,6 +489,16 @@ export class SmithyLeaseClient implements SmithyLeaseApi {
       durationThresholds: rest.durationThresholds,
       costReportGroup: rest.costReportGroup ?? undefined,
       allowOwnerToShareLease: rest.allowOwnerToShareLease,
+      rateLimits: rest.rateLimits ?? undefined,
+      predictiveBudgetEnabled: rest.predictiveBudgetEnabled,
+      bedrockTokenMonitoringEnabled: rest.bedrockTokenMonitoringEnabled,
+      sandboxSpacesEnabled: rest.sandboxSpacesEnabled,
+      allowedModelIds: rest.allowedModelIds ?? undefined,
+      defaultModelId: rest.defaultModelId ?? undefined,
+      defaultPermissionSetArn: rest.defaultPermissionSet?.permissionSetArn,
+      allowedPermissionSetArns: rest.allowedPermissionSets?.map(
+        ({ permissionSetArn }) => permissionSetArn,
+      ),
     });
 
     if (clearedMembers.length > 0) {
@@ -429,6 +635,97 @@ export class SmithyLeaseClient implements SmithyLeaseApi {
         }),
         nextPageIdentifier: output.data.nextPageIdentifier ?? null,
       };
+    } catch (error) {
+      throw normalizeSmithyError(error);
+    }
+  }
+
+  async getLeaseCostSummary(leaseId: string): Promise<CostSummaryData> {
+    try {
+      const output = await this.client.send(
+        new GetLeaseCostSummaryCommand({ leaseId }),
+      );
+      // `current` is legitimately absent where no reading is available.
+      if (!output.data) {
+        throw new Error("Lease cost summary response did not contain data");
+      }
+      const { current } = output.data;
+      return {
+        current:
+          current === undefined ? undefined : mapCostHistoryCurrent(current),
+      } satisfies EveryMember<SmithyCostSummaryData, CostSummaryData>;
+    } catch (error) {
+      throw normalizeSmithyError(error);
+    }
+  }
+
+  async getLeaseCostHistory(
+    leaseId: string,
+    options: CostHistoryPageOptions,
+  ): Promise<CostHistoryData> {
+    try {
+      const output = await this.client.send(
+        new GetLeaseCostHistoryCommand(toHistoryPageInput(leaseId, options)),
+      );
+      // The generated shape types the required list optional and consumers map
+      // over it unguarded, so a missing one fails here rather than as a
+      // TypeError in a panel.
+      if (!output.data?.result) {
+        throw new Error("Lease cost history response did not contain data");
+      }
+      return {
+        result: output.data.result.map(mapCostHistoryResultRow),
+        nextPageIdentifier: output.data.nextPageIdentifier,
+      } satisfies EveryMember<SmithyCostHistoryData, CostHistoryData>;
+    } catch (error) {
+      throw normalizeSmithyError(error);
+    }
+  }
+
+  async getLeaseBedrockTokenHistory(
+    leaseId: string,
+    options: CostHistoryPageOptions,
+  ): Promise<BedrockTokenHistoryData> {
+    try {
+      const output = await this.client.send(
+        new GetLeaseBedrockTokenHistoryCommand(
+          toHistoryPageInput(leaseId, options),
+        ),
+      );
+      // As for the cost history: a missing series fails here, not in the panel.
+      if (!output.data?.result) {
+        throw new Error(
+          "Lease Bedrock token history response did not contain data",
+        );
+      }
+      return {
+        result: output.data.result.map(mapTokenSeriesRow),
+        nextPageIdentifier: output.data.nextPageIdentifier,
+      } satisfies EveryMember<
+        SmithyBedrockTokenHistoryData,
+        BedrockTokenHistoryData
+      >;
+    } catch (error) {
+      throw normalizeSmithyError(error);
+    }
+  }
+
+  async getLeaseBreachHistory(
+    leaseId: string,
+    options: CostHistoryPageOptions,
+  ): Promise<BreachHistoryData> {
+    try {
+      const output = await this.client.send(
+        new GetLeaseBreachHistoryCommand(toHistoryPageInput(leaseId, options)),
+      );
+      // As for the cost history: a missing list fails here, not in the table.
+      if (!output.data?.result) {
+        throw new Error("Lease breach history response did not contain data");
+      }
+      return {
+        result: output.data.result.map(mapBreachEntry),
+        nextPageIdentifier: output.data.nextPageIdentifier,
+      } satisfies EveryMember<SmithyBreachHistoryData, BreachHistoryData>;
     } catch (error) {
       throw normalizeSmithyError(error);
     }

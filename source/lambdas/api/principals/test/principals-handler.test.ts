@@ -577,9 +577,15 @@ describe("GET /principals/search", () => {
       );
       expect(body.data.principals[0].principalType).toBe("GROUP");
       expect(body.data.totalMatches).toBe(1);
+      expect(mockIdcService.getCachedPrincipalByAttr).toHaveBeenCalledWith(
+        "GROUP",
+        "ISB-Admins",
+        mockPrincipalStore,
+        expect.anything(),
+      );
     });
 
-    it("should call getCachedPrincipalByAttr with principalStore (exact=true)", async () => {
+    it("should delegate exact user lookup to the membership-aware cache (exact=true)", async () => {
       const resolvedUser = {
         principalId: crypto.randomUUID(),
         principalType: "USER" as const,
@@ -635,7 +641,7 @@ describe("GET /principals/search", () => {
       expect(body.status).toBe("error");
     });
 
-    it("should return 404 when principal not found in IDC (exact=true)", async () => {
+    it("should return 404 when the user is missing or not an ISB member (exact=true)", async () => {
       mockIdcService.getCachedPrincipalByAttr.mockResolvedValue(undefined);
 
       const event = createAPIGatewayProxyEvent({
@@ -918,7 +924,7 @@ describe("GET /principals/search", () => {
       expect(mockPrincipalStore.getCacheItems).toHaveBeenCalled();
     });
 
-    it("an exact lookup never scans the cache", async () => {
+    it("delegates exact user lookup without using the fuzzy search path", async () => {
       mockIdcService.getCachedPrincipalByAttr.mockResolvedValue({
         principalId: crypto.randomUUID(),
         principalType: "USER" as const,
@@ -939,7 +945,12 @@ describe("GET /principals/search", () => {
         mockAuthorizedContext(testEnv, mockedGlobalConfig),
       );
       expect(mockPrincipalStore.getCacheItems).not.toHaveBeenCalled();
-      expect(mockIdcService.getCachedPrincipalByAttr).toHaveBeenCalled();
+      expect(mockIdcService.getCachedPrincipalByAttr).toHaveBeenCalledWith(
+        "USER",
+        "alice@example.com",
+        mockPrincipalStore,
+        expect.anything(),
+      );
     });
   });
 });

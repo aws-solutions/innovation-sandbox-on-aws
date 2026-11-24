@@ -22,7 +22,7 @@ interface AccountStatusIndicatorProps {
 export const AccountStatusIndicator = ({
   status,
   activeCleanup,
-  lastCleanupStartTime,
+  lastCleanupStartTime, // NOSONAR typescript:S1874: Support stored accounts that predate activeCleanup.
 }: AccountStatusIndicatorProps) => {
   switch (status) {
     case "Available":

@@ -2,12 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import classNames from "classnames";
+import type { ReactNode } from "react";
 import { Flip, toast } from "react-toastify/unstyled";
 
 import styles from "./styles.module.scss";
 
 interface ToastMessageProps {
-  description: string;
+  description: ReactNode;
   title?: string;
 }
 
@@ -32,7 +33,7 @@ const commonSettings = {
   transition: Flip,
 };
 
-export const showErrorToast = (description: string, title?: string) => {
+export const showErrorToast = (description: ReactNode, title?: string) => {
   toast.error(<ToastMessage description={description} title={title} />, {
     ...commonSettings,
     autoClose: false,
@@ -41,7 +42,7 @@ export const showErrorToast = (description: string, title?: string) => {
   });
 };
 
-export const showSuccessToast = (description: string, title?: string) => {
+export const showSuccessToast = (description: ReactNode, title?: string) => {
   toast.success(<ToastMessage description={description} title={title} />, {
     ...commonSettings,
     className: classNames(styles.toast, styles.success, styles.top),

@@ -122,7 +122,7 @@ export function useBulkLeaseActions(): {
             });
             showSuccessToast(`Lease(s) ${pastTense[action]} successfully.`);
           }}
-          onError={(_error: any) => {
+          onError={() => {
             // Partial failure: some mutations may have succeeded, so invalidate
             // the cache even though the batch as a whole failed.
             queryClient.invalidateQueries({

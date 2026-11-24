@@ -4,7 +4,6 @@ import {
   CloudWatchClient,
   GetMetricDataCommand,
 } from "@aws-sdk/client-cloudwatch";
-import { DateTime } from "luxon";
 
 import {
   WAF_HUMAN_CALLS_METRIC_NAME,
@@ -13,7 +12,11 @@ import {
   WAFV2_METRIC_NAMESPACE,
 } from "@amzn/innovation-sandbox-commons/observability/waf-auth-metrics.js";
 
-const ONE_DAY_SECONDS = 86_400;
+import {
+  ONE_DAY_SECONDS,
+  previousUtcDayWindow,
+  sumMetricDataValues,
+} from "./daily-metric-window.js";
 
 export interface ApiCallsByAuthType {
   m2m: number;
@@ -30,8 +33,7 @@ export async function collectApiCallsByAuthType(
   webAclName: string,
   region: string,
 ): Promise<ApiCallsByAuthType> {
-  const endTime = DateTime.utc().startOf("day");
-  const startTime = endTime.minus({ days: 1 });
+  const { startTime, endTime } = previousUtcDayWindow();
 
   const dimensions = (ruleMetricName: string) => [
     { Name: "WebACL", Value: webAclName },
@@ -41,8 +43,8 @@ export async function collectApiCallsByAuthType(
 
   const response = await cloudWatch.send(
     new GetMetricDataCommand({
-      StartTime: startTime.toJSDate(),
-      EndTime: endTime.toJSDate(),
+      StartTime: startTime,
+      EndTime: endTime,
       MetricDataQueries: [
         {
           Id: "user",
@@ -72,14 +74,8 @@ export async function collectApiCallsByAuthType(
     }),
   );
 
-  // Stat: "Sum" aggregates within a period; this sums across the returned
-  // datapoints (a midnight-aligned day yields one, but the window could widen)
-  // and normalizes the no-datapoint case (quiet rule) to 0.
-  const sumForId = (id: string) =>
-    (
-      response.MetricDataResults?.find((result) => result.Id === id)?.Values ??
-      []
-    ).reduce((total, value) => total + value, 0);
-
-  return { m2m: sumForId("m2m"), user: sumForId("user") };
+  return {
+    m2m: sumMetricDataValues(response, "m2m"),
+    user: sumMetricDataValues(response, "user"),
+  };
 }

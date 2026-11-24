@@ -1,11 +1,12 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import InputField from "@amzn/innovation-sandbox-frontend/components/FormFields/InputField";
 import { AttributeEditor, FormField } from "@cloudscape-design/components";
 import type { FormFieldProps } from "@cloudscape-design/components/form-field";
 import type { ArrayPath, Control, FieldValues, Path } from "react-hook-form";
 import { useFieldArray, useFormContext } from "react-hook-form";
+
+import InputField from "@amzn/innovation-sandbox-frontend/components/FormFields/InputField";
 
 export interface TagItem {
   key: string;
@@ -44,7 +45,7 @@ export default function TagEditorField<
   maxTags,
   keyPlaceholder,
   valuePlaceholder,
-}: TagEditorFieldProps<TFieldValues, TName>) {
+}: Readonly<TagEditorFieldProps<TFieldValues, TName>>) {
   const { fields, append, remove } = useFieldArray({
     control: controllerProps.control,
     name: controllerProps.name,

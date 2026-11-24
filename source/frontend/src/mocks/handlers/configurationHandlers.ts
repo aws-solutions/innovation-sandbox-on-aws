@@ -4,11 +4,13 @@
 import { http, HttpResponse } from "msw";
 
 import { AdminConfigurationView } from "@amzn/innovation-sandbox-frontend/domains/settings/model";
-import { ConfigSchemas } from "@amzn/innovation-sandbox-frontend/domains/settings/validation";
 import { getConfig } from "@amzn/innovation-sandbox-frontend/helpers/config";
 import { createConfiguration } from "@amzn/innovation-sandbox-frontend/mocks/factories/configurationFactory";
 import { mockConfigurationApi } from "@amzn/innovation-sandbox-frontend/mocks/mockApi";
-import { ConfigSection } from "@amzn/innovation-sandbox-shared/types/configuration.js";
+import {
+  ConfigSchemas,
+  type ConfigSection,
+} from "@amzn/innovation-sandbox-shared/types/configuration.js";
 
 // --- Default `GET /configurations` handler ---------------------------------
 // `GET /configurations` serves the section-based view consumed by
@@ -70,6 +72,10 @@ export function createAdminConfig(options?: {
     ...sections,
     isbManagedRegions: ["us-east-1", "us-west-2"],
     awsAccessPortalUrl: "https://d-0000000000.awsapps.com/start",
+    bedrockInferenceProfilePatterns: [
+      "arn:aws:bedrock:*:*:inference-profile/global.*",
+      "arn:aws:bedrock:*:*:inference-profile/us.*",
+    ],
   } as AdminConfigurationView;
 }
 
@@ -87,7 +93,7 @@ export const adminConfigGetHandler = (
 
 /** True only for the six real config section keys (not deploy-time fields). */
 const isConfigSection = (value: string): value is ConfigSection =>
-  Object.prototype.hasOwnProperty.call(ConfigSchemas, value);
+  Object.hasOwn(ConfigSchemas, value);
 
 /** `GET /configurations/{section}` returning a single section. */
 export const configurationSectionGetHandler = (

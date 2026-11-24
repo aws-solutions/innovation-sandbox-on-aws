@@ -6,14 +6,13 @@ import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { useAppLayoutContext } from "@amzn/innovation-sandbox-frontend/components/AppLayout/AppLayoutContext";
+import { ContentLayout } from "@amzn/innovation-sandbox-frontend/components/ContentLayout";
 import { InfoLink } from "@amzn/innovation-sandbox-frontend/components/InfoLink";
 import { Markdown } from "@amzn/innovation-sandbox-frontend/components/Markdown";
+import { BlueprintTable } from "@amzn/innovation-sandbox-frontend/domains/blueprints/components/BlueprintTable";
 import { useBreadcrumb } from "@amzn/innovation-sandbox-frontend/hooks/useBreadcrumb";
 import { ModalProvider } from "@amzn/innovation-sandbox-frontend/hooks/useModal";
 import { useUser } from "@amzn/innovation-sandbox-frontend/hooks/useUser";
-
-import { ContentLayout } from "@amzn/innovation-sandbox-frontend/components/ContentLayout";
-import { BlueprintTable } from "@amzn/innovation-sandbox-frontend/domains/blueprints/components/BlueprintTable";
 
 export const ListBlueprints = () => {
   const navigate = useNavigate();

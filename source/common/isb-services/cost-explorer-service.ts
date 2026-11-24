@@ -8,6 +8,8 @@ import {
   GetCostAndUsageCommandInput,
   GetCostAndUsageCommandOutput,
   Granularity,
+  Group,
+  GroupDefinition,
   ListCostAllocationTagsCommand,
   ResultByTime,
   UpdateCostAllocationTagsStatusCommand,
@@ -15,6 +17,7 @@ import {
 import { DateTime, DateTimeUnit } from "luxon";
 import pThrottle from "p-throttle";
 
+import { LogPatterns } from "@amzn/innovation-sandbox-commons/observability/logging.js";
 import {
   parseTagGroupValue,
   toCeTagKey,
@@ -53,6 +56,130 @@ export class AccountsCostReport {
     return Object.entries(this.costMap).reduce((acc, [_, value]) => {
       return acc + value;
     }, 0);
+  }
+}
+
+/**
+ * Cost Explorer reports Bedrock under more than one service name: its own
+ * lines, and one Marketplace line per third-party model. The per-service
+ * breakdown sums them under {@link BEDROCK_SERVICE_KEY} so a ranking cannot
+ * name a smaller service as the largest.
+ */
+export const BEDROCK_SERVICE_KEY = "Amazon Bedrock";
+export const BEDROCK_SERVICE_LINES: ReadonlySet<string> = new Set([
+  BEDROCK_SERVICE_KEY,
+  "Amazon Bedrock Service",
+  "Amazon Bedrock AgentCore",
+]);
+export const BEDROCK_MARKETPLACE_SERVICE_SUFFIX = " (Amazon Bedrock Edition)";
+
+export function isBedrockServiceLine(service: string): boolean {
+  return (
+    BEDROCK_SERVICE_LINES.has(service) ||
+    service.endsWith(BEDROCK_MARKETPLACE_SERVICE_SUFFIX)
+  );
+}
+
+/** The lease identity the tag-grouped daily query needs. */
+export interface LeaseCostQueryTarget {
+  uuid: string;
+  awsAccountId: string;
+}
+
+/** One lease's spend for one Cost Explorer day bucket. */
+export interface LeaseDailyCostBucket {
+  amount: number;
+  /** Per-service amounts for the day; present only when the breakdown was requested. */
+  serviceAmounts?: Record<string, number>;
+}
+
+/**
+ * Per-lease, per-day spend from the tag-grouped query, keyed by lease UUID and
+ * then by the bucket's `yyyy-MM-dd` start.
+ */
+export class LeaseDailyCostReport {
+  readonly buckets: Record<string, Record<string, LeaseDailyCostBucket>> = {};
+  /** `TimePeriod.Start` of the newest bucket returned for each lease. */
+  readonly latestPeriodStart: Record<string, string> = {};
+  private readonly includeServiceBreakdown: boolean;
+
+  constructor(includeServiceBreakdown: boolean) {
+    this.includeServiceBreakdown = includeServiceBreakdown;
+  }
+
+  public addCost(
+    leaseId: string,
+    day: string,
+    amount: number,
+    service?: string,
+  ) {
+    const leaseBuckets = (this.buckets[leaseId] ??= {});
+    const bucket = (leaseBuckets[day] ??= this.includeServiceBreakdown
+      ? { amount: 0, serviceAmounts: {} }
+      : { amount: 0 });
+    bucket.amount += amount;
+    if (service !== undefined && bucket.serviceAmounts) {
+      bucket.serviceAmounts[service] =
+        (bucket.serviceAmounts[service] ?? 0) + amount;
+    }
+    // Day strings are fixed-width, so string order is date order.
+    const latest = this.latestPeriodStart[leaseId];
+    if (latest === undefined || day > latest) {
+      this.latestPeriodStart[leaseId] = day;
+    }
+  }
+}
+
+/**
+ * Token-priced Bedrock products carry a token unit; the non-token units are a
+ * long tail (`hour`, `image`, `Model/month`, `TextUnit`, `Requests`, ...), so
+ * the unit classifies a usage type and no name list is kept.
+ */
+function isTokenUnit(unit: string): boolean {
+  return /token/i.test(unit);
+}
+
+/** A Cost Explorer amount, which must be a number: a non-finite value poisons every total it enters. */
+function parseAmount(amount: string | undefined, line: string): number {
+  const parsed = Number.parseFloat(amount ?? "");
+  if (!Number.isFinite(parsed)) {
+    throw new TypeError(
+      `Cost Explorer returned a non-numeric amount for ${line}: ${amount}`,
+    );
+  }
+  return parsed;
+}
+
+/**
+ * Token-priced Bedrock spend from the usage-type query, per key and day over
+ * the whole window: the slice evaluated spend subtracts. The key is the
+ * lease UUID where the query grouped by the lease tag and the account ID where
+ * it grouped by account. A Bedrock line whose unit is missing cannot be
+ * classified, so it is left in the reported total and listed rather than
+ * dropped in silence.
+ */
+export class BedrockTokenCostReport {
+  private readonly byKey: Record<string, Record<string, number>> = {};
+  /** The usage types that could not be classified, for one warning per query. */
+  readonly unclassifiedUsageTypes = new Set<string>();
+
+  public addCost(key: string, day: string, cost: number) {
+    const byDay = (this.byKey[key] ??= {});
+    byDay[day] = (byDay[day] ?? 0) + cost;
+  }
+
+  /** One lease's or account's token-priced cost per day; empty with no token spend, which the writer stores as 0.00. */
+  public costByDay(key: string): Record<string, number> {
+    return { ...this.byKey[key] };
+  }
+}
+
+function warnUnclassifiedUsageTypes(report: BedrockTokenCostReport): void {
+  if (report.unclassifiedUsageTypes.size > 0) {
+    logger.warn(
+      `${LogPatterns.BedrockUsageTypeUnclassified.pattern}: Bedrock usage types with no unit were left in the reported total and out of the Bedrock token cost`,
+      { usageTypes: [...report.unclassifiedUsageTypes] },
+    );
   }
 }
 
@@ -312,6 +439,346 @@ export class CostExplorerService {
   }
 
   /**
+   * Per-lease, per-day spend for the monitored leases, grouped by the
+   * namespaced LeaseId tag and, when requested, by service. Filtered to the
+   * leases' own accounts so the query is not org-wide, with the account list
+   * chunked to Cost Explorer's filter limit. Leases on the legacy
+   * {@link getCostForLeases} path never reach this query and so get no
+   * per-service figures; that is a choice, not a Cost Explorer limit.
+   */
+  async getDailyCostForLeasesByTag(
+    leases: LeaseCostQueryTarget[],
+    start: DateTime,
+    end: DateTime,
+    options: { includeServiceBreakdown: boolean },
+  ): Promise<LeaseDailyCostReport> {
+    const report = new LeaseDailyCostReport(options.includeServiceBreakdown);
+    if (leases.length === 0) {
+      return report;
+    }
+
+    const accountIds = [...new Set(leases.map((lease) => lease.awsAccountId))];
+    for (const accountBatch of batch(accountIds)) {
+      const batchAccounts = new Set(accountBatch);
+      const leaseIds = new Set(
+        leases
+          .filter((lease) => batchAccounts.has(lease.awsAccountId))
+          .map((lease) => lease.uuid),
+      );
+      const input = this.getDailyCostByTagCommandInput(
+        accountBatch,
+        start,
+        end,
+        options.includeServiceBreakdown,
+      );
+      const results = await this.collectResultsByTime(input, (result) =>
+        this.accumulateDailyCostByTag(report, leaseIds, result),
+      );
+      if (results === 0) {
+        logger.warn("No cost data available", {
+          start: input.TimePeriod?.Start,
+          end: input.TimePeriod?.End,
+          leaseCount: leaseIds.size,
+        });
+      }
+    }
+    return report;
+  }
+
+  private getDailyCostByTagCommandInput(
+    accounts: string[],
+    start: DateTime,
+    end: DateTime,
+    includeServiceBreakdown: boolean,
+  ): GetCostAndUsageCommandInput {
+    const groupBy: GroupDefinition[] = [
+      {
+        Type: "TAG",
+        Key: toCeTagKey(toIsbTagKey(this.namespace, "LeaseId")),
+      },
+    ];
+    if (includeServiceBreakdown) {
+      groupBy.push({ Type: "DIMENSION", Key: "SERVICE" });
+    }
+    return {
+      TimePeriod: {
+        Start: CostExplorerService.toCostExplorerFormat(
+          start,
+          Granularity.DAILY,
+        ),
+        End: CostExplorerService.toCostExplorerFormat(
+          CostExplorerService.toStartOfNextPeriod(end, Granularity.DAILY),
+          Granularity.DAILY,
+        ),
+      },
+      Granularity: Granularity.DAILY,
+      Metrics: ["UnblendedCost"],
+      Filter: {
+        And: [
+          {
+            Dimensions: {
+              Key: "LINKED_ACCOUNT",
+              Values: accounts,
+            },
+          },
+          {
+            Not: {
+              Dimensions: {
+                Key: "RECORD_TYPE",
+                Values: ["Credit", "Refund"],
+                MatchOptions: ["EQUALS"],
+              },
+            },
+          },
+        ],
+      },
+      GroupBy: groupBy,
+    };
+  }
+
+  /**
+   * Feeds every page's results to `accumulate`; returns how many there were.
+   * `send` issues each page request, so a caller can rate-limit every page.
+   */
+  private async collectResultsByTime(
+    baseParams: GetCostAndUsageCommandInput,
+    accumulate: (result: ResultByTime) => void,
+    send: (
+      command: GetCostAndUsageCommand,
+    ) => Promise<GetCostAndUsageCommandOutput> = (command) =>
+      this.costExplorerClient.send(command),
+  ): Promise<number> {
+    let results = 0;
+    let nextPageToken: string | undefined = undefined;
+    do {
+      const response: GetCostAndUsageCommandOutput = await send(
+        new GetCostAndUsageCommand({
+          ...baseParams,
+          NextPageToken: nextPageToken,
+        }),
+      );
+
+      for (const result of response.ResultsByTime ?? []) {
+        accumulate(result);
+        results++;
+      }
+
+      nextPageToken = response.NextPageToken;
+    } while (nextPageToken);
+    return results;
+  }
+
+  private accumulateDailyCostByTag(
+    report: LeaseDailyCostReport,
+    leaseIds: Set<string>,
+    result: ResultByTime,
+  ): void {
+    const day = result.TimePeriod?.Start;
+    if (!day) {
+      return;
+    }
+    for (const group of result.Groups ?? []) {
+      const leaseId = parseTagGroupValue(group.Keys?.[0]);
+      if (!leaseId || !leaseIds.has(leaseId)) {
+        continue;
+      }
+      const amount = Number.parseFloat(
+        group.Metrics?.UnblendedCost?.Amount ?? "0",
+      );
+      const service = group.Keys?.[1];
+      report.addCost(
+        leaseId,
+        day,
+        amount,
+        service !== undefined && isBedrockServiceLine(service)
+          ? BEDROCK_SERVICE_KEY
+          : service,
+      );
+    }
+  }
+
+  /**
+   * Token-priced Bedrock spend per lease and per usage type, by day. Grouping
+   * by the lease tag and `USAGE_TYPE` spends the two-`GroupBy` budget, so this
+   * is a separate call from the main query, filtered to the enumerated Bedrock
+   * service lines and the leases' own accounts. `UsageQuantity` is requested
+   * beside the cost because its unit classifies a usage type as token-priced.
+   *
+   * The Marketplace lines (`... (Amazon Bedrock Edition)`) cannot be named in
+   * an equality filter and are not queried: a third-party model's token spend
+   * stays inside the reported total and is not subtracted.
+   */
+  async getBedrockTokenCostByLease(
+    leases: LeaseCostQueryTarget[],
+    start: DateTime,
+    end: DateTime,
+  ): Promise<BedrockTokenCostReport> {
+    const report = new BedrockTokenCostReport();
+    if (leases.length === 0) {
+      return report;
+    }
+
+    const accountIds = [...new Set(leases.map((lease) => lease.awsAccountId))];
+    for (const accountBatch of batch(accountIds)) {
+      const batchAccounts = new Set(accountBatch);
+      const leaseIds = new Set(
+        leases
+          .filter((lease) => batchAccounts.has(lease.awsAccountId))
+          .map((lease) => lease.uuid),
+      );
+      await this.collectResultsByTime(
+        this.getBedrockTokenCostCommandInput(accountBatch, start, end, {
+          Type: "TAG",
+          Key: toCeTagKey(toIsbTagKey(this.namespace, "LeaseId")),
+        }),
+        (result) =>
+          this.accumulateBedrockTokenCost(
+            report,
+            leaseIds,
+            result,
+            parseTagGroupValue,
+          ),
+      );
+    }
+    warnUnclassifiedUsageTypes(report);
+    return report;
+  }
+
+  /**
+   * Token-priced Bedrock spend per account and per usage type, by day: the
+   * query {@link getBedrockTokenCostByLease} sends, grouped by account instead
+   * of by the lease tag. It serves the leases Cost Explorer has not yet
+   * attributed to their tag, whose total the legacy account query re-sums, so
+   * an account's slice matches the total it is subtracted from. The report
+   * carries every day in the window; the caller leaves out the days before a
+   * lease started.
+   */
+  async getBedrockTokenCostByAccount(
+    accountIds: string[],
+    start: DateTime,
+    end: DateTime,
+  ): Promise<BedrockTokenCostReport> {
+    const report = new BedrockTokenCostReport();
+    for (const accountBatch of batch([...new Set(accountIds)])) {
+      const accounts = new Set(accountBatch);
+      await this.collectResultsByTime(
+        this.getBedrockTokenCostCommandInput(accountBatch, start, end, {
+          Type: "DIMENSION",
+          Key: "LINKED_ACCOUNT",
+        }),
+        (result) =>
+          this.accumulateBedrockTokenCost(
+            report,
+            accounts,
+            result,
+            (groupKey) => groupKey,
+          ),
+      );
+    }
+    warnUnclassifiedUsageTypes(report);
+    return report;
+  }
+
+  private getBedrockTokenCostCommandInput(
+    accounts: string[],
+    start: DateTime,
+    end: DateTime,
+    groupBy: GroupDefinition,
+  ): GetCostAndUsageCommandInput {
+    return {
+      TimePeriod: {
+        Start: CostExplorerService.toCostExplorerFormat(
+          start,
+          Granularity.DAILY,
+        ),
+        End: CostExplorerService.toCostExplorerFormat(
+          CostExplorerService.toStartOfNextPeriod(end, Granularity.DAILY),
+          Granularity.DAILY,
+        ),
+      },
+      Granularity: Granularity.DAILY,
+      Metrics: ["UnblendedCost", "UsageQuantity"],
+      Filter: {
+        And: [
+          {
+            Dimensions: {
+              Key: "LINKED_ACCOUNT",
+              Values: accounts,
+            },
+          },
+          {
+            Dimensions: {
+              Key: "SERVICE",
+              Values: [...BEDROCK_SERVICE_LINES],
+            },
+          },
+          {
+            Not: {
+              Dimensions: {
+                Key: "RECORD_TYPE",
+                Values: ["Credit", "Refund"],
+                MatchOptions: ["EQUALS"],
+              },
+            },
+          },
+        ],
+      },
+      GroupBy: [groupBy, { Type: "DIMENSION", Key: "USAGE_TYPE" }],
+    };
+  }
+
+  /** `keyOf` reads the lease or account a group belongs to from its first key. */
+  private accumulateBedrockTokenCost(
+    report: BedrockTokenCostReport,
+    keys: Set<string>,
+    result: ResultByTime,
+    keyOf: (groupKey: string | undefined) => string | undefined,
+  ): void {
+    const day = result.TimePeriod?.Start;
+    if (!day) {
+      return;
+    }
+    for (const group of result.Groups ?? []) {
+      this.addBedrockTokenLine(report, keys, day, group, keyOf);
+    }
+  }
+
+  private addBedrockTokenLine(
+    report: BedrockTokenCostReport,
+    keys: Set<string>,
+    day: string,
+    group: Group,
+    keyOf: (groupKey: string | undefined) => string | undefined,
+  ): void {
+    const key = keyOf(group.Keys?.[0]);
+    const usageType = group.Keys?.[1];
+    const unit = group.Metrics?.UsageQuantity?.Unit;
+    if (!key || !keys.has(key) || !usageType) {
+      return;
+    }
+    // Classified on the unit, never on the name: a non-token Bedrock charge
+    // left in would be subtracted from the reported total as if it were
+    // token spend the live count already covers. A line whose unit is
+    // missing cannot be classified at all, so it is named rather than
+    // dropped.
+    if (unit === undefined || unit === "N/A") {
+      report.unclassifiedUsageTypes.add(usageType);
+      return;
+    }
+    if (!isTokenUnit(unit)) {
+      return;
+    }
+    report.addCost(
+      key,
+      day,
+      parseAmount(
+        group.Metrics?.UnblendedCost?.Amount,
+        `${usageType} on ${day}`,
+      ),
+    );
+  }
+
+  /**
    * Legacy pre-account-tagging cost attribution. Used by `lease-monitoring`
    * as the fallback path for leases that did not receive tags — leases
    * created before this feature shipped, or leases whose tag-write failed at
@@ -358,9 +825,8 @@ export class CostExplorerService {
   }
 
   /**
-   * @deprecated Internal helper of the legacy {@link getCostForLeases} path.
-   * Removed when {@link getCostForLeases} is removed — see its JSDoc for
-   * removal prerequisites.
+   * Internal helper for the legacy account-level cost fallback.
+   * Retain until {@link getCostForLeases} is retired.
    */
   private async _getCostForLeasesHourly(
     accountsWithStartDates: Record<string, DateTime>,
@@ -394,7 +860,8 @@ export class CostExplorerService {
   }
 
   /**
-   * @deprecated
+   * Internal helper for the legacy account-level cost fallback.
+   * Retain until {@link getCostForLeases} is retired.
    */
   private async _getCostForLeasesDaily(
     accountsWithStartDates: Record<string, DateTime>,
@@ -410,9 +877,10 @@ export class CostExplorerService {
   }
 
   /**
-   * @deprecated
+   * Internal helper for the legacy account-level cost fallback.
+   * Retain until {@link getCostForLeases} is retired.
    */
-  async getCostByGranularityForLeases(
+  private async getCostByGranularityForLeases(
     start: DateTime,
     end: DateTime,
     accountsWithStartDates: Record<string, DateTime>,
@@ -517,7 +985,8 @@ export class CostExplorerService {
   }
 
   /**
-   * @deprecated
+   * Internal helper for the legacy account-level cost fallback.
+   * Retain until {@link getCostForLeases} is retired.
    */
   private accumulateCostForResult(
     result: ResultByTime,
@@ -549,6 +1018,7 @@ export class CostExplorerService {
     }
   }
 
+  /** `end` is inclusive: costs for the day containing it are included. */
   async getCostForRange(
     start: DateTime,
     end: DateTime,
@@ -564,39 +1034,26 @@ export class CostExplorerService {
       const currentAccounts = Object.keys(currentAccountsWithDates);
       const params = this.getGetCostAndUsageCommandInput(
         start,
-        end,
+        CostExplorerService.toStartOfNextPeriod(end, Granularity.DAILY),
         currentAccounts,
         Granularity.DAILY,
         tag,
       );
-      const command = new GetCostAndUsageCommand(params);
-      const response = await this.costExplorerClient.send(command);
+      const resultCount = await this.collectResultsByTime(params, (result) =>
+        this.accumulateCostForRange(
+          result,
+          currentAccountsWithDates,
+          accountsCost,
+        ),
+      );
 
-      if (!response.ResultsByTime || response.ResultsByTime.length === 0) {
+      if (resultCount === 0) {
         logger.warn("No cost data available", {
           start,
           end,
           currentAccounts,
         });
-      } else {
-        accountsCost.merge(
-          this.calculateTotalCostForRange(
-            response.ResultsByTime,
-            currentAccountsWithDates,
-          ),
-        );
       }
-    }
-    return accountsCost;
-  }
-
-  private calculateTotalCostForRange(
-    resultByTime: ResultByTime[],
-    accountsWithStartDates: Record<string, DateTime>,
-  ): AccountsCostReport {
-    const accountsCost = new AccountsCostReport();
-    for (const result of resultByTime) {
-      this.accumulateCostForRange(result, accountsWithStartDates, accountsCost);
     }
     return accountsCost;
   }
@@ -628,65 +1085,68 @@ export class CostExplorerService {
     }
   }
 
+  /** `end` is inclusive: costs for the day containing it are included. */
   async getDailyCostsByAccount(
     accountIds: string[],
     start: DateTime,
     end: DateTime,
-    maxConcurrency: number = 5,
+    maxRequestsPerSecond: number = 5,
   ): Promise<Record<string, Record<string, number>>> {
     const dailyCostsByAccount: Record<string, Record<string, number>> = {};
     const batches = Array.from(batch(accountIds));
 
-    const throttle = pThrottle({
-      limit: maxConcurrency,
+    // One limiter for every page request across all batches.
+    const throttledSend = pThrottle({
+      limit: maxRequestsPerSecond,
       interval: 1000,
-    });
+    })((command: GetCostAndUsageCommand) =>
+      this.costExplorerClient.send(command),
+    );
 
-    const throttledApiCall = throttle(async (accountBatch: string[]) => {
+    const fetchBatch = async (accountBatch: string[]) => {
       const params = this.getGetCostAndUsageCommandInput(
         start,
-        end,
+        CostExplorerService.toStartOfNextPeriod(end, Granularity.DAILY),
         accountBatch,
         Granularity.DAILY,
       );
-      const command = new GetCostAndUsageCommand(params);
-      const response = await this.costExplorerClient.send(command);
-      if (!response.ResultsByTime || response.ResultsByTime.length === 0) {
+      const batchCosts: Record<string, Record<string, number>> = {};
+      const resultCount = await this.collectResultsByTime(
+        params,
+        (result) => this.processTimeResult(result, batchCosts),
+        throttledSend,
+      );
+      if (resultCount === 0) {
         logger.warn("No cost data available", {
           start,
           end,
           accountBatch,
         });
-        return {};
-      } else {
-        return this.processCostResponse(response);
       }
-    });
+      return batchCosts;
+    };
 
-    const results = await Promise.allSettled(batches.map(throttledApiCall));
+    const results = await Promise.allSettled(batches.map(fetchBatch));
+    const failures = results.filter(
+      (result): result is PromiseRejectedResult => result.status === "rejected",
+    );
+    if (failures.length > 0) {
+      // A partial result would understate costs, so fail the whole request.
+      throw new AggregateError(
+        failures.map((failure) => failure.reason),
+        `Failed to get daily costs for ${failures.length} of ${batches.length} account batches`,
+      );
+    }
     results.forEach((result) => {
       if (result.status === "fulfilled") {
         const batchResult = result.value;
         Object.keys(batchResult).forEach((accountId) => {
-          if (!dailyCostsByAccount[accountId]) {
-            dailyCostsByAccount[accountId] = {};
-          }
+          dailyCostsByAccount[accountId] ??= {};
           Object.assign(dailyCostsByAccount[accountId], batchResult[accountId]);
         });
       }
     });
 
-    return dailyCostsByAccount;
-  }
-
-  private processCostResponse(
-    response: any,
-  ): Record<string, Record<string, number>> {
-    const dailyCostsByAccount: Record<string, Record<string, number>> = {};
-
-    for (const result of response.ResultsByTime) {
-      this.processTimeResult(result, dailyCostsByAccount);
-    }
     return dailyCostsByAccount;
   }
 
@@ -716,9 +1176,7 @@ export class CostExplorerService {
 
     const cost = Number.parseFloat(group.Metrics?.UnblendedCost?.Amount ?? "0");
 
-    if (!dailyCostsByAccount[accountId]) {
-      dailyCostsByAccount[accountId] = {};
-    }
+    dailyCostsByAccount[accountId] ??= {};
     dailyCostsByAccount[accountId][dateStr] = cost;
   }
 }

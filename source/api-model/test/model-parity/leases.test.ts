@@ -28,8 +28,9 @@ import {
   LeaseLockIntentSchema,
   LeaseLockMetaSchema,
   LeaseResourceLockSchema,
-  MAX_USER_MANAGED_ASSIGNMENTS,
+  MAX_ASSIGNMENTS,
 } from "@amzn/innovation-sandbox-shared/types/lease.js";
+import { PermissionSetReferenceSchema } from "@amzn/innovation-sandbox-shared/types/permission-set.js";
 
 import {
   alwaysPresentOnOutput,
@@ -39,7 +40,9 @@ import {
   modelMember,
   modelMembers,
   modelMemberTrait,
+  modelOperationErrors,
   modelRequired,
+  modelShape,
   zodMembers,
 } from "./parity-helpers.js";
 
@@ -59,11 +62,17 @@ const leaseSuperset: Record<string, z.ZodType> = Object.assign(
   ...variantShapes,
 );
 
+const additiveLeaseResponseMembers = new Set([
+  "sandboxSpacesEnabled",
+  "allowedModelIds",
+]);
+
 // The always-present intersection: members that every variant produces on output.
 // This is the ONLY set the flattened `Lease` marks `@required`.
 const requiredIntersection = variantShapes
   .map(alwaysPresentOnOutput)
-  .reduce((acc, cur) => acc.filter((member) => cur.includes(member)));
+  .reduce((acc, cur) => acc.filter((member) => cur.includes(member)))
+  .filter((member) => !additiveLeaseResponseMembers.has(member));
 
 const lockShape = LeaseResourceLockSchema.shape as Record<string, z.ZodType>;
 const lockMetaShape = LeaseLockMetaSchema.shape as Record<string, z.ZodType>;
@@ -71,17 +80,42 @@ const desiredWithDisplayShape =
   DesiredAssignmentWithDisplaySchema.shape as Record<string, z.ZodType>;
 const desiredShape = DesiredAssignmentSchema.shape as Record<string, z.ZodType>;
 
+const permissionSetReferenceShape =
+  PermissionSetReferenceSchema.shape as Record<string, z.ZodType>;
+
+const rawPermissionProfileMembers = new Set([
+  "defaultPermissionSetArn",
+  "allowedPermissionSetArns",
+]);
+// Lifecycle bookkeeping the account lifecycle manager reads; never on the wire.
+const persistenceOnlyMembers = new Set(["lifecycleDispatch"]);
+const leaseResponsePersistenceShape = Object.fromEntries(
+  Object.entries(leaseSuperset).filter(
+    ([member]) =>
+      !rawPermissionProfileMembers.has(member) &&
+      !persistenceOnlyMembers.has(member),
+  ),
+) as Record<string, z.ZodType>;
+const hydratedLeaseProjectionMembers = [
+  "defaultPermissionSet",
+  "allowedPermissionSets",
+] as const;
+const hydratedLeaseOutputMembers = [
+  ...zodMembers(leaseResponsePersistenceShape),
+  ...hydratedLeaseProjectionMembers,
+].sort();
+
 // The lease `meta` on the wire keeps the timestamps and drops `schemaVersion`.
 const leaseMetaShape = (
   PersistedPendingLeaseSchema.shape.meta as unknown as { unwrap(): z.ZodObject }
 ).unwrap().shape as Record<string, z.ZodType>;
 
 describe("Lease model parity", () => {
-  it("Lease projects the union of every variant's members (flattened superset)", () => {
-    expect(modelMembers("Lease")).toEqual(zodMembers(leaseSuperset));
+  it("Lease projects public persistence-derived members plus hydrated response references", () => {
+    expect(modelMembers("Lease")).toEqual(hydratedLeaseOutputMembers);
   });
 
-  it("Lease requires ONLY the always-present intersection (flattened requiredness)", () => {
+  it("Lease requires the non-additive always-present intersection (flattened requiredness)", () => {
     // Documents accepted deviation #1: status-conditional requiredness is lost;
     // only members present-and-required in ALL four variants stay `@required`.
     expect(modelRequired("Lease")).toEqual([...requiredIntersection].sort());
@@ -100,29 +134,56 @@ describe("Lease model parity", () => {
     // canonical type; the helper skips it, and it is modeled as an open String.
     // The nullable `blueprintId`/`blueprintName` also carry no comparable scalar
     // type and are skipped.
-    expectMemberTypeParity("Lease", leaseSuperset);
+    expectMemberTypeParity("Lease", leaseResponsePersistenceShape);
   });
 
-  it("LeaseWithId and SharedLease carry the full Lease superset plus their injected members", () => {
-    // Both reuse the LeaseFields mixin, so requiredness stays identical, then add
-    // the handler-injected members.
+  it("LeaseWithId and SharedLease carry public persistence-derived members, hydrated references, and injected members", () => {
     expect(modelMembers("LeaseWithId")).toEqual(
-      [...zodMembers(leaseSuperset), "leaseId"].sort(),
+      [...hydratedLeaseOutputMembers, "leaseId", "selectableModels"].sort(),
     );
     expect(modelMembers("SharedLease")).toEqual(
       [
-        ...zodMembers(leaseSuperset),
+        ...hydratedLeaseOutputMembers,
         "accessType",
         "leaseId",
+        "selectableModels",
         "sourceGroupName",
       ].sort(),
     );
     expect(modelMember("LeaseWithId", "leaseId").target).toBe(
       "com.amazon.isb#LeaseId",
     );
+    for (const structure of ["LeaseWithId", "SharedLease"]) {
+      expect(modelMember(structure, "selectableModels").target).toBe(
+        "com.amazon.isb#SelectableModelList",
+      );
+      expect(modelRequired(structure)).not.toContain("selectableModels");
+    }
+    expect(modelRequired("LeaseWithId")).toEqual(
+      [...requiredIntersection, "leaseId"].sort(),
+    );
     expect(modelRequired("SharedLease")).toEqual(
       [...requiredIntersection, "accessType", "leaseId"].sort(),
     );
+  });
+
+  it("omits raw ARN configuration and keeps hydrated and additive response members optional", () => {
+    for (const structure of ["Lease", "LeaseWithId", "SharedLease"]) {
+      expect(modelMembers(structure)).not.toContain("defaultPermissionSetArn");
+      expect(modelMembers(structure)).not.toContain("allowedPermissionSetArns");
+      expect(modelMember(structure, "defaultPermissionSet").target).toBe(
+        "com.amazon.isb#PermissionSetReference",
+      );
+      expect(modelMember(structure, "allowedPermissionSets").target).toBe(
+        "com.amazon.isb#PermissionSetReferenceList",
+      );
+      for (const member of [
+        ...hydratedLeaseProjectionMembers,
+        ...additiveLeaseResponseMembers,
+      ]) {
+        expect(modelRequired(structure)).not.toContain(member);
+      }
+    }
   });
 
   it("ttl is a Long, not an Integer (Unix epoch seconds cross the 32-bit ceiling)", () => {
@@ -182,6 +243,9 @@ describe("assignment shapes", () => {
       alwaysPresentOnOutput(desiredWithDisplayShape),
     );
     expect(
+      modelMember("DesiredAssignmentWithDisplay", "permissionSetArn").target,
+    ).toBe("com.amazon.isb#PermissionSetArn");
+    expect(
       modelMember("DesiredAssignmentWithDisplay", "principalType").target,
     ).toBe("com.amazon.isb#PrincipalType");
   });
@@ -191,6 +255,51 @@ describe("assignment shapes", () => {
     expect(modelRequired("DesiredAssignment")).toEqual(
       alwaysPresentOnOutput(desiredShape),
     );
+    expect(modelMember("DesiredAssignment", "permissionSetArn").target).toBe(
+      "com.amazon.isb#PermissionSetArn",
+    );
+  });
+
+  it("PermissionSetReference mirrors the backend-hydrated projection schema", () => {
+    expect(modelMembers("PermissionSetReference")).toEqual(
+      zodMembers(permissionSetReferenceShape),
+    );
+    expect(modelRequired("PermissionSetReference")).toEqual(
+      alwaysPresentOnOutput(permissionSetReferenceShape),
+    );
+    expectMemberTypeParity(
+      "PermissionSetReference",
+      permissionSetReferenceShape,
+    );
+    expect(modelEnum("PermissionSetAvailability")).toEqual([
+      "AVAILABLE",
+      "UNAVAILABLE",
+    ]);
+  });
+
+  it("pins the shared permission-set scalar constraints to the public IDC contract", () => {
+    expect(modelShape("PermissionSetArn").traits).toMatchObject({
+      "smithy.api#length": { min: 10, max: 1224 },
+      "smithy.api#pattern":
+        "^arn:aws(?:-[a-z]{1,5}){0,3}:sso:::permissionSet/(?:sso)?ins-[a-zA-Z0-9.-]{16}/ps-[a-zA-Z0-9./-]{16}$",
+    });
+    expect(modelShape("PermissionSetId").traits?.["smithy.api#pattern"]).toBe(
+      "^ps-[a-zA-Z0-9./-]{16}$",
+    );
+    expect(modelShape("PermissionSetName").traits).toMatchObject({
+      "smithy.api#length": { min: 1, max: 32 },
+      "smithy.api#pattern": "^[a-zA-Z0-9_+=,.@-]+$",
+    });
+    expect(modelShape("PermissionSetDescription").traits).toMatchObject({
+      "smithy.api#length": { min: 1, max: 700 },
+      "smithy.api#pattern":
+        "^[\\u0009\\u000a\\u000d\\u0020-\\u007e\\u00a1-\\u00ff]*$",
+    });
+    expect(modelShape("PermissionSetSessionDuration").traits).toMatchObject({
+      "smithy.api#length": { min: 1, max: 100 },
+      "smithy.api#pattern":
+        "^-?P(?=\\d|T\\d)(?:(\\d+)Y)?(?:(\\d+)M)?(?:(\\d+)([DW]))?(?:T(?:(\\d+)H)?(?:(\\d+)M)?(?:(\\d+(?:\\.\\d+)?)S)?)?$",
+    });
   });
 });
 
@@ -209,6 +318,7 @@ describe("assignment view shapes (TS-interface-only contracts, no Zod schema)", 
       "displayName",
       "isDesired",
       "isOwner",
+      "permissionSet",
       "principalId",
       "principalType",
       "syncStatus",
@@ -217,10 +327,14 @@ describe("assignment view shapes (TS-interface-only contracts, no Zod schema)", 
       "displayName",
       "isDesired",
       "isOwner",
+      "permissionSet",
       "principalId",
       "principalType",
       "syncStatus",
     ]);
+    expect(modelMember("AssignmentView", "permissionSet").target).toBe(
+      "com.amazon.isb#PermissionSetReference",
+    );
   });
 
   it("LeaseAssignmentsView pins the view-plus-operation member set", () => {
@@ -232,22 +346,22 @@ describe("assignment view shapes (TS-interface-only contracts, no Zod schema)", 
   });
 });
 
-describe("assignments list-length cap ties to MAX_USER_MANAGED_ASSIGNMENTS", () => {
-  it("RequestLease and UpdateLeaseAssignments cap `assignments` at the constant (19)", () => {
-    // The model can cap the list length (`@length(max: 19)`) but not enforce the
+describe("assignments list-length cap ties to MAX_ASSIGNMENTS", () => {
+  it("RequestLease and UpdateLeaseAssignments cap `assignments` at the total-assignment constant (20)", () => {
+    // The model can cap the list length (`@length(max: 20)`) but not enforce the
     // cross-item distinctness rule (that is the Zod supplement). Pin the modeled
     // cap to the shared production constant so the two cannot silently diverge.
-    expect(MAX_USER_MANAGED_ASSIGNMENTS).toBe(19);
+    expect(MAX_ASSIGNMENTS).toBe(20);
     expect(
       modelMemberTrait("RequestLeaseInput", "assignments", "smithy.api#length"),
-    ).toEqual({ max: MAX_USER_MANAGED_ASSIGNMENTS });
+    ).toEqual({ max: MAX_ASSIGNMENTS });
     expect(
       modelMemberTrait(
         "UpdateLeaseAssignmentsInput",
         "assignments",
         "smithy.api#length",
       ),
-    ).toEqual({ max: MAX_USER_MANAGED_ASSIGNMENTS });
+    ).toEqual({ max: MAX_ASSIGNMENTS });
   });
 });
 
@@ -342,6 +456,38 @@ describe("lease operations", () => {
       "result",
     ]);
     expect(modelRequired("ListSharedLeasesResult")).toEqual(["result"]);
+  });
+  it("models lease profile edits and their narrowing conflict", () => {
+    expect(modelMembers("UpdateLeaseInput")).toEqual(
+      expect.arrayContaining([
+        "defaultPermissionSetArn",
+        "allowedPermissionSetArns",
+      ]),
+    );
+    expect(modelRequired("UpdateLeaseInput")).not.toContain(
+      "defaultPermissionSetArn",
+    );
+    expect(modelRequired("UpdateLeaseInput")).not.toContain(
+      "allowedPermissionSetArns",
+    );
+    expect(
+      modelMember("UpdateLeaseInput", "defaultPermissionSetArn").target,
+    ).toBe("com.amazon.isb#PermissionSetArn");
+    expect(
+      modelMember("UpdateLeaseInput", "allowedPermissionSetArns").target,
+    ).toBe("com.amazon.isb#PermissionSetArnList");
+    expect(
+      modelMemberTrait(
+        "UpdateLeaseInput",
+        "allowedPermissionSetArns",
+        "smithy.api#length",
+      ),
+    ).toEqual({ max: 20 });
+    expect(modelOperationErrors("UpdateLease")).toEqual([
+      "ConflictError",
+      "NotFoundError",
+      "ValidationError",
+    ]);
   });
 });
 

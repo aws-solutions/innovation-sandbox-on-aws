@@ -2,18 +2,16 @@
 title: Edit Basic Details
 ---
 
-Update the template's name, description, visibility, and approval requirements.
+Update the template's name, description, availability for user lease requests, and approval requirements.
 
 ---
 
-**Visibility**:
+**Allow user requests**:
 
-- **Public**: Visible to all users for self-service requests
-- **Private**: Only visible to Admins and Managers for direct assignment
+- **Requests allowed**: The template is visible to users for lease requests.
+- **Assignment only**: The template is hidden from users. Managers and administrators retain access to request or directly assign leases from it.
 
 **Requires Approval**: When enabled, managers must approve each lease request.
-
-**Allow owner to share lease**: When enabled, future lease owners can add or remove user and group assignments. This setting is only visible when global lease sharing is enabled.
 
 ---
 

@@ -40,6 +40,10 @@ const config: ConfigData = {
   AwsAccessPortalUrl: "https://test.awsapps.com/start",
   ApiGatewayHost: "test1234.execute-api.us-east-1.amazonaws.com",
   ApiGatewayStage: "prod",
+  SandboxAgentWebSocketUrl:
+    "wss://test5678.execute-api.us-east-1.amazonaws.com/prod",
+  SandboxAgentMcpGatewayUrl:
+    "https://test5678.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp",
 };
 
 const template: LeaseTemplateView = {
@@ -49,6 +53,9 @@ const template: LeaseTemplateView = {
   createdBy: "owner@example.com",
   visibility: "PRIVATE",
   allowOwnerToShareLease: false,
+  predictiveBudgetEnabled: false,
+  bedrockTokenMonitoringEnabled: false,
+  sandboxSpacesEnabled: true,
   meta: {
     createdTime: "2026-08-01T12:00:00.000Z",
     lastEditTime: "2026-08-02T13:30:00.000Z",
@@ -60,12 +67,41 @@ const completeTemplate: LeaseTemplateView = {
   ...template,
   description: "Generated pilot",
   maxSpend: 100,
-  budgetThresholds: [{ dollarsSpent: 50, action: "ALERT" }],
+  budgetThresholds: [
+    { dollarsSpent: 50, action: "ALERT" },
+    { dollarsSpent: 90, action: "ALERT", triggerOn: "PREDICTED" },
+  ],
   leaseDurationInHours: 72.5,
   durationThresholds: [{ hoursRemaining: 12, action: "FREEZE_ACCOUNT" }],
   costReportGroup: "sandbox-team",
   blueprintId: "00000000-0000-4000-8000-000000000002",
   blueprintName: "Pilot blueprint",
+  allowedModelIds: ["global.anthropic.claude-sonnet-4-6"],
+  defaultModelId: "global.anthropic.claude-sonnet-4-6",
+};
+
+const defaultPermissionSet = {
+  permissionSetArn:
+    "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-0123456789abcdef",
+  permissionSetId: "ps-0123456789abcdef",
+  name: "DeveloperAccess",
+  description: "Developer sandbox access",
+  availability: "AVAILABLE" as const,
+};
+
+const additionalPermissionSet = {
+  permissionSetArn:
+    "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-1123456789abcdef",
+  permissionSetId: "ps-1123456789abcdef",
+  name: "AuditorAccess",
+  description: "Read-only sandbox access",
+  availability: "AVAILABLE" as const,
+};
+
+const hydratedTemplate: LeaseTemplateView = {
+  ...completeTemplate,
+  defaultPermissionSet,
+  allowedPermissionSets: [defaultPermissionSet, additionalPermissionSet],
 };
 
 const newTemplate: CreateLeaseTemplateRequest = {
@@ -73,6 +109,14 @@ const newTemplate: CreateLeaseTemplateRequest = {
   requiresApproval: true,
   visibility: "PRIVATE",
   allowOwnerToShareLease: false,
+  predictiveBudgetEnabled: false,
+  bedrockTokenMonitoringEnabled: false,
+  sandboxSpacesEnabled: true,
+  defaultPermissionSetArn:
+    "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-0123456789abcdef",
+  allowedPermissionSetArns: [
+    "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-0123456789abcdef",
+  ],
 };
 
 function successResponse(
@@ -326,6 +370,18 @@ describe("generated Lease Template client", () => {
     });
   });
 
+  it("preserves hydrated permission-set references at the domain boundary", async () => {
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValue(successResponse({ result: [hydratedTemplate] }));
+    const client = createSmithyClient();
+
+    await expect(client.listLeaseTemplates()).resolves.toEqual({
+      result: [hydratedTemplate],
+      nextPageIdentifier: null,
+    });
+  });
+
   it("passes metadata through even when it omits the compatibility version", async () => {
     // The frontend metadata schema is intentionally partial, so validation
     // accepts an absent schemaVersion and preserves it as undefined.
@@ -360,6 +416,12 @@ describe("generated Lease Template client", () => {
 
     await client.createLeaseTemplate({
       ...completeTemplate,
+      defaultPermissionSetArn:
+        "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-0123456789abcdef",
+      allowedPermissionSetArns: [
+        "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-0123456789abcdef",
+        "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-1123456789abcdef",
+      ],
     });
 
     const request = fetchedRequest();
@@ -367,8 +429,16 @@ describe("generated Lease Template client", () => {
     expect(request.url).toBe("http://localhost/api/leaseTemplates");
     await expect(request.clone().json()).resolves.toEqual({
       allowOwnerToShareLease: false,
+      predictiveBudgetEnabled: false,
+      bedrockTokenMonitoringEnabled: false,
+      sandboxSpacesEnabled: true,
+      allowedModelIds: ["global.anthropic.claude-sonnet-4-6"],
+      defaultModelId: "global.anthropic.claude-sonnet-4-6",
       blueprintId: "00000000-0000-4000-8000-000000000002",
-      budgetThresholds: [{ dollarsSpent: 50, action: "ALERT" }],
+      budgetThresholds: [
+        { dollarsSpent: 50, action: "ALERT" },
+        { dollarsSpent: 90, action: "ALERT", triggerOn: "PREDICTED" },
+      ],
       costReportGroup: "sandbox-team",
       description: "Generated pilot",
       durationThresholds: [{ hoursRemaining: 12, action: "FREEZE_ACCOUNT" }],
@@ -377,6 +447,12 @@ describe("generated Lease Template client", () => {
       name: "Pilot template",
       requiresApproval: true,
       visibility: "PRIVATE",
+      defaultPermissionSetArn:
+        "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-0123456789abcdef",
+      allowedPermissionSetArns: [
+        "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-0123456789abcdef",
+        "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-1123456789abcdef",
+      ],
     });
     expect(signedHeaders(request)).toContain(IDENTITY_HEADER);
     expect(fetch).toHaveBeenCalledTimes(1);
@@ -396,9 +472,17 @@ describe("generated Lease Template client", () => {
     const request = fetchedRequest();
     await expect(request.clone().json()).resolves.toEqual({
       allowOwnerToShareLease: false,
+      predictiveBudgetEnabled: false,
+      bedrockTokenMonitoringEnabled: false,
+      sandboxSpacesEnabled: true,
       name: "Pilot template",
       requiresApproval: true,
       visibility: "PRIVATE",
+      defaultPermissionSetArn:
+        "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-0123456789abcdef",
+      allowedPermissionSetArns: [
+        "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-0123456789abcdef",
+      ],
     });
   });
 
@@ -501,10 +585,10 @@ describe("generated Lease Template client", () => {
   it("updates through a signed PUT that echoes meta as ISO strings", async () => {
     globalThis.fetch = vi
       .fn()
-      .mockResolvedValue(successResponse(completeTemplate));
+      .mockResolvedValue(successResponse(hydratedTemplate));
     const client = createSmithyClient();
     // Server-owned members are dropped; everything else, including meta, is sent.
-    const { uuid, blueprintName, createdBy, ...updateBody } = completeTemplate;
+    const { uuid, blueprintName, createdBy, ...updateBody } = hydratedTemplate;
 
     await client.updateLeaseTemplate(uuid, updateBody);
 
@@ -517,6 +601,18 @@ describe("generated Lease Template client", () => {
     expect(sent).not.toHaveProperty("createdBy");
     expect(sent).not.toHaveProperty("blueprintName");
     expect(sent.name).toBe("Pilot template");
+    expect(sent.sandboxSpacesEnabled).toBe(true);
+    expect(sent.defaultPermissionSetArn).toBe(
+      defaultPermissionSet.permissionSetArn,
+    );
+    expect(sent.allowedPermissionSetArns).toEqual([
+      defaultPermissionSet.permissionSetArn,
+      additionalPermissionSet.permissionSetArn,
+    ]);
+    expect(sent).not.toHaveProperty("defaultPermissionSet");
+    expect(sent).not.toHaveProperty("allowedPermissionSets");
+    // Update replaces the whole template, so an omitted default would be erased.
+    expect(sent.defaultModelId).toBe("global.anthropic.claude-sonnet-4-6");
     // The generated serializer normalizes the timestamp (drops the `.000`
     // fraction) on the way out, so the echoed meta is same-instant but not
     // byte-identical to the stored ISO string.

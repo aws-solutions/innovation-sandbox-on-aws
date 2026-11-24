@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildM2mSyntheticEmail,
+  isAdminOrManager,
   isSyntheticM2mEmail,
   parseRolesClaim,
   resolveEmailFromClaims,
@@ -144,5 +145,24 @@ describe("isSyntheticM2mEmail", () => {
 
   it("is case-insensitive on the domain", () => {
     expect(isSyntheticM2mEmail("m2m-client-Admin@AUTOMATION.LOCAL")).toBe(true);
+  });
+});
+
+describe("isAdminOrManager", () => {
+  it.each([
+    [["Admin"], true],
+    [["Manager"], true],
+    [["User", "Manager"], true],
+    [["User"], false],
+    [[], false],
+  ] as const)("roles %j -> %s", (roles, expected) => {
+    expect(
+      isAdminOrManager({
+        type: "user",
+        email: "alice@example.com",
+        userId: "u-1",
+        roles: [...roles],
+      }),
+    ).toBe(expected);
   });
 });

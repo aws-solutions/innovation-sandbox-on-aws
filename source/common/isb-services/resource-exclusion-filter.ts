@@ -27,7 +27,7 @@ export interface ExclusionResult {
  * are escaped. Does not support globstar (`**`) or character classes.
  */
 function globToRegex(pattern: string): RegExp {
-  const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&");
+  const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, String.raw`\$&`);
   const regexStr = escaped.replaceAll("*", ".*");
   return new RegExp(`^${regexStr}$`);
 }

@@ -3,10 +3,20 @@
 
 import type { LeaseTemplateView } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/model";
 
-export type CreateLeaseTemplateRequest = Omit<
+type LeaseTemplateCreateFields = Omit<
   LeaseTemplateView,
-  "uuid" | "createdBy" | "blueprintName" | "meta"
+  | "uuid"
+  | "createdBy"
+  | "blueprintName"
+  | "meta"
+  | "defaultPermissionSet"
+  | "allowedPermissionSets"
 >;
+
+export type CreateLeaseTemplateRequest = LeaseTemplateCreateFields & {
+  defaultPermissionSetArn: string;
+  allowedPermissionSetArns: string[];
+};
 
 export type UpdateLeaseTemplateRequest = Omit<
   LeaseTemplateView,

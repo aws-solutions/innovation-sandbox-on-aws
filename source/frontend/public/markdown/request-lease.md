@@ -8,17 +8,13 @@ Request a new sandbox account for experimentation, learning, and innovation with
 
 ## Wizard steps
 
-**Step 1: Select Lease Template**
-Choose from available public lease templates. Each template defines budget limits, duration, and approval requirements.
+**Select lease template**: Choose from available public lease templates. Each template defines budget limits, duration, approval requirements, and the permission sets available for assignments.
 
-**Step 2: Terms of Service**
-Review and accept the terms of service for using sandbox accounts.
+**Configure access** _(optional, when sharing is enabled)_: Add users or groups and choose one permission set for each. Your owner assignment uses the template's default permission set unless you choose another allowed permission set.
 
-**Step 3: Share access** _(optional, when sharing is enabled)_
-Add users or groups to share access to the lease once it is provisioned.
+**Terms of Service**: Review and accept the terms of service for using sandbox accounts.
 
-**Step 4: Review & Submit**
-Review your request and optionally add comments explaining your intended use case.
+**Review & Submit**: Review the template, access assignments, and optional comments before submitting the request.
 
 ---
 

@@ -1,14 +1,14 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+import { Logger } from "@aws-lambda-powertools/logger";
 import { ConditionalCheckFailedException } from "@aws-sdk/client-dynamodb";
 import {
   BatchGetCommand,
-  BatchWriteCommand,
-  BatchWriteCommandInput,
   DeleteCommand,
   DynamoDBDocumentClient,
   GetCommand,
+  paginateQuery,
   paginateScan,
   PutCommand,
   QueryCommand,
@@ -23,24 +23,39 @@ import {
   SingleItemResult,
 } from "@amzn/innovation-sandbox-commons/data/common-types.js";
 import {
-  base64DecodeCompositeKey,
   base64EncodeCompositeKey,
+  decodePageIdentifier,
 } from "@amzn/innovation-sandbox-commons/data/encoding.js";
 import {
   BatchUnprocessedItemsError,
   ItemAlreadyExists,
 } from "@amzn/innovation-sandbox-commons/data/errors.js";
 import { withUpdatedMetadata } from "@amzn/innovation-sandbox-commons/data/metadata.js";
+import type { PersistedPermissionSetCacheItem } from "@amzn/innovation-sandbox-commons/data/permission-set/permission-set.js";
+import {
+  PERMISSION_SET_CACHE_PK,
+  permissionSetCacheSk,
+  PermissionSetSchemaVersion,
+  PersistedPermissionSetCacheItemSchema,
+} from "@amzn/innovation-sandbox-commons/data/permission-set/permission-set.js";
 import {
   GROUP_MEMBERSHIP_SK,
   groupPk,
   LEASE_SK_PREFIX,
   leaseSk,
+  parseAssignmentSk,
+  principalPk,
   userPk,
 } from "@amzn/innovation-sandbox-commons/data/principal/principal-dynamodb-keys.js";
+
+import type {
+  DeleteAssignmentProps,
+  DeleteAssignmentsByLeasePrincipalProps,
+} from "@amzn/innovation-sandbox-commons/data/principal/principal-store.js";
 import { PrincipalStore } from "@amzn/innovation-sandbox-commons/data/principal/principal-store.js";
 import {
   PersistedAssignment,
+  PersistedAssignmentLeaseIndexKeySchema,
   PersistedAssignmentSchema,
   PersistedGroupAssignment,
   PersistedGroupAssignmentSchema,
@@ -50,6 +65,7 @@ import {
   PersistedPrincipalCacheItem,
   PersistedPrincipalCacheItemSchema,
   PersistedUserAssignment,
+  PersistedUserAssignmentKeySchema,
   PersistedUserAssignmentSchema,
   PRINCIPAL_CACHE_GROUP_SK_PREFIX,
   PRINCIPAL_CACHE_PK,
@@ -57,6 +73,7 @@ import {
   PrincipalSchemaVersion,
 } from "@amzn/innovation-sandbox-commons/data/principal/principal.js";
 import {
+  batchWriteWithRetry,
   chunk,
   parseResults,
   parseSingleItemResult,
@@ -64,7 +81,10 @@ import {
   validateItem,
   withMetadata,
 } from "@amzn/innovation-sandbox-commons/data/utils.js";
+import { LogPatterns } from "@amzn/innovation-sandbox-commons/observability/logging.js";
 import type { PrincipalType } from "@amzn/innovation-sandbox-shared/types/principal.js";
+
+const logger = new Logger({ serviceName: "DynamoPrincipalStore" });
 
 export class DynamoPrincipalStore extends PrincipalStore {
   private readonly tableName: string;
@@ -125,6 +145,10 @@ export class DynamoPrincipalStore extends PrincipalStore {
     }
   }
 
+  /**
+   * @deprecated Assignment identity now includes the permission set. Use
+   * {@link findAssignment} or {@link getAssignmentsForPrincipalAndLease}.
+   */
   public override async getUserAssignment(
     userId: string,
     leaseId: string,
@@ -138,6 +162,10 @@ export class DynamoPrincipalStore extends PrincipalStore {
     return parseSingleItemResult(result.Item, PersistedUserAssignmentSchema);
   }
 
+  /**
+   * @deprecated Assignment identity now includes the permission set. Use
+   * {@link findAssignment} or {@link getAssignmentsForPrincipalAndLease}.
+   */
   public override async getGroupAssignment(
     groupId: string,
     leaseId: string,
@@ -149,6 +177,84 @@ export class DynamoPrincipalStore extends PrincipalStore {
       }),
     );
     return parseSingleItemResult(result.Item, PersistedGroupAssignmentSchema);
+  }
+
+  /**
+   * Returns every legacy and tuple-keyed assignment for one principal and lease.
+   */
+  public override async getAssignmentsForPrincipalAndLease(props: {
+    principalId: string;
+    principalType: PrincipalType;
+    leaseId: string;
+  }): Promise<PersistedAssignment[]> {
+    const items: Record<string, unknown>[] = [];
+    const paginator = paginateQuery(
+      { client: this.ddbClient },
+      {
+        TableName: this.tableName,
+        ConsistentRead: true,
+        KeyConditionExpression: "#pk = :pk AND begins_with(#sk, :skPrefix)",
+        ExpressionAttributeNames: { "#pk": "pk", "#sk": "sk" },
+        ExpressionAttributeValues: {
+          ":pk": principalPk(props),
+          ":skPrefix": leaseSk(props.leaseId),
+        },
+      },
+    );
+    for await (const page of paginator) {
+      items.push(...(page.Items ?? []));
+    }
+
+    const { result } = parseResults(items, PersistedAssignmentSchema);
+    return result;
+  }
+
+  /**
+   * Finds an assignment by permission-set ARN, with explicit handling for a
+   * suffix-less legacy record representing the immutable built-in permission
+   * set rather than the lease's configurable default.
+   */
+  public override async findAssignment(props: {
+    principalId: string;
+    principalType: PrincipalType;
+    leaseId: string;
+    permissionSetArn?: string;
+    builtInPermissionSetArn?: string;
+  }): Promise<PersistedAssignment | undefined> {
+    const records = await this.getAssignmentsForPrincipalAndLease(props);
+    return this.matchByPermissionSet(
+      records,
+      props.permissionSetArn,
+      props.builtInPermissionSetArn,
+    )[0];
+  }
+
+  private matchByPermissionSet(
+    records: PersistedAssignment[],
+    permissionSetArn?: string,
+    builtInPermissionSetArn?: string,
+  ): PersistedAssignment[] {
+    if (permissionSetArn === undefined) {
+      return records;
+    }
+
+    const exactMatches = records.filter(
+      (record) => record.permissionSetArn === permissionSetArn,
+    );
+
+    if (
+      builtInPermissionSetArn === undefined ||
+      permissionSetArn !== builtInPermissionSetArn
+    ) {
+      return exactMatches;
+    }
+
+    const legacyDefaultMatches = records.filter(
+      (record) =>
+        record.permissionSetArn === undefined &&
+        parseAssignmentSk(record.sk)?.permissionSetId === undefined,
+    );
+    return [...exactMatches, ...legacyDefaultMatches];
   }
 
   public override async getAssignmentsForLease(props: {
@@ -164,7 +270,11 @@ export class DynamoPrincipalStore extends PrincipalStore {
         KeyConditionExpression: "#leaseId = :leaseId",
         ExpressionAttributeNames: { "#leaseId": "leaseId" },
         ExpressionAttributeValues: { ":leaseId": leaseId },
-        ExclusiveStartKey: base64DecodeCompositeKey(pageIdentifier),
+        ExclusiveStartKey: decodePageIdentifier(pageIdentifier, (decoded) =>
+          PersistedAssignmentLeaseIndexKeySchema.refine(
+            (cursor) => cursor.leaseId === leaseId,
+          ).parse(decoded),
+        ),
         Limit: pageSize,
       }),
     );
@@ -189,7 +299,11 @@ export class DynamoPrincipalStore extends PrincipalStore {
           ":pk": userPk(userId),
           ":skPrefix": LEASE_SK_PREFIX,
         },
-        ExclusiveStartKey: base64DecodeCompositeKey(pageIdentifier),
+        ExclusiveStartKey: decodePageIdentifier(pageIdentifier, (decoded) =>
+          PersistedUserAssignmentKeySchema.refine(
+            (cursor) => cursor.pk === userPk(userId),
+          ).parse(decoded),
+        ),
         Limit: pageSize,
       }),
     );
@@ -227,6 +341,11 @@ export class DynamoPrincipalStore extends PrincipalStore {
     );
   }
 
+  /**
+   * @deprecated Assignment identity now includes the permission set. Use
+   * {@link deleteAssignmentsByLeasePrincipal}; omit `permissionSetArn` to delete every
+   * assignment for the principal and lease.
+   */
   public override async deleteUserAssignment(
     userId: string,
     leaseId: string,
@@ -234,6 +353,11 @@ export class DynamoPrincipalStore extends PrincipalStore {
     return this.deleteAssignmentByKey(userPk(userId), leaseSk(leaseId));
   }
 
+  /**
+   * @deprecated Assignment identity now includes the permission set. Use
+   * {@link deleteAssignmentsByLeasePrincipal}; omit `permissionSetArn` to delete every
+   * assignment for the principal and lease.
+   */
   public override async deleteGroupAssignment(
     groupId: string,
     leaseId: string,
@@ -241,15 +365,97 @@ export class DynamoPrincipalStore extends PrincipalStore {
     return this.deleteAssignmentByKey(groupPk(groupId), leaseSk(leaseId));
   }
 
+  /**
+   * Deletes one assignment record by its real principal-table key.
+   */
+  public override async deleteAssignment(
+    props: DeleteAssignmentProps,
+  ): Promise<boolean> {
+    if (parseAssignmentSk(props.sk) === undefined) {
+      throw new Error(`Invalid assignment sort key: ${props.sk}`);
+    }
+
+    const expected =
+      "expectedLastEditTime" in props
+        ? { lastEditTime: props.expectedLastEditTime }
+        : undefined;
+    const deleted = await this.deleteAssignmentByKey(
+      principalPk(props),
+      props.sk,
+      expected,
+    );
+    return deleted !== undefined;
+  }
+
+  /**
+   * Deletes assignments matching a principal and lease, optionally narrowed to
+   * a permission set. Omitting the permission-set ARN deletes every assignment
+   * for the principal and lease.
+   */
+  public override async deleteAssignmentsByLeasePrincipal(
+    props: DeleteAssignmentsByLeasePrincipalProps,
+  ): Promise<number> {
+    const records = await this.getAssignmentsForPrincipalAndLease(props);
+    const targets = this.matchByPermissionSet(
+      records,
+      props.permissionSetArn,
+      props.builtInPermissionSetArn,
+    );
+
+    let deletedCount = 0;
+    for (const target of targets) {
+      try {
+        const deleted = await this.deleteAssignment({
+          principalId: props.principalId,
+          principalType: props.principalType,
+          sk: target.sk,
+          expectedLastEditTime: target.meta?.lastEditTime,
+        });
+        if (deleted) {
+          deletedCount++;
+        }
+      } catch (error: unknown) {
+        if (!(error instanceof ConditionalCheckFailedException)) {
+          throw error;
+        }
+      }
+    }
+
+    return deletedCount;
+  }
+
   private async deleteAssignmentByKey(
     pk: string,
     sk: string,
+    expected?: { lastEditTime?: string },
   ): Promise<OptionalItem> {
+    const unchangedCondition =
+      expected === undefined
+        ? {}
+        : {
+            ConditionExpression:
+              expected.lastEditTime === undefined
+                ? "attribute_not_exists(#meta.#lastEditTime)"
+                : "#meta.#lastEditTime = :expectedLastEditTime",
+            ExpressionAttributeNames: {
+              "#meta": "meta",
+              "#lastEditTime": "lastEditTime",
+            },
+            ...(expected.lastEditTime === undefined
+              ? {}
+              : {
+                  ExpressionAttributeValues: {
+                    ":expectedLastEditTime": expected.lastEditTime,
+                  },
+                }),
+          };
+
     const result = await this.ddbClient.send(
       new DeleteCommand({
         TableName: this.tableName,
         Key: { pk, sk },
         ReturnValues: "ALL_OLD",
+        ...unchangedCondition,
       }),
     );
     return result.Attributes;
@@ -276,39 +482,28 @@ export class DynamoPrincipalStore extends PrincipalStore {
       return withUpdatedMetadata(assignment, PrincipalSchemaVersion);
     });
 
-    let requestItems: BatchWriteCommandInput["RequestItems"] = {
-      [this.tableName]: enrichedAssignments.map((assignment) => ({
-        PutRequest: {
-          Item: removeNullFieldsForDynamoDB(assignment),
-        },
-      })),
-    };
-
-    await backOff(
-      async () => {
-        const result = await this.ddbClient.send(
-          new BatchWriteCommand({ RequestItems: requestItems }),
-        );
-
-        const unprocessed = result.UnprocessedItems?.[this.tableName];
-        if (unprocessed && unprocessed.length > 0) {
-          requestItems = { [this.tableName]: unprocessed };
-          throw new BatchUnprocessedItemsError(unprocessed.length);
-        }
-      },
-      {
-        numOfAttempts: 4,
-        startingDelay: 100,
-        jitter: "full",
-        retry: (error: unknown) => {
-          return error instanceof BatchUnprocessedItemsError;
-        },
-      },
-    );
+    await batchWriteWithRetry({
+      client: this.ddbClient,
+      tableName: this.tableName,
+      batches: [
+        enrichedAssignments.map((assignment) => ({
+          PutRequest: {
+            Item: removeNullFieldsForDynamoDB(assignment),
+          },
+        })),
+      ],
+      concurrency: 1,
+      numOfAttempts: 4,
+      startingDelay: 100,
+    });
   }
 
+  /**
+   * Scans the group index and returns each assignment's parsed lease ID and
+   * verbatim sort key so tuple suffixes are preserved.
+   */
   public override async getAllGroupAssignmentKeys(): Promise<
-    { groupId: string; leaseId: string }[]
+    { groupId: string; leaseId: string; sk: string }[]
   > {
     const allRawItems: Record<string, unknown>[] = [];
     const paginator = paginateScan(
@@ -324,14 +519,26 @@ export class DynamoPrincipalStore extends PrincipalStore {
       PersistedGroupIndexProjectionSchema,
     );
 
-    return validProjections.map((p) => ({
-      groupId: p.groupId,
-      leaseId: p.sk.slice(LEASE_SK_PREFIX.length),
-    }));
+    return validProjections.flatMap((projection) => {
+      const parsed = parseAssignmentSk(projection.sk);
+      return parsed
+        ? [
+            {
+              groupId: projection.groupId,
+              leaseId: parsed.leaseId,
+              sk: projection.sk,
+            },
+          ]
+        : [];
+    });
   }
 
+  /**
+   * Retrieves group assignments using their exact stored sort keys, retrying
+   * any unprocessed BatchGet keys.
+   */
   public override async batchGetGroupAssignments(
-    keys: { groupId: string; leaseId: string }[],
+    keys: { groupId: string; sk: string }[],
   ): Promise<PersistedGroupAssignment[]> {
     if (keys.length === 0) return [];
 
@@ -339,7 +546,7 @@ export class DynamoPrincipalStore extends PrincipalStore {
     // composite key avoids any chance of separator collision.
     const uniqueKeys = Array.from(
       new Map(
-        keys.map((k) => [JSON.stringify([k.groupId, k.leaseId]), k] as const),
+        keys.map((k) => [JSON.stringify([k.groupId, k.sk]), k] as const),
       ).values(),
     );
 
@@ -349,9 +556,9 @@ export class DynamoPrincipalStore extends PrincipalStore {
     await pMap(
       batches,
       async (batch) => {
-        let pendingKeys = batch.map(({ groupId, leaseId }) => ({
+        let pendingKeys = batch.map(({ groupId, sk }) => ({
           pk: groupPk(groupId),
-          sk: leaseSk(leaseId),
+          sk,
         }));
 
         await backOff(
@@ -402,44 +609,27 @@ export class DynamoPrincipalStore extends PrincipalStore {
   ): Promise<void> {
     if (items.length === 0) return;
 
-    const enrichedItems = items.map((item) => {
-      const parsed = PersistedPrincipalCacheItemSchema.parse(item);
-      return withUpdatedMetadata(parsed, PrincipalSchemaVersion);
-    });
-
-    const batches = chunk(enrichedItems, 25);
-
-    await pMap(
-      batches,
-      async (batch) => {
-        let requestItems: BatchWriteCommandInput["RequestItems"] = {
-          [this.tableName]: batch.map((item) => ({
-            PutRequest: { Item: removeNullFieldsForDynamoDB(item) },
-          })),
-        };
-
-        await backOff(
-          async () => {
-            const result = await this.ddbClient.send(
-              new BatchWriteCommand({ RequestItems: requestItems }),
-            );
-            const unprocessed = result.UnprocessedItems?.[this.tableName];
-            if (unprocessed && unprocessed.length > 0) {
-              requestItems = { [this.tableName]: unprocessed };
-              throw new BatchUnprocessedItemsError(unprocessed.length);
-            }
-          },
-          {
-            numOfAttempts: 5,
-            startingDelay: 1000,
-            jitter: "full",
-            retry: (error: unknown) =>
-              error instanceof BatchUnprocessedItemsError,
-          },
-        );
-      },
-      { concurrency: 2 },
+    const enrichedItems = Array.from(
+      new Map(
+        items.map((item) => {
+          const parsed = PersistedPrincipalCacheItemSchema.parse(item);
+          return [
+            parsed.sk,
+            withUpdatedMetadata(parsed, PrincipalSchemaVersion),
+          ] as const;
+        }),
+      ).values(),
     );
+
+    await batchWriteWithRetry({
+      client: this.ddbClient,
+      tableName: this.tableName,
+      batches: chunk(enrichedItems, 25).map((batch) =>
+        batch.map((item) => ({
+          PutRequest: { Item: removeNullFieldsForDynamoDB(item) },
+        })),
+      ),
+    });
   }
 
   /**
@@ -558,39 +748,132 @@ export class DynamoPrincipalStore extends PrincipalStore {
   ): Promise<void> {
     if (sks.length === 0) return;
 
-    const batches = chunk(sks, 25);
+    const uniqueSks = Array.from(new Set(sks));
+    await batchWriteWithRetry({
+      client: this.ddbClient,
+      tableName: this.tableName,
+      batches: chunk(uniqueSks, 25).map((batch) =>
+        batch.map((sk) => ({
+          DeleteRequest: { Key: { pk: PRINCIPAL_CACHE_PK, sk } },
+        })),
+      ),
+    });
+  }
 
-    await pMap(
-      batches,
-      async (batch) => {
-        let requestItems: BatchWriteCommandInput["RequestItems"] = {
-          [this.tableName]: batch.map((sk) => ({
-            DeleteRequest: { Key: { pk: PRINCIPAL_CACHE_PK, sk } },
-          })),
-        };
+  /**
+   * Upserts permission-set cache items in batches, refreshing their metadata
+   * and retrying unprocessed writes.
+   */
+  public override async batchPutPermissionSetCacheItems(
+    items: PersistedPermissionSetCacheItem[],
+  ): Promise<void> {
+    if (items.length === 0) return;
 
-        await backOff(
-          async () => {
-            const result = await this.ddbClient.send(
-              new BatchWriteCommand({ RequestItems: requestItems }),
-            );
-            const unprocessed = result.UnprocessedItems?.[this.tableName];
-            if (unprocessed && unprocessed.length > 0) {
-              requestItems = { [this.tableName]: unprocessed };
-              throw new BatchUnprocessedItemsError(unprocessed.length);
-            }
-          },
-          {
-            numOfAttempts: 5,
-            startingDelay: 1000,
-            jitter: "full",
-            retry: (error: unknown) =>
-              error instanceof BatchUnprocessedItemsError,
-          },
-        );
-      },
-      { concurrency: 2 },
+    const enrichedItems = Array.from(
+      new Map(
+        items.map((item) => {
+          const parsed = PersistedPermissionSetCacheItemSchema.parse(item);
+          return [
+            parsed.sk,
+            withUpdatedMetadata(parsed, PermissionSetSchemaVersion),
+          ] as const;
+        }),
+      ).values(),
     );
+
+    await batchWriteWithRetry({
+      client: this.ddbClient,
+      tableName: this.tableName,
+      batches: chunk(enrichedItems, 25).map((batch) =>
+        batch.map((item) => ({
+          PutRequest: { Item: removeNullFieldsForDynamoDB(item) },
+        })),
+      ),
+    });
+  }
+
+  /**
+   * Returns valid records from the permission-set cache partition. Invalid
+   * records are dropped and logged so one corrupt row does not block catalog
+   * reads or cache reconciliation.
+   */
+  public override async getPermissionSetCacheItem(
+    permissionSetId: string,
+  ): Promise<PersistedPermissionSetCacheItem | undefined> {
+    const { Item } = await this.ddbClient.send(
+      new GetCommand({
+        TableName: this.tableName,
+        Key: {
+          pk: PERMISSION_SET_CACHE_PK,
+          sk: permissionSetCacheSk(permissionSetId),
+        },
+        ConsistentRead: true,
+      }),
+    );
+    if (!Item) return undefined;
+    const parsed = PersistedPermissionSetCacheItemSchema.safeParse(Item);
+    if (!parsed.success) {
+      logger.warn(
+        `${LogPatterns.DataValidationWarning.pattern}: ignoring invalid permission-set registration metadata`,
+      );
+      return undefined;
+    }
+    return parsed.data;
+  }
+
+  public override async getPermissionSetCacheItems(props?: {
+    consistentRead?: boolean;
+  }): Promise<PersistedPermissionSetCacheItem[]> {
+    const allRawItems: Record<string, unknown>[] = [];
+    const paginator = paginateQuery(
+      { client: this.ddbClient },
+      {
+        TableName: this.tableName,
+        KeyConditionExpression: "#pk = :pk",
+        ExpressionAttributeNames: { "#pk": "pk" },
+        ExpressionAttributeValues: { ":pk": PERMISSION_SET_CACHE_PK },
+        ...(props?.consistentRead ? { ConsistentRead: true } : {}),
+      },
+    );
+    for await (const page of paginator) {
+      allRawItems.push(...(page.Items ?? []));
+    }
+
+    const { result, error } = parseResults(
+      allRawItems,
+      PersistedPermissionSetCacheItemSchema,
+    );
+    if (error !== undefined) {
+      const invalidCount = allRawItems.length - result.length;
+      logger.warn(
+        `${LogPatterns.DataValidationWarning.pattern}: dropping permission-set cache records that failed schema validation`,
+        {
+          invalidRecordCount: invalidCount,
+          error,
+        },
+      );
+    }
+    return result;
+  }
+
+  /**
+   * Deletes permission-set cache items by sort key in retried batches.
+   */
+  public override async batchDeletePermissionSetCacheItemsBySk(
+    sks: string[],
+  ): Promise<void> {
+    if (sks.length === 0) return;
+
+    const uniqueSks = Array.from(new Set(sks));
+    await batchWriteWithRetry({
+      client: this.ddbClient,
+      tableName: this.tableName,
+      batches: chunk(uniqueSks, 25).map((batch) =>
+        batch.map((sk) => ({
+          DeleteRequest: { Key: { pk: PERMISSION_SET_CACHE_PK, sk } },
+        })),
+      ),
+    });
   }
 
   /**
@@ -610,7 +893,9 @@ export class DynamoPrincipalStore extends PrincipalStore {
         IndexName: "LeaseIndex",
         Select: "ALL_PROJECTED_ATTRIBUTES",
         Limit: pageSize,
-        ExclusiveStartKey: base64DecodeCompositeKey(pageIdentifier),
+        ExclusiveStartKey: decodePageIdentifier(pageIdentifier, (decoded) =>
+          PersistedAssignmentLeaseIndexKeySchema.parse(decoded),
+        ),
       }),
     );
 

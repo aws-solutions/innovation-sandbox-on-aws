@@ -9,9 +9,9 @@ import {
   HostedConfiguration,
 } from "aws-cdk-lib/aws-appconfig";
 import { Construct } from "constructs";
-import fs from "fs";
 import yaml from "js-yaml";
-import path from "path";
+import fs from "node:fs";
+import path from "node:path";
 
 import { ValidatorExclusionConfigSchema } from "@amzn/innovation-sandbox-commons/data/validator-exclusion-config/validator-exclusion-config.js";
 import { getSolutionContext } from "@amzn/innovation-sandbox-infrastructure/helpers/cdk-context";
@@ -84,8 +84,11 @@ export class Config extends Construct {
         validatorExclusionConfigContent,
       );
     if (!parsedValidatorExclusionConfig.success) {
+      const details = parsedValidatorExclusionConfig.error.issues
+        .map((issue) => `  - ${issue.path.join(".")}: ${issue.message}`)
+        .join("\n");
       throw new Error(
-        `validator-exclusion-config.yaml failed schema validation:\n${parsedValidatorExclusionConfig.error.issues.map((i) => `  - ${i.path.join(".")}: ${i.message}`).join("\n")}`,
+        `validator-exclusion-config.yaml failed schema validation:\n${details}`,
       );
     }
 

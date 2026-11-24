@@ -1,89 +1,70 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import {
-  Alert,
-  KeyValuePairs,
-  SpaceBetween,
-} from "@cloudscape-design/components";
+import { Container, Header, SpaceBetween } from "@cloudscape-design/components";
 
 import ToggleField from "@amzn/innovation-sandbox-frontend/components/FormFields/ToggleField";
-import { BooleanStatus } from "@amzn/innovation-sandbox-frontend/domains/settings/components/forms/BooleanStatus";
-import { SectionForm } from "@amzn/innovation-sandbox-frontend/domains/settings/components/forms/SectionForm";
-import { ConfigurationSectionView } from "@amzn/innovation-sandbox-frontend/domains/settings/model";
+import {
+  type FormFieldDefinitions,
+  formSearchFields,
+  settingAnchor,
+} from "@amzn/innovation-sandbox-frontend/domains/settings/settings-navigation";
 
-export function MaintenanceForm({
-  data,
-}: {
-  data: ConfigurationSectionView<"maintenance">;
-}) {
-  // A never-saved section (lastSavedBy === null) is a fresh install. The schema
-  // default is enabled: true (fail-closed), so the app starts in maintenance —
-  // managers and users are locked out until an admin saves this section OFF.
-  // Surface that explicitly; the generic "using default values" alert does not
-  // convey the lockout implication.
-  const isFreshInstall = data.lastSavedBy === null;
+import { SectionForm } from "./SectionForm";
+import { SettingAnchor } from "./SettingAnchor";
 
+const fields = {
+  enabled: {
+    label: "Maintenance mode",
+    description:
+      "When on, managers and users can't use Innovation Sandbox and see a maintenance banner. Admins keep full access. Existing sandbox accounts keep running.",
+  },
+} satisfies FormFieldDefinitions<"maintenance">;
+
+export const maintenanceFormSearchFields = formSearchFields({
+  section: "maintenance",
+  group: "general",
+  subgroup: "Maintenance mode",
+  fields,
+});
+const MAINTENANCE_MODE_ANCHOR = settingAnchor("maintenance", "enabled");
+export const MAINTENANCE_MODE_HREF = `/settings#${MAINTENANCE_MODE_ANCHOR}`;
+
+function MaintenanceFormFields({ readOnly }: Readonly<{ readOnly: boolean }>) {
   return (
-    <SectionForm
-      section="maintenance"
-      title="Maintenance Mode"
-      anchorId="maintenance"
-      data={data}
-      // This section renders its own fail-closed lockout warning below, so
-      // suppress SectionForm's generic "Using default values" alert to avoid
-      // two stacked finish-setup alerts on a fresh install.
-      suppressDefaultsAlert
-      // Toggling maintenance mode is a sensitive operation (it locks managers
-      // and users out, or lets them back in), so confirm before saving when
-      // the toggle actually changed.
-      confirmBeforeSave={(values, baseline) =>
-        values.enabled !== baseline.enabled
-          ? {
-              header: values.enabled
-                ? "Turn on maintenance mode?"
-                : "Turn off maintenance mode?",
-              message: values.enabled
-                ? "Managers and sandbox users will lose access to the Innovation Sandbox application until maintenance mode is turned off. Their existing sandbox accounts stay available for the duration of their leases."
-                : "Managers and sandbox users will regain access to the Innovation Sandbox application.",
-              confirmLabel: values.enabled
-                ? "Turn on maintenance mode"
-                : "Turn off maintenance mode",
+    <SpaceBetween size="l">
+      <Container
+        header={
+          <Header
+            variant="h2"
+            description={
+              "Locks managers and users out of Innovation Sandbox while you make changes to the deployment."
             }
-          : null
-      }
-      renderFields={() => (
-        <SpaceBetween size="l">
-          {isFreshInstall && (
-            <Alert type="warning" header="Maintenance mode is on by default">
-              New deployments start with maintenance mode ON, so managers and
-              sandbox users cannot access the Innovation Sandbox application
-              (their existing sandbox accounts are unaffected). Save this
-              section with the toggle OFF to give them access.
-            </Alert>
-          )}
+          >
+            Maintenance mode
+          </Header>
+        }
+      >
+        <SettingAnchor id={MAINTENANCE_MODE_ANCHOR}>
           <ToggleField
+            toggleProps={{ readOnly }}
             controllerProps={{ name: "enabled" }}
             formFieldProps={{
-              label: "Maintenance mode",
-              description:
-                "When enabled, managers and sandbox users lose access to the Innovation Sandbox application (existing sandbox accounts are unaffected). Admins retain full access.",
+              ...fields.enabled,
+              stretch: true,
             }}
             stateLabel
           />
-        </SpaceBetween>
-      )}
-      renderReadOnly={(d) => (
-        <KeyValuePairs
-          columns={1}
-          items={[
-            {
-              label: "Maintenance mode",
-              value: <BooleanStatus value={d.enabled} />,
-            },
-          ]}
-        />
-      )}
+        </SettingAnchor>
+      </Container>
+    </SpaceBetween>
+  );
+}
+export function MaintenanceForm() {
+  return (
+    <SectionForm
+      section="maintenance"
+      renderFields={(readOnly) => <MaintenanceFormFields readOnly={readOnly} />}
     />
   );
 }

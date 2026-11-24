@@ -9,7 +9,7 @@ import {
 } from "aws-cdk-lib/aws-iam";
 import { CfnSchedule } from "aws-cdk-lib/aws-scheduler";
 import { Construct } from "constructs";
-import path from "path";
+import path from "node:path";
 
 import { DeploymentSummaryLambdaEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/deployment-summary-lambda-environment";
 import {
@@ -67,6 +67,7 @@ export class DeploymentSummaryLambda extends Construct {
         ORG_MGT_ACCOUNT_ID: props.orgManagementAccountId,
         ACCOUNT_TABLE_NAME: accountTable,
         LEASE_TEMPLATE_TABLE_NAME: leaseTemplateTable,
+        LEASE_TABLE_NAME: IsbComputeStack.sharedSpokeConfig.data.leaseTable,
         BLUEPRINT_TABLE_NAME: blueprintTable,
         PRINCIPAL_TABLE_NAME:
           IsbComputeStack.sharedSpokeConfig.data.principalTable,
@@ -81,8 +82,12 @@ export class DeploymentSummaryLambda extends Construct {
         ACCOUNT_POOL_CONFIG_PARAM_ARN:
           IsbComputeStack.sharedSpokeConfig.parameterArns
             .accountPoolConfigParamArn,
+        USER_PERMISSION_SET_ARN:
+          IsbComputeStack.sharedSpokeConfig.idc.userPermissionSetArn,
         WAF_WEB_ACL_NAME: props.wafWebAclName,
         WAF_REGION: Aws.REGION,
+        NOTIFICATION_TOPIC_ARN: props.notificationIntegrationTopic.topicArn,
+        SES_IDENTITY_ARN: props.sesIdentityArn,
       },
       logGroup: IsbComputeResources.globalLogGroup,
       envSchema: DeploymentSummaryLambdaEnvironmentSchema,
@@ -98,6 +103,7 @@ export class DeploymentSummaryLambda extends Construct {
       blueprintTable,
       configTableName,
       IsbComputeStack.sharedSpokeConfig.data.principalTable,
+      IsbComputeStack.sharedSpokeConfig.data.leaseTable,
     );
     grantIsbSsmParameterRead(
       lambda.lambdaFunction.role! as Role,
@@ -124,13 +130,21 @@ export class DeploymentSummaryLambda extends Construct {
         resources: ["*"],
       }),
     );
-    // Reads the WAF caller-mix CountedRequests metrics. GetMetricData has no
-    // resource-level scoping.
+    // Reads the WAF caller-mix CountedRequests metrics and notification failure
+    // metrics. GetMetricData has no resource-level scoping.
     lambda.lambdaFunction.addToRolePolicy(
       new PolicyStatement({
         effect: Effect.ALLOW,
         actions: ["cloudwatch:GetMetricData"],
         resources: ["*"],
+      }),
+    );
+    // GetTopicAttributes returns counts without subscription endpoints.
+    lambda.lambdaFunction.addToRolePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ["sns:GetTopicAttributes"],
+        resources: [props.notificationIntegrationTopic.topicArn],
       }),
     );
     // For counting deployed M2M client roles for the heartbeat metric.

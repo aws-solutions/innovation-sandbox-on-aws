@@ -7,6 +7,7 @@ import { useFormContext, useWatch } from "react-hook-form";
 
 import SelectField from "@amzn/innovation-sandbox-frontend/components/FormFields/SelectField";
 import ToggleField from "@amzn/innovation-sandbox-frontend/components/FormFields/ToggleField";
+import type { SettingsFormVariant } from "@amzn/innovation-sandbox-frontend/components/Forms/types";
 
 export interface CostReportSettingsFormValues {
   costReportGroupEnabled: boolean;
@@ -18,6 +19,8 @@ export interface CostReportSettingsFormProps {
   costReportGroups?: string[];
   /** Whether cost report group is required by organization policy */
   requireCostReportGroup: boolean;
+  /** Whether the form edits a template or one lease. */
+  variant: SettingsFormVariant;
 }
 
 function getCostReportGroupOption(
@@ -42,7 +45,8 @@ function getCostReportGroupValue(
 export function CostReportSettingsForm({
   costReportGroups,
   requireCostReportGroup = false,
-}: CostReportSettingsFormProps) {
+  variant,
+}: Readonly<CostReportSettingsFormProps>) {
   // Get control from form context
   const { control } = useFormContext<CostReportSettingsFormValues>();
 
@@ -59,15 +63,21 @@ export function CostReportSettingsForm({
       }))
     : [];
 
+  const costReportGroupDescription =
+    variant === "lease"
+      ? "When enabled, this lease will be assigned to a cost report group for billing and reporting purposes"
+      : "When enabled, leases using this template will be assigned to a cost report group for billing and reporting purposes";
+
   return (
     <SpaceBetween size="l">
       <ToggleField
         controllerProps={{ control, name: "costReportGroupEnabled" }}
+        valueToChecked={(value) => value || requireCostReportGroup}
         formFieldProps={{
           label: "Enable Cost Report Group",
           description: requireCostReportGroup
             ? "Cost report group is required by your organization"
-            : "When enabled, leases using this template will be assigned to a cost report group for billing and reporting purposes",
+            : costReportGroupDescription,
         }}
         toggleProps={{
           children: `Cost reporting group ${costReportGroupEnabled || requireCostReportGroup ? "enabled" : "disabled"}`,
@@ -86,13 +96,7 @@ export function CostReportSettingsForm({
         <SelectField
           controllerProps={{ control, name: "selectedCostReportGroup" }}
           formFieldProps={{
-            label: requireCostReportGroup ? (
-              "Cost Report Group"
-            ) : (
-              <>
-                Cost Report Group - <i>Optional</i>
-              </>
-            ),
+            label: "Cost Report Group",
             description:
               "Select the cost report group for billing allocation and expense tracking",
           }}

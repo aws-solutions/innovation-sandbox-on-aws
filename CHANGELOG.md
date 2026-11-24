@@ -5,6 +5,49 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-11-24
+
+### Added
+
+- Sandbox Spaces, AI agent workspaces in the web console for natural-language work in leased accounts, with streamed chat, persistent lease-scoped history, administrator-selected Amazon Bedrock models, permission-set and SCP-bound access, and inference spend included in lease budgets ([#171](https://github.com/aws-solutions/innovation-sandbox-on-aws/issues/171))
+- MCP access to Innovation Sandbox APIs from Kiro, Claude Code, Codex, Cursor, and other MCP clients, using standard Innovation Sandbox sign-in and role-based tool filtering (`scripts/mcp/`) ([#174](https://github.com/aws-solutions/innovation-sandbox-on-aws/issues/174))
+- Opt-in predictive budget controls with cost history, current-spend estimates, spend-rate actions, budget-exhaustion views, ten-minute Bedrock token cost monitoring, and incomplete-monitoring alarms ([#168](https://github.com/aws-solutions/innovation-sandbox-on-aws/issues/168), [#153](https://github.com/aws-solutions/innovation-sandbox-on-aws/issues/153), [#92](https://github.com/aws-solutions/innovation-sandbox-on-aws/issues/92))
+- Configurable IAM Identity Center permission sets for lease-template defaults and per-user or group assignments, registered with the `ISB:<namespace>:ManagedPermissionSet=true` tag and removed during account cleanup. Unconfigured templates retain the built-in user permission set ([#170](https://github.com/aws-solutions/innovation-sandbox-on-aws/issues/170), [#28](https://github.com/aws-solutions/innovation-sandbox-on-aws/issues/28))
+- Configurable SES and SNS notification delivery with independent Admin Settings controls, filterable SNS metadata, and optional cross-account delegated SES sending through `SesIdentityArn` ([#169](https://github.com/aws-solutions/innovation-sandbox-on-aws/issues/169), [#155](https://github.com/aws-solutions/innovation-sandbox-on-aws/issues/155), [#46](https://github.com/aws-solutions/innovation-sandbox-on-aws/issues/46))
+- Optional `AccountPoolOuName` CloudFormation parameter on the Account Pool stack for a custom top-level Innovation Sandbox account pool OU name, defaulting to `<namespace>_InnovationSandboxAccountPool` ([#145](https://github.com/aws-solutions/innovation-sandbox-on-aws/issues/145), [#146](https://github.com/aws-solutions/innovation-sandbox-on-aws/pull/146) @RoseSecurity)
+- Optional `ForceConfigurationUpdate` parameter for refreshing shared Compute stack configuration, including propagating a changed `AwsAccessPortalUrl` to frontend and Lambda configuration ([#190](https://github.com/aws-solutions/innovation-sandbox-on-aws/issues/190))
+- Account Pool automation for CloudFormation StackSets trusted access and organization-wide sharing through AWS Resource Access Manager
+
+### Changed
+
+- Lease monitoring records cost history for every monitored lease after upgrade. Projection and prediction-based enforcement remain opt-in
+- Redesigned Admin Settings and lease-template workflows with grouped saves, search, review indicators, and updated budget, blueprint, access, sharing, and Sandbox Spaces controls
+- CDK deployment scripts treat `.env` as the source of truth, restoring CloudFormation defaults when optional values are cleared
+- Account Pool stacks now default `BedrockInferenceProfilePatterns` to `arn:aws:bedrock:*:*:inference-profile/*`, exempting all Bedrock inference profiles from the Region restriction SCP. Updates run through `scripts/cdk/deploy.sh` apply this default when `BEDROCK_INFERENCE_PROFILE_PATTERNS` is unset
+
+### Fixed
+
+- Upgraded deployments now explicitly disable the unused API Gateway cache cluster, removing the cache and its charges from deployments that retained it after updating to v1.3.6 or v1.3.7 ([#204](https://github.com/aws-solutions/innovation-sandbox-on-aws/issues/204))
+- Monthly solution cost metrics and cost report group CSVs now include the final day of the month and every Cost Explorer page. Group reports rate-limit every page request and fail without uploading partial data when any account batch fails
+- Account-ejection confirmations now warn that ejection does not run account cleanup or stop charges from resources left in the account
+- Lease monitoring updates only the fields it owns, preventing hourly scans from reverting concurrent lease freezes, terminations, or administrator edits and avoiding duplicate processing across overlapping status scans
+- Lease-template forms ignore hidden budget and duration values when their controls are off, reject all-whitespace blueprint tag keys, and prevent requiring a cost report group before one is configured
+- Lease and lease-template APIs reject budget thresholds at or above the maximum spend amount while allowing unrelated edits to legacy records
+
+### Security
+
+- Updated or removed dependencies to mitigate:
+  - `systeminformation`: [CVE-2026-116576](https://nvd.nist.gov/vuln/detail/CVE-2026-116576)
+  - `body-parser`: [CVE-2026-111181](https://nvd.nist.gov/vuln/detail/CVE-2026-111181)
+  - `@modelcontextprotocol/sdk`: [CVE-2026-104850](https://nvd.nist.gov/vuln/detail/CVE-2026-104850), [CVE-2026-111767](https://nvd.nist.gov/vuln/detail/CVE-2026-111767), [CVE-2026-111768](https://nvd.nist.gov/vuln/detail/CVE-2026-111768), and [GHSA-f897-62hf-6gxq](https://github.com/advisories/GHSA-f897-62hf-6gxq)
+  - `@opentelemetry/propagator-jaeger`: [CVE-2026-59892](https://nvd.nist.gov/vuln/detail/CVE-2026-59892)
+  - `zod`: [GHSA-mrhx-c7xc-m3w5](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5)
+- REST API connections require TLS 1.2 or later with forward-secrecy cipher suites, and CloudFront removes S3 encryption, KMS key, and object-version metadata from web responses
+- Validation covers persisted DynamoDB keys, pagination cursors, account and resource identifiers, principals, configuration values, and M2M role ARNs before data access, and Lambda event logging redacts identity tokens and SigV4 credentials
+- Service control policies protect Innovation Sandbox, AWS Control Tower, and AWS Organizations administrative roles at any IAM path from sandbox lease principals
+- Exact user lookup and cache hydration return only members of configured Innovation Sandbox user, manager, or administrator groups
+- Account cleanup waits for in-progress IAM Identity Center assignment grants to settle before revoking access, preventing a pending grant from completing after the account is recycled
+
 ## [1.3.7] - 2026-11-19
 
 ### Security

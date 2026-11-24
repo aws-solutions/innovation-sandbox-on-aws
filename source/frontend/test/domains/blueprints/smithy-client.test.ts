@@ -4,15 +4,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
-  MOCK_ID_TOKEN,
-  mockCognitoCredentials,
-} from "@amzn/innovation-sandbox-frontend-test/utils/cognitoFixtures";
-import {
   createBlueprintClient,
   SmithyBlueprintClient,
 } from "@amzn/innovation-sandbox-frontend/domains/blueprints/smithy-client";
 import { ApiError } from "@amzn/innovation-sandbox-frontend/helpers/apiError";
 import { ConfigData } from "@amzn/innovation-sandbox-frontend/helpers/config";
+import {
+  MOCK_ID_TOKEN,
+  mockCognitoCredentials,
+} from "@amzn/innovation-sandbox-frontend-test/utils/cognitoFixtures";
 import { IDENTITY_HEADER } from "@amzn/innovation-sandbox-shared/utils/auth-utils";
 
 const mockGetIdToken = vi.fn();
@@ -35,6 +35,10 @@ const config: ConfigData = {
   AwsAccessPortalUrl: "https://test.awsapps.com/start",
   ApiGatewayHost: "test1234.execute-api.us-east-1.amazonaws.com",
   ApiGatewayStage: "prod",
+  SandboxAgentWebSocketUrl:
+    "wss://test5678.execute-api.us-east-1.amazonaws.com/prod",
+  SandboxAgentMcpGatewayUrl:
+    "https://test5678.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp",
 };
 
 // A blueprint as the server projects it on the wire: the modeled members only

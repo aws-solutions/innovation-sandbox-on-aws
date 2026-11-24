@@ -3,6 +3,7 @@
 
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { DateTime } from "luxon";
 import { http, HttpResponse } from "msw";
 import { BrowserRouter as Router } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -11,11 +12,13 @@ import { MonitoredLeaseView } from "@amzn/innovation-sandbox-frontend/domains/le
 import { EditDurationSettings } from "@amzn/innovation-sandbox-frontend/domains/leases/pages/EditDurationSettings";
 import { getConfig } from "@amzn/innovation-sandbox-frontend/helpers/config";
 import { createConfiguration } from "@amzn/innovation-sandbox-frontend/mocks/factories/configurationFactory";
+import { createLeasePermissionProfile } from "@amzn/innovation-sandbox-frontend/mocks/factories/leaseFactory";
 import { server } from "@amzn/innovation-sandbox-frontend/mocks/server";
 import { renderWithQueryClient } from "@amzn/innovation-sandbox-frontend/setupTests";
 import { ApiResponse } from "@amzn/innovation-sandbox-frontend/types";
 
 const mockNavigate = vi.fn();
+const mockSetBreadcrumb = vi.fn();
 
 vi.mock("react-router-dom", async () => {
   const actual = await vi.importActual("react-router-dom");
@@ -27,7 +30,7 @@ vi.mock("react-router-dom", async () => {
 });
 
 vi.mock("@amzn/innovation-sandbox-frontend/hooks/useBreadcrumb", () => ({
-  useBreadcrumb: () => vi.fn(),
+  useBreadcrumb: () => mockSetBreadcrumb,
 }));
 
 vi.mock("@amzn/innovation-sandbox-frontend/components/Toast", () => ({
@@ -52,6 +55,9 @@ const mockLease: MonitoredLeaseView = {
   originalLeaseTemplateName: "Test",
   originalLeaseTemplateUuid: crypto.randomUUID(),
   totalCostAccrued: 0,
+  sandboxSpacesEnabled: false,
+  selectableModels: [],
+  ...createLeasePermissionProfile(),
 };
 
 // Full AdminConfig via the shared factory (the generated client's
@@ -95,6 +101,19 @@ describe("EditDurationSettings", () => {
         return HttpResponse.json(response);
       }),
     );
+  });
+
+  it("uses the canonical lease name in the breadcrumb", async () => {
+    renderComponent();
+
+    await waitFor(() => {
+      expect(mockSetBreadcrumb).toHaveBeenCalledWith([
+        { text: "Home", href: "/" },
+        { text: "Leases", href: "/leases" },
+        { text: "Test (11111111)", href: "/leases/lease-123" },
+        { text: "Edit Duration Settings", href: "" },
+      ]);
+    });
   });
 
   it("shows loading state while fetching lease data", () => {
@@ -261,15 +280,142 @@ describe("EditDurationSettings", () => {
     });
   });
 
-  it("disables save button when form is not dirty", async () => {
+  it("ignores hidden invalid values when the expiration is turned off, so the change can be saved", async () => {
+    let submittedData: any = null;
+    server.use(
+      http.patch(
+        `${getConfig().ApiUrl}/leases/lease-123`,
+        async ({ request }) => {
+          submittedData = await request.json();
+          return HttpResponse.json({ status: "success", data: {} });
+        },
+      ),
+    );
+
+    const user = userEvent.setup();
     renderComponent();
 
     await waitFor(() => {
       expect(screen.getByText("Edit Duration Settings")).toBeInTheDocument();
     });
 
+    // The lease's saved expiration is in the past, and a new row starts at 0
+    // hours remaining; both are invalid.
+    await user.click(screen.getByRole("button", { name: "Add threshold" }));
     const saveButton = screen.getByRole("button", { name: "Save changes" });
-    expect(saveButton).toBeDisabled();
+    await waitFor(() => expect(saveButton).toBeDisabled());
+
+    await user.click(screen.getByRole("checkbox"));
+
+    await waitFor(() => expect(saveButton).toBeEnabled());
+    await user.click(saveButton);
+
+    await waitFor(() =>
+      expect(submittedData).toEqual({
+        durationThresholds: [],
+        expirationDate: null,
+      }),
+    );
+  });
+
+  it("removes an added threshold when the expiration is turned off and on, for a lease with no saved thresholds", async () => {
+    server.use(
+      http.get(`${getConfig().ApiUrl}/leases/lease-123`, () =>
+        HttpResponse.json({
+          status: "success",
+          data: { ...mockLease, durationThresholds: undefined },
+        }),
+      ),
+    );
+
+    const user = userEvent.setup();
+    renderComponent();
+
+    await waitFor(() => {
+      expect(screen.getByText("Edit Duration Settings")).toBeInTheDocument();
+    });
+    await user.click(screen.getByRole("button", { name: "Add threshold" }));
+    expect(screen.getAllByPlaceholderText("Enter hours")).toHaveLength(1);
+
+    const toggle = screen.getByRole("checkbox");
+    await user.click(toggle);
+    await user.click(toggle);
+
+    expect(
+      screen.queryByPlaceholderText("Enter hours"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("puts back the saved expiration date when the expiration is turned off and on", async () => {
+    const start = DateTime.utc().minus({ days: 1 });
+    server.use(
+      http.get(`${getConfig().ApiUrl}/leases/lease-123`, () =>
+        HttpResponse.json({
+          status: "success",
+          data: {
+            ...mockLease,
+            startDate: start.toISO(),
+            expirationDate: start.plus({ days: 7 }).toISO(),
+            durationThresholds: [{ hoursRemaining: 100, action: "ALERT" }],
+          },
+        }),
+      ),
+    );
+
+    const user = userEvent.setup();
+    renderComponent();
+
+    const dateInput = await screen.findByPlaceholderText("YYYY/MM/DD");
+    await waitFor(() => expect(dateInput).not.toHaveValue(""));
+    // Three days from the start leaves 72 hours, under the 100-hour threshold.
+    await user.clear(dateInput);
+    await user.type(
+      dateInput,
+      start.plus({ days: 3 }).toLocal().toFormat("yyyy/MM/dd"),
+    );
+    const saveButton = screen.getByRole("button", { name: "Save changes" });
+    await waitFor(() => expect(saveButton).toBeDisabled());
+
+    const toggle = screen.getByRole("checkbox");
+    await user.click(toggle);
+    await user.click(toggle);
+
+    await waitFor(() =>
+      expect(screen.getByPlaceholderText("YYYY/MM/DD")).toHaveValue(
+        start.plus({ days: 7 }).toLocal().toFormat("yyyy/MM/dd"),
+      ),
+    );
+  });
+
+  it("shows the expiration toggle on when an expiration date is required and the lease has none", async () => {
+    server.use(
+      http.get(`${getConfig().ApiUrl}/configurations`, () =>
+        HttpResponse.json({
+          status: "success",
+          data: createConfiguration({
+            leases: { maxDurationHours: 720, requireMaxDuration: true },
+          }),
+        }),
+      ),
+      http.get(`${getConfig().ApiUrl}/leases/lease-123`, () =>
+        HttpResponse.json({
+          status: "success",
+          data: { ...mockLease, expirationDate: undefined },
+        }),
+      ),
+    );
+
+    renderComponent();
+
+    await waitFor(() => {
+      expect(screen.getByText("Edit Duration Settings")).toBeInTheDocument();
+    });
+    const toggle = screen.getByRole("checkbox");
+    expect(toggle).toBeChecked();
+    expect(toggle).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Add threshold" }),
+    ).toBeInTheDocument();
   });
 
   it("displays expiration date field when enabled", async () => {
@@ -312,26 +458,6 @@ describe("EditDurationSettings", () => {
     expect(toggle).not.toBeChecked();
   });
 
-  it("validates expiration date is after start date", async () => {
-    const user = userEvent.setup();
-    renderComponent();
-
-    await waitFor(() => {
-      expect(screen.getByText("Edit Duration Settings")).toBeInTheDocument();
-    });
-
-    // Try to set expiration date before start date
-    const dateInput = screen.getByPlaceholderText("YYYY/MM/DD");
-    await user.clear(dateInput);
-    await user.type(dateInput, "2023/12/31");
-
-    const saveButton = screen.getByRole("button", { name: "Save changes" });
-
-    await waitFor(() => {
-      expect(saveButton).toBeDisabled();
-    });
-  });
-
   it("shows an error for an active lease without a start date", async () => {
     server.use(
       http.get(`${getConfig().ApiUrl}/leases/lease-123`, () => {
@@ -350,6 +476,32 @@ describe("EditDurationSettings", () => {
 
     expect(
       await screen.findByText("There was a problem loading this lease."),
+    ).toBeInTheDocument();
+  });
+  it("warns without blocking when an opted-in lease's expiry is within 48 hours of its start", async () => {
+    server.use(
+      http.get(`${getConfig().ApiUrl}/leases/lease-123`, () => {
+        return HttpResponse.json({
+          status: "success",
+          data: {
+            ...mockLease,
+            predictiveBudgetEnabled: true,
+            startDate: "2024-01-01T00:00:00.000Z",
+            expirationDate: "2024-01-01T12:00:00.000Z",
+          },
+        });
+      }),
+    );
+
+    renderComponent();
+
+    expect(
+      await screen.findByText(
+        /estimated-cost thresholds may never fire for this lease\./i,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /save changes/i }),
     ).toBeInTheDocument();
   });
 });

@@ -222,7 +222,24 @@ describe("InnovationSandbox.freezeLease()", async () => {
     expect(mockContext.leaseStore.update).toHaveBeenCalledWith({
       ...mockLease,
       status: "Frozen",
+      lifecycleDispatch: null,
     });
+    // Recorded last, after the LeaseFrozen event.
+    expect(mockContext.leaseStore.recordLifecycleDispatch).toHaveBeenCalledWith(
+      {
+        leaseId: mockLease.uuid,
+        userEmail: mockLease.userEmail,
+        intent: "FREEZE",
+      },
+    );
+    expect(
+      vi.mocked(mockContext.leaseStore.recordLifecycleDispatch).mock
+        .invocationCallOrder[0],
+    ).toBeGreaterThan(
+      vi
+        .mocked(mockContext.eventBridgeClient.sendIsbEvent)
+        .mock.invocationCallOrder.at(-1)!,
+    );
 
     expect(mockContext.eventBridgeClient.sendIsbEvent).toHaveBeenCalledWith(
       mockContext.tracer,
@@ -239,6 +256,61 @@ describe("InnovationSandbox.freezeLease()", async () => {
       }),
     );
   });
+
+  test.each([
+    {
+      name: "BudgetExceeded",
+      reason: {
+        type: "BudgetExceeded",
+        triggeredBudgetThreshold: 90,
+        triggeredBy: "REPORTED",
+        budget: 200,
+        totalSpend: 100,
+      },
+    },
+    {
+      name: "SpendRateExceeded",
+      reason: {
+        type: "SpendRateExceeded",
+        rateBasis: "HOURLY",
+        thresholdRate: 3.2,
+        measuredRate: 3.5,
+        budget: 200,
+        totalSpend: 60,
+      },
+    },
+  ] as const)(
+    "freezes on a $name reason through the same path and emits LeaseFrozen with the reason unchanged",
+    async ({ reason }) => {
+      await InnovationSandbox.freezeLease(
+        { lease: mockLease, reason },
+        mockContext,
+      );
+
+      expect(mockContext.orgsService.moveAccount).toHaveBeenCalledWith(
+        mockLeaseAccount,
+        "Active",
+        "Frozen",
+      );
+      expect(mockContext.leaseStore.update).toHaveBeenCalledWith({
+        ...mockLease,
+        status: "Frozen",
+        lifecycleDispatch: null,
+      });
+      const frozen = mockContext.eventBridgeClient.sendIsbEvent.mock.calls
+        .map(([, event]) => event)
+        .filter((event) => event instanceof LeaseFrozenEvent);
+      expect(frozen).toHaveLength(1);
+      expect((frozen[0] as LeaseFrozenEvent).Detail.reason).toEqual(reason);
+      expect(frozen[0]).toEqual(
+        new LeaseFrozenEvent({
+          leaseId: { userEmail: mockLease.userEmail, uuid: mockLease.uuid },
+          accountId: mockLeaseAccount.awsAccountId,
+          reason,
+        }),
+      );
+    },
+  );
 
   test("keeps the lock and propagates when the AssignmentRequested publish fails after the freeze commits", async () => {
     // FREEZE is critical, so releaseLockOnEventFailure is false — the lock is
@@ -283,7 +355,10 @@ describe("InnovationSandbox.freezeLease()", async () => {
   });
 
   test("Fails when attempting to freeze a lease that is not active", async () => {
-    const alreadyExpiredLease = generateSchemaData(PersistedExpiredLeaseSchema);
+    const alreadyExpiredLease = generateSchemaData(
+      PersistedExpiredLeaseSchema,
+      {},
+    );
 
     await expect(
       InnovationSandbox.freezeLease(

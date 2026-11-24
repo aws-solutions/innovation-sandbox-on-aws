@@ -127,6 +127,23 @@
       "documentation":"<p>Get a single registered account by id. 404 when it does not exist.</p>",
       "readonly":true
     },
+    "GetAgentConfiguration":{
+      "name":"GetAgentConfiguration",
+      "http":{
+        "method":"GET",
+        "requestUri":"/configurations/agent",
+        "responseCode":200
+      },
+      "output":{"shape":"GetAgentConfigurationOutput"},
+      "errors":[
+        {"shape":"UnauthenticatedError"},
+        {"shape":"AccessDeniedError"},
+        {"shape":"InternalServerError"},
+        {"shape":"ValidationError"}
+      ],
+      "documentation":"<p>Reads the <code>agent</code> configuration section: its current values (or code defaults if never saved) plus the <code>lastSavedBy</code> audit field. Governs the Sandbox Spaces chat feature and its per-principal token budget.</p>",
+      "readonly":true
+    },
     "GetBlueprint":{
       "name":"GetBlueprint",
       "http":{
@@ -235,6 +252,82 @@
       "documentation":"<p>Get the assignments view for a lease. Admin/Manager may view any lease; other callers only their own (403 even when the lease does not exist, so existence is not leaked). 404 when the lease does not exist for an authorized caller.</p>",
       "readonly":true
     },
+    "GetLeaseBedrockTokenHistory":{
+      "name":"GetLeaseBedrockTokenHistory",
+      "http":{
+        "method":"GET",
+        "requestUri":"/leases/{leaseId}/bedrockTokenHistory",
+        "responseCode":200
+      },
+      "input":{"shape":"GetLeaseBedrockTokenHistoryInput"},
+      "output":{"shape":"GetLeaseBedrockTokenHistoryOutput"},
+      "errors":[
+        {"shape":"UnauthenticatedError"},
+        {"shape":"NotFoundError"},
+        {"shape":"AccessDeniedError"},
+        {"shape":"InternalServerError"},
+        {"shape":"ValidationError"}
+      ],
+      "documentation":"<p>Get a lease's Bedrock token series, newest-first: one entry per reading per region and model, with <code>maxResults</code> counting readings. Authorization is the same as <code>GetLease</code> — Admin/Manager may read any lease, any other caller only one they own or are assigned to, 403 even when the lease does not exist so existence is not leaked. 404 for an authorized caller.</p> <p>A range's first change is measured from the reading before it: read it with <code>beforeTimestamp</code> set to the range start and <code>maxResults</code> 1, as a single request, not through a paginator (with the AWS CLI, <code>--no-paginate</code>). An empty page with a <code>nextPageIdentifier</code> means that reading could not be read.</p> <p>A page can return fewer than <code>maxResults</code> readings, or none, and still include a <code>nextPageIdentifier</code>; it also ends early at a size limit. Keep requesting pages until <code>nextPageIdentifier</code> is absent.</p>",
+      "readonly":true
+    },
+    "GetLeaseBreachHistory":{
+      "name":"GetLeaseBreachHistory",
+      "http":{
+        "method":"GET",
+        "requestUri":"/leases/{leaseId}/breachHistory",
+        "responseCode":200
+      },
+      "input":{"shape":"GetLeaseBreachHistoryInput"},
+      "output":{"shape":"GetLeaseBreachHistoryOutput"},
+      "errors":[
+        {"shape":"UnauthenticatedError"},
+        {"shape":"NotFoundError"},
+        {"shape":"AccessDeniedError"},
+        {"shape":"InternalServerError"},
+        {"shape":"ValidationError"}
+      ],
+      "documentation":"<p>Get a lease's breach history: the thresholds that fired, newest-first. Authorization is the same as <code>GetLease</code> — Admin/Manager may read any lease, any other caller only one they own or are assigned to, 403 even when the lease does not exist so existence is not leaked. 404 for an authorized caller.</p> <p>A page can return fewer than <code>maxResults</code> breaches, or none, and still include a <code>nextPageIdentifier</code>. Keep requesting pages until <code>nextPageIdentifier</code> is absent.</p>",
+      "readonly":true
+    },
+    "GetLeaseCostHistory":{
+      "name":"GetLeaseCostHistory",
+      "http":{
+        "method":"GET",
+        "requestUri":"/leases/{leaseId}/costHistory",
+        "responseCode":200
+      },
+      "input":{"shape":"GetLeaseCostHistoryInput"},
+      "output":{"shape":"GetLeaseCostHistoryOutput"},
+      "errors":[
+        {"shape":"UnauthenticatedError"},
+        {"shape":"NotFoundError"},
+        {"shape":"AccessDeniedError"},
+        {"shape":"InternalServerError"},
+        {"shape":"ValidationError"}
+      ],
+      "documentation":"<p>Get a lease's reported cost series, newest-first. Authorization is the same as <code>GetLease</code> — Admin/Manager may read any lease, any other caller only one they own or are assigned to, 403 even when the lease does not exist so existence is not leaked. 404 for an authorized caller.</p> <p>A page can return fewer than <code>maxResults</code> readings, or none, and still include a <code>nextPageIdentifier</code>. Keep requesting pages until <code>nextPageIdentifier</code> is absent.</p>",
+      "readonly":true
+    },
+    "GetLeaseCostSummary":{
+      "name":"GetLeaseCostSummary",
+      "http":{
+        "method":"GET",
+        "requestUri":"/leases/{leaseId}/costSummary",
+        "responseCode":200
+      },
+      "input":{"shape":"GetLeaseCostSummaryInput"},
+      "output":{"shape":"GetLeaseCostSummaryOutput"},
+      "errors":[
+        {"shape":"UnauthenticatedError"},
+        {"shape":"NotFoundError"},
+        {"shape":"AccessDeniedError"},
+        {"shape":"InternalServerError"},
+        {"shape":"ValidationError"}
+      ],
+      "documentation":"<p>Get a lease's headline cost figures from its newest reading. <code>current</code> is absent when no reading is available. Authorization is the same as <code>GetLease</code> — Admin/Manager may read any lease, any other caller only one they own or are assigned to, 403 even when the lease does not exist so existence is not leaked. 404 for an authorized caller.</p>",
+      "readonly":true
+    },
     "GetLeaseTemplate":{
       "name":"GetLeaseTemplate",
       "http":{
@@ -305,6 +398,24 @@
       "documentation":"<p>Reads the <code>notification</code> configuration section: its current values (or code defaults if never saved) plus the <code>lastSavedBy</code> audit field. Fails fast with 500 if the stored record fails schema validation (unlike <code>GetConfigurations</code>, which skips invalid sections). Accessible by Admin, Manager, and User roles.</p>",
       "readonly":true
     },
+    "GetSandboxSpacesUsage":{
+      "name":"GetSandboxSpacesUsage",
+      "http":{
+        "method":"GET",
+        "requestUri":"/sandboxAgent/usage",
+        "responseCode":200
+      },
+      "input":{"shape":"GetSandboxSpacesUsageInput"},
+      "output":{"shape":"GetSandboxSpacesUsageOutput"},
+      "errors":[
+        {"shape":"UnauthenticatedError"},
+        {"shape":"AccessDeniedError"},
+        {"shape":"InternalServerError"},
+        {"shape":"ValidationError"}
+      ],
+      "documentation":"<p>Retrieve estimated Sandbox Spaces token cost attributed to users on a lease. Users see only their own entry in <code>spendByUsers</code>; Admins and Managers see every user with recorded usage on the lease.</p>",
+      "readonly":true
+    },
     "GetTermsOfServiceConfiguration":{
       "name":"GetTermsOfServiceConfiguration",
       "http":{
@@ -338,6 +449,60 @@
         {"shape":"ValidationError"}
       ],
       "documentation":"<p>Paginated list of registered sandbox accounts. <code>maxResults</code> caps at 2000.</p>",
+      "readonly":true
+    },
+    "ListAgentHistory":{
+      "name":"ListAgentHistory",
+      "http":{
+        "method":"GET",
+        "requestUri":"/sandboxAgent/history",
+        "responseCode":200
+      },
+      "input":{"shape":"ListAgentHistoryInput"},
+      "output":{"shape":"ListAgentHistoryOutput"},
+      "errors":[
+        {"shape":"UnauthenticatedError"},
+        {"shape":"AccessDeniedError"},
+        {"shape":"InternalServerError"},
+        {"shape":"ValidationError"}
+      ],
+      "documentation":"<p>Lists the caller's persisted turn-by-turn agent history for a lease, paginated by nextToken.</p>",
+      "readonly":true
+    },
+    "ListAgentModelCatalog":{
+      "name":"ListAgentModelCatalog",
+      "http":{
+        "method":"GET",
+        "requestUri":"/configurations/agent/models",
+        "responseCode":200
+      },
+      "input":{"shape":"ListAgentModelCatalogInput"},
+      "output":{"shape":"ListAgentModelCatalogOutput"},
+      "errors":[
+        {"shape":"UnauthenticatedError"},
+        {"shape":"AccessDeniedError"},
+        {"shape":"InternalServerError"},
+        {"shape":"ValidationError"}
+      ],
+      "documentation":"<p>Returns all agent-model catalog rows, enabled and disabled, for the Admin Settings table and for lease-template model selection. Pricing rate fields are optional — present if provided during initial catalog entry creation or populated later. Readable by every role; only Admin may change a row.</p>",
+      "readonly":true
+    },
+    "ListAgentModels":{
+      "name":"ListAgentModels",
+      "http":{
+        "method":"GET",
+        "requestUri":"/sandboxAgent/models",
+        "responseCode":200
+      },
+      "input":{"shape":"ListAgentModelsInput"},
+      "output":{"shape":"ListAgentModelsOutput"},
+      "errors":[
+        {"shape":"UnauthenticatedError"},
+        {"shape":"AccessDeniedError"},
+        {"shape":"InternalServerError"},
+        {"shape":"ValidationError"}
+      ],
+      "documentation":"<p>Returns eligible Bedrock models, listed from <code>ListFoundationModels</code> and <code>ListInferenceProfiles</code>, with their pricing data. Admin only. The response includes all four token-type rates. A model whose rates are not published by any pricing API is listed without any pricing members.</p>",
       "readonly":true
     },
     "ListBlueprints":{
@@ -412,6 +577,24 @@
       "documentation":"<p>Paginated list of leases. Admin/Manager callers list all leases (or filter by <code>userEmail</code>); a regular caller may only list their own (<code>userEmail</code> must be their own, else 403 <code>AccessDeniedError</code>). Each result item carries a <code>leaseId</code>. <code>maxResults</code> caps at 2000.</p>",
       "readonly":true
     },
+    "ListPermissionSets":{
+      "name":"ListPermissionSets",
+      "http":{
+        "method":"GET",
+        "requestUri":"/permissionSets",
+        "responseCode":200
+      },
+      "input":{"shape":"ListPermissionSetsInput"},
+      "output":{"shape":"ListPermissionSetsOutput"},
+      "errors":[
+        {"shape":"UnauthenticatedError"},
+        {"shape":"AccessDeniedError"},
+        {"shape":"InternalServerError"},
+        {"shape":"ValidationError"}
+      ],
+      "documentation":"<p>Lists permission sets available for sandbox lease permission profiles.</p> <p>Accessible only to Admin and Manager roles.</p> <p>Results are ordered by normalized name and permission set identifier. The optional search query performs a case-insensitive substring match against name and description. Callers must treat pagination tokens as opaque.</p>",
+      "readonly":true
+    },
     "ListSharedLeases":{
       "name":"ListSharedLeases",
       "http":{
@@ -465,6 +648,25 @@
       ],
       "documentation":"<p>Paginated list of unregistered accounts in the Entry OU. <code>maxResults</code> caps at 20.</p>",
       "readonly":true
+    },
+    "PutAgentModelCatalogEntry":{
+      "name":"PutAgentModelCatalogEntry",
+      "http":{
+        "method":"PUT",
+        "requestUri":"/configurations/agent/models/{modelId}",
+        "responseCode":200
+      },
+      "input":{"shape":"PutAgentModelCatalogEntryInput"},
+      "output":{"shape":"PutAgentModelCatalogEntryOutput"},
+      "errors":[
+        {"shape":"UnauthenticatedError"},
+        {"shape":"AccessDeniedError"},
+        {"shape":"InternalServerError"},
+        {"shape":"ValidationError"},
+        {"shape":"ConflictError"}
+      ],
+      "documentation":"<p>Creates a Bedrock model catalog entry or updates its enabled state. When creating an entry, omit <code>expectedLastEditTime</code> and provide <code>modelType</code>. The service looks the model up in Amazon Bedrock as that type and stores its canonical metadata. When updating an existing entry, provide its current <code>meta.lastEditTime</code> and omit <code>modelType</code>; the operation updates only its enabled state.</p>",
+      "idempotent":true
     },
     "QuarantineAccount":{
       "name":"QuarantineAccount",
@@ -538,7 +740,7 @@
         {"shape":"ValidationError"},
         {"shape":"ConflictError"}
       ],
-      "documentation":"<p>Request a new lease from a template. Returns the created lease (201) WITHOUT a <code>leaseId</code>. A cross-user (on-behalf) request is Admin/Manager only. <code>assignments</code> is capped at 19. New group-to-lease associations are rejected when <code>leases.groupAssignmentMode</code> is <code>NONE</code>; user assignments remain allowed.</p> <p>Retry: NOT <code>@idempotent</code>. Requesting a lease allocates an account and publishes events; a retried request creates a second lease.</p>"
+      "documentation":"<p>Request a new lease from a template. Returns the created lease (201) WITHOUT a <code>leaseId</code>. A cross-user (on-behalf) request is Admin/Manager only. <code>assignments</code> accepts up to 20 principals with one permission set each, but the final desired state is capped at 20 total including the required owner. New group-to-lease associations are rejected when <code>leases.groupAssignmentMode</code> is <code>NONE</code>; user assignments remain allowed.</p> <p>Retry: NOT <code>@idempotent</code>. Requesting a lease allocates an account and publishes events; a retried request creates a second lease.</p>"
     },
     "RetryCleanup":{
       "name":"RetryCleanup",
@@ -652,6 +854,26 @@
       ],
       "documentation":"<p>Unfreeze a frozen lease. Unlike freeze/terminate, this returns the updated lease (200) WITH the <code>leaseId</code>. 404 when missing; 409 when not frozen, an account is not in the frozen state, or a live lock rejects it.</p>"
     },
+    "UpdateAgentConfiguration":{
+      "name":"UpdateAgentConfiguration",
+      "http":{
+        "method":"PUT",
+        "requestUri":"/configurations/agent",
+        "responseCode":200
+      },
+      "input":{"shape":"UpdateAgentConfigurationInput"},
+      "output":{"shape":"UpdateAgentConfigurationOutput"},
+      "errors":[
+        {"shape":"UnsupportedMediaTypeError"},
+        {"shape":"UnauthenticatedError"},
+        {"shape":"AccessDeniedError"},
+        {"shape":"InternalServerError"},
+        {"shape":"ValidationError"},
+        {"shape":"ConflictError"}
+      ],
+      "documentation":"<p>Replaces the <code>agent</code> configuration section. Uses optimistic concurrency: echo <code>meta.lastEditTime</code> from a prior read to detect a concurrent edit (409 <code>ConflictError</code> on mismatch); omit it on the first save. Admin role only.</p>",
+      "idempotent":true
+    },
     "UpdateBlueprint":{
       "name":"UpdateBlueprint",
       "http":{
@@ -724,9 +946,10 @@
         {"shape":"NotFoundError"},
         {"shape":"AccessDeniedError"},
         {"shape":"InternalServerError"},
-        {"shape":"ValidationError"}
+        {"shape":"ValidationError"},
+        {"shape":"ConflictError"}
       ],
-      "documentation":"<p>Update a monitored (active) lease. PATCH semantics: every body member is optional. Returns the updated lease (200) WITHOUT a <code>leaseId</code>. The nullable members (<code>maxSpend</code>, <code>expirationDate</code>, <code>costReportGroup</code>) accept an explicit <code>null</code> to CLEAR the value. Non-monitored leases are rejected 400 (<code>ValidationError</code>); a missing lease is 404.</p>"
+      "documentation":"<p>Update a monitored (active) lease. PATCH semantics: every body member is optional. Returns the updated lease (200) WITHOUT a <code>leaseId</code>. The nullable members (<code>maxSpend</code>, <code>expirationDate</code>, <code>costReportGroup</code>, and <code>rateLimits</code>) accept an explicit <code>null</code> to CLEAR the value. Non-monitored leases are rejected 400 (<code>ValidationError</code>); a missing lease is 404.</p>"
     },
     "UpdateLeaseAssignments":{
       "name":"UpdateLeaseAssignments",
@@ -745,7 +968,7 @@
         {"shape":"ValidationError"},
         {"shape":"ConflictError"}
       ],
-      "documentation":"<p>Replace a lease's desired principal assignments (declarative). Accepted asynchronously: success is 202 with <code>{ desiredCount }</code> — the assignment worker reconciles out of band. <code>@idempotent</code>: PUT sets the desired set, so a retry converges to the same state. <code>assignments</code> is capped at 19. Owner callers require lease sharing enabled globally and on the lease (else 403). When group assignment mode is <code>NONE</code>, existing group-to-lease associations may remain or be removed, but new associations are rejected. 404 when missing; 409 when the lease is not active or another operation holds the lock.</p>",
+      "documentation":"<p>Replace a lease's desired principal assignments (declarative). Each principal selects exactly one permission set. Accepted asynchronously: success is 202 with <code>{ desiredCount }</code> — the assignment worker reconciles out of band. <code>@idempotent</code>: PUT sets the desired set, so a retry converges to the same state. <code>assignments</code> is capped at 20 principals, including the lease owner. Owner callers require lease sharing enabled globally and on the lease (else 403). When group assignment mode is <code>NONE</code>, existing group-to-lease associations may remain or be removed, but new associations are rejected. 404 when missing; 409 when the lease is not active or another operation holds the lock.</p>",
       "idempotent":true
     },
     "UpdateLeaseTemplate":{
@@ -763,9 +986,10 @@
         {"shape":"NotFoundError"},
         {"shape":"AccessDeniedError"},
         {"shape":"InternalServerError"},
-        {"shape":"ValidationError"}
+        {"shape":"ValidationError"},
+        {"shape":"ConflictError"}
       ],
-      "documentation":"<p>Replaces a lease template.</p> <p>The body carries the full template, not a patch. <code>uuid</code>, <code>createdBy</code> and <code>blueprintName</code> are server-owned and are not part of the writable input; supplying them is rejected as an unknown member. <code>createdBy</code> is preserved from the existing template on write.</p>",
+      "documentation":"<p>Replaces a lease template.</p> <p>The body carries the full template, not a patch. <code>uuid</code>, <code>createdBy</code> and <code>blueprintName</code> are server-owned and are not part of the writable input; supplying them is rejected as an unknown member. <code>createdBy</code> is preserved from the existing template on write.</p> <p>Omitting <code>predictiveBudgetEnabled</code> keeps the stored value. A sent <code>rateLimits</code> list replaces the stored list; a non-empty list requires <code>predictiveBudgetEnabled</code>, and an empty list is always accepted. Omitting <code>rateLimits</code> keeps the stored list while <code>predictiveBudgetEnabled</code> is true and clears it otherwise. A <code>PREDICTED</code> budget threshold likewise requires <code>predictiveBudgetEnabled</code>.</p> <p>The write is conditioned on the template as read for validation; if it changed in between, the update fails with ConflictError and is not applied.</p>",
       "idempotent":true
     },
     "UpdateLeasesConfiguration":{
@@ -899,8 +1123,10 @@
         "maintenance",
         "termsOfService",
         "costReporting",
+        "agent",
         "isbManagedRegions",
-        "awsAccessPortalUrl"
+        "awsAccessPortalUrl",
+        "bedrockInferenceProfilePatterns"
       ],
       "members":{
         "leases":{"shape":"LeasesConfiguration"},
@@ -909,13 +1135,236 @@
         "maintenance":{"shape":"MaintenanceConfiguration"},
         "termsOfService":{"shape":"TermsOfServiceConfiguration"},
         "costReporting":{"shape":"CostReportingConfiguration"},
+        "agent":{"shape":"AgentConfiguration"},
         "isbManagedRegions":{
           "shape":"RegionList",
           "documentation":"<p>Regions the account pool is configured to manage.</p>"
         },
-        "awsAccessPortalUrl":{"shape":"String"}
+        "awsAccessPortalUrl":{"shape":"String"},
+        "bedrockInferenceProfilePatterns":{
+          "shape":"BedrockInferenceProfilePatternList",
+          "documentation":"<p>Bedrock inference profile patterns from the Account Pool deploy parameter; empty when unset.</p>"
+        }
       },
       "documentation":"<p>The full configuration the settings UI loads: every section (each with its audit fields) plus the deploy-time fields resolved outside the config store.</p>"
+    },
+    "AgentConfiguration":{
+      "type":"structure",
+      "required":["sandboxSpacesEnabled"],
+      "members":{
+        "sandboxSpacesEnabled":{
+          "shape":"Boolean",
+          "documentation":"<p>Global Sandbox Spaces capability. <code>true</code> turns the feature on for every role with an active lease (still subject to the enabled-model catalog gate); <code>false</code> turns it off entirely.</p>"
+        },
+        "lastSavedBy":{
+          "shape":"SensitiveEmail",
+          "documentation":"<p>Email of the last administrator to save the section, or a <code>system:</code> sentinel.</p>"
+        },
+        "meta":{"shape":"ConfigurationResponseMetadata"}
+      },
+      "documentation":"<p>Server-owned audit envelope echoed on each section. A never-saved section has no <code>lastSavedBy</code>: the member is simply absent on the wire. <code>meta</code> is absent until the section has been saved at least once — but when present it always carries both timestamps.</p>"
+    },
+    "AgentHistoryMessage":{
+      "type":"structure",
+      "required":[
+        "role",
+        "content",
+        "createdAt",
+        "messageId"
+      ],
+      "members":{
+        "role":{"shape":"ConversationRole"},
+        "content":{"shape":"String"},
+        "createdAt":{"shape":"SyntheticTimestamp_date_time"},
+        "messageId":{
+          "shape":"AgentHistoryMessageId",
+          "documentation":"<p>Stable opaque identity that remains unchanged across pagination and refreshes.</p>"
+        }
+      },
+      "documentation":"<p>One message in the conversation history.</p>"
+    },
+    "AgentHistoryMessageId":{
+      "type":"string",
+      "min":1
+    },
+    "AgentHistoryMessageList":{
+      "type":"list",
+      "member":{"shape":"AgentHistoryMessage"}
+    },
+    "AgentHistoryResponse":{
+      "type":"structure",
+      "required":["messages"],
+      "members":{
+        "leaseUuid":{
+          "shape":"String",
+          "documentation":"<p>The lease uuid.</p>"
+        },
+        "messages":{"shape":"AgentHistoryMessageList"},
+        "nextToken":{"shape":"String"}
+      },
+      "documentation":"<p><code>leaseUuid</code> presence is handler-determined, not client-requested.</p>"
+    },
+    "AgentModelCatalogData":{
+      "type":"structure",
+      "required":["models"],
+      "members":{
+        "models":{"shape":"AgentModelCatalogList"},
+        "nextToken":{
+          "shape":"String",
+          "documentation":"<p>Present only when additional pages exist.</p>"
+        }
+      },
+      "documentation":"<p>The <code>data</code> payload of <code>GET /configurations/agent/models</code>.</p>"
+    },
+    "AgentModelCatalogEntry":{
+      "type":"structure",
+      "required":[
+        "modelId",
+        "displayName",
+        "provider",
+        "availability",
+        "enabled",
+        "addedAt",
+        "lastSavedBy",
+        "meta"
+      ],
+      "members":{
+        "modelId":{"shape":"String"},
+        "displayName":{"shape":"String"},
+        "provider":{"shape":"String"},
+        "availability":{
+          "shape":"String",
+          "documentation":"<p>Geographic availability prefix: <code>&quot;global&quot;</code>, <code>&quot;us&quot;</code>, <code>&quot;eu&quot;</code>, etc. Kept as String — derived from Bedrock's inferenceProfileId prefix; open-ended as AWS adds new profile regions over time.</p>"
+        },
+        "description":{"shape":"String"},
+        "modelType":{
+          "shape":"AgentModelType",
+          "documentation":"<p>Whether this entry is a foundation model or a system-defined inference profile.</p>"
+        },
+        "foundationModelId":{
+          "shape":"String",
+          "documentation":"<p>ID of the foundation model this entry invokes; a foundation model's own ID.</p>"
+        },
+        "foundationModelName":{
+          "shape":"String",
+          "documentation":"<p>Name of the foundation model this entry invokes.</p>"
+        },
+        "pricingSource":{
+          "shape":"AgentModelPricingSource",
+          "documentation":"<p>How the rates were sourced.</p>"
+        },
+        "pricingRefreshedAt":{
+          "shape":"String",
+          "documentation":"<p>ISO 8601 instant of the last pricing refresh.</p>"
+        },
+        "inputPricePer1KTokens":{"shape":"Double"},
+        "outputPricePer1KTokens":{"shape":"Double"},
+        "cacheReadPricePer1KTokens":{"shape":"Double"},
+        "cacheWritePricePer1KTokens":{"shape":"Double"},
+        "enabled":{
+          "shape":"Boolean",
+          "documentation":"<p>Whether this model is available for selection in the chat UI.</p>"
+        },
+        "addedAt":{
+          "shape":"String",
+          "documentation":"<p>ISO 8601 instant when this model was first added to the catalog.</p>"
+        },
+        "lastSavedBy":{
+          "shape":"SensitiveEmail",
+          "documentation":"<p>Email of the admin who last toggled this entry.</p>"
+        },
+        "meta":{
+          "shape":"ConfigurationResponseMetadata",
+          "documentation":"<p>OCC envelope. Present on every catalog row.</p>"
+        }
+      },
+      "documentation":"<p>A single catalog row as returned by the configurations API.</p>"
+    },
+    "AgentModelCatalogList":{
+      "type":"list",
+      "member":{"shape":"AgentModelCatalogEntry"}
+    },
+    "AgentModelIdList":{
+      "type":"list",
+      "member":{"shape":"String"},
+      "documentation":"<p>Sandbox Spaces model-id subset permitted by a lease template (capped at 100).</p>",
+      "max":100,
+      "min":0
+    },
+    "AgentModelInfo":{
+      "type":"structure",
+      "required":[
+        "modelId",
+        "displayName",
+        "provider",
+        "availability",
+        "modelType",
+        "foundationModelId",
+        "foundationModelName"
+      ],
+      "members":{
+        "modelId":{"shape":"String"},
+        "displayName":{"shape":"String"},
+        "provider":{"shape":"String"},
+        "availability":{
+          "shape":"String",
+          "documentation":"<p>Geographic availability prefix: <code>&quot;global&quot;</code>, <code>&quot;us&quot;</code>, <code>&quot;eu&quot;</code>, etc.</p>"
+        },
+        "description":{"shape":"String"},
+        "modelType":{
+          "shape":"AgentModelType",
+          "documentation":"<p>Whether this entry is a foundation model or a system-defined inference profile.</p>"
+        },
+        "foundationModelId":{
+          "shape":"String",
+          "documentation":"<p>ID of the foundation model this entry invokes; a foundation model's own ID.</p>"
+        },
+        "foundationModelName":{
+          "shape":"String",
+          "documentation":"<p>Name of the foundation model this entry invokes.</p>"
+        },
+        "pricingSource":{
+          "shape":"AgentModelPricingSource",
+          "documentation":"<p>Where the rates came from: the Price List or Bedrock agreement offers. Absent, with the other pricing members, for a model that has no price.</p>"
+        },
+        "pricingRefreshedAt":{
+          "shape":"SyntheticTimestamp_date_time",
+          "documentation":"<p>ISO 8601 instant of this pricing fetch.</p>"
+        },
+        "inputPricePer1KTokens":{"shape":"Double"},
+        "outputPricePer1KTokens":{"shape":"Double"},
+        "cacheReadPricePer1KTokens":{"shape":"Double"},
+        "cacheWritePricePer1KTokens":{"shape":"Double"}
+      },
+      "documentation":"<p>One eligible Bedrock model with live pricing data.</p>"
+    },
+    "AgentModelInfoList":{
+      "type":"list",
+      "member":{"shape":"AgentModelInfo"}
+    },
+    "AgentModelPricingSource":{
+      "type":"string",
+      "documentation":"<p>How a model's rates were sourced.</p>",
+      "enum":[
+        "agreement-offers",
+        "price-list"
+      ]
+    },
+    "AgentModelType":{
+      "type":"string",
+      "documentation":"<p>Whether a catalog entry originated from <code>ListFoundationModels</code> or <code>ListInferenceProfiles</code>. This is the authoritative discriminator for displaying model type in the UI.</p>",
+      "enum":[
+        "foundation-model",
+        "inference-profile"
+      ]
+    },
+    "AgentModelsData":{
+      "type":"structure",
+      "required":["models"],
+      "members":{
+        "models":{"shape":"AgentModelInfoList"}
+      },
+      "documentation":"<p>The <code>data</code> payload of <code>GET /sandboxAgent/models</code>.</p>"
     },
     "AssignmentSyncStatus":{
       "type":"string",
@@ -937,7 +1386,8 @@
         "displayName",
         "isOwner",
         "isDesired",
-        "syncStatus"
+        "syncStatus",
+        "permissionSet"
       ],
       "members":{
         "principalId":{
@@ -969,7 +1419,11 @@
           "shape":"Boolean",
           "documentation":"<p>Whether the principal is in the lease's desired set. This cannot be inferred from <code>syncStatus</code>.</p>"
         },
-        "syncStatus":{"shape":"AssignmentSyncStatus"}
+        "syncStatus":{"shape":"AssignmentSyncStatus"},
+        "permissionSet":{
+          "shape":"PermissionSetReference",
+          "documentation":"<p>Backend-hydrated permission set details. Legacy ARN-less records resolve to the immutable built-in user permission set.</p>"
+        }
       },
       "documentation":"<p>One row of the assignments view: the union of a lease's desired set and its live assignments, annotated with reconciliation state. Rows sourced only from the desired set have no assignment yet, so <code>assigneeEmail</code>/<code>addedBy</code>/<code>addedDate</code> are absent.</p>"
     },
@@ -981,6 +1435,22 @@
       "type":"string",
       "documentation":"<p>A 12-digit AWS account id.</p>",
       "pattern":"[0-9]{12}"
+    },
+    "BedrockInferenceProfilePatternList":{
+      "type":"list",
+      "member":{"shape":"String"}
+    },
+    "BedrockTokenHistoryData":{
+      "type":"structure",
+      "required":["result"],
+      "members":{
+        "result":{
+          "shape":"TokenSeriesRowList",
+          "documentation":"<p>The paginated token series, one entry per reading per region and model.</p>"
+        },
+        "nextPageIdentifier":{"shape":"ContinuationToken"}
+      },
+      "documentation":"<p>The Bedrock token-history payload, newest-first, so a client differencing it walks backwards.</p>"
     },
     "Blueprint":{
       "type":"structure",
@@ -1094,6 +1564,119 @@
       "type":"boolean",
       "box":true
     },
+    "BreachAction":{
+      "type":"string",
+      "documentation":"<p>What a breach did. <code>TERMINATE</code> is recorded only on a <code>MAX_SPEND</code> or <code>EXPIRY</code> breach.</p>",
+      "enum":[
+        "ALERT",
+        "FREEZE_ACCOUNT",
+        "TERMINATE"
+      ]
+    },
+    "BreachEntry":{
+      "type":"structure",
+      "required":[
+        "timestamp",
+        "triggeredBy",
+        "action",
+        "billedCostAtFire",
+        "evaluatedBy"
+      ],
+      "members":{
+        "timestamp":{"shape":"String"},
+        "triggeredBy":{"shape":"BreachTriggeredBy"},
+        "action":{"shape":"BreachAction"},
+        "thresholdDollars":{
+          "shape":"Double",
+          "documentation":"<p>The dollar threshold crossed. Absent on a <code>RATE</code>, <code>DURATION</code> or <code>EXPIRY</code> breach.</p>"
+        },
+        "thresholdRate":{
+          "shape":"Double",
+          "documentation":"<p>The cap exceeded and its basis, on a <code>RATE</code> breach.</p>"
+        },
+        "thresholdRateBasis":{"shape":"RateBasis"},
+        "thresholdHoursRemaining":{
+          "shape":"Double",
+          "documentation":"<p>The hours before the lease's end, on a <code>DURATION</code> breach.</p>"
+        },
+        "billedCostAtFire":{"shape":"Double"},
+        "predictedCostAtFire":{"shape":"Double"},
+        "rateAtFire":{
+          "shape":"Double",
+          "documentation":"<p>The rate in force when the threshold fired, and its basis. Absent on a <code>MAX_SPEND</code>, <code>DURATION</code> or <code>EXPIRY</code> breach, and where no rate was in force.</p>"
+        },
+        "rateSourceAtFire":{"shape":"RateBasis"},
+        "evaluatedBy":{"shape":"BreachEvaluatedBy"},
+        "evaluatedSpendAtFire":{
+          "shape":"Double",
+          "documentation":"<p>Spend at the time of the breach where the evaluator compared a figure other than the bill alone. Null on a <code>LEASE_MONITORING</code> breach. On a <code>TOKEN_POLL</code> breach, the spend with the monitored Bedrock token cost substituted for the billed Bedrock slice, never below the billed total.</p>"
+        },
+        "monitoredBedrockTokenCostAtFire":{
+          "shape":"Double",
+          "documentation":"<p>The monitored Bedrock term substituted into <code>evaluatedSpendAtFire</code>, before its floor at the billed total. Absent on a <code>LEASE_MONITORING</code> breach, and on a <code>TOKEN_POLL</code> breach where none was substituted: no priced token row yet, or no billed Bedrock slice to replace.</p>"
+        },
+        "insight":{"shape":"BreachInsight"}
+      },
+      "documentation":"<p>A threshold that fired, from the stored breach records.</p>"
+    },
+    "BreachEntryList":{
+      "type":"list",
+      "member":{"shape":"BreachEntry"}
+    },
+    "BreachEvaluatedBy":{
+      "type":"string",
+      "documentation":"<p>Which schedule evaluated a breach: <code>LEASE_MONITORING</code> or <code>TOKEN_POLL</code>. Only the token poll records the monitored Bedrock token cost.</p>",
+      "enum":[
+        "LEASE_MONITORING",
+        "TOKEN_POLL"
+      ]
+    },
+    "BreachHistoryData":{
+      "type":"structure",
+      "required":["result"],
+      "members":{
+        "result":{
+          "shape":"BreachEntryList",
+          "documentation":"<p>The paginated thresholds that fired.</p>"
+        },
+        "nextPageIdentifier":{"shape":"ContinuationToken"}
+      },
+      "documentation":"<p>The breach-history payload, newest-first.</p>"
+    },
+    "BreachInsight":{
+      "type":"structure",
+      "required":[
+        "kind",
+        "service",
+        "amount"
+      ],
+      "members":{
+        "kind":{"shape":"InsightKind"},
+        "service":{"shape":"String"},
+        "amount":{"shape":"Double"},
+        "shareOfComparedSpend":{
+          "shape":"Double",
+          "documentation":"<p><code>COMPOSITION</code> only: the service's share of the spend figure used for the threshold comparison.</p>"
+        },
+        "changePercent":{
+          "shape":"Double",
+          "documentation":"<p><code>CHANGE</code> only; signed, so a fall is negative.</p>"
+        }
+      },
+      "documentation":"<p>The insight sent in a breach's notification, stored verbatim.</p>"
+    },
+    "BreachTriggeredBy":{
+      "type":"string",
+      "documentation":"<p>What crossed a threshold: reported spend, projected spend, a spend rate, or time remaining. <code>MAX_SPEND</code> is the lease's maximum spend and <code>EXPIRY</code> its end, which both terminate the lease.</p>",
+      "enum":[
+        "REPORTED",
+        "PREDICTED",
+        "RATE",
+        "MAX_SPEND",
+        "DURATION",
+        "EXPIRY"
+      ]
+    },
     "BudgetThreshold":{
       "type":"structure",
       "required":[
@@ -1101,13 +1684,27 @@
         "action"
       ],
       "members":{
-        "dollarsSpent":{"shape":"Double"},
-        "action":{"shape":"ThresholdAction"}
+        "dollarsSpent":{
+          "shape":"Double",
+          "documentation":"<p>Must be less than maxSpend when maxSpend is set (on a lease, its value after the update).</p>"
+        },
+        "action":{"shape":"ThresholdAction"},
+        "triggerOn":{
+          "shape":"BudgetTriggerSource",
+          "documentation":"<p>Whether the threshold fires on reported spend or on projected spend. Absent means REPORTED. PREDICTED requires predictiveBudgetEnabled (on a lease, its value after the update).</p>"
+        }
       }
     },
     "BudgetThresholdList":{
       "type":"list",
       "member":{"shape":"BudgetThreshold"}
+    },
+    "BudgetTriggerSource":{
+      "type":"string",
+      "enum":[
+        "REPORTED",
+        "PREDICTED"
+      ]
     },
     "CleanupConfiguration":{
       "type":"structure",
@@ -1140,7 +1737,7 @@
         },
         "meta":{"shape":"ConfigurationResponseMetadata"}
       },
-      "documentation":"<p>Account cleanup retry/validation policy.</p>"
+      "documentation":"<p>Server-owned audit envelope echoed on each section. A never-saved section has no <code>lastSavedBy</code>: the member is simply absent on the wire. <code>meta</code> is absent until the section has been saved at least once — but when present it always carries both timestamps.</p>"
     },
     "CleanupConfigurationCooldownPeriodHoursInteger":{
       "type":"integer",
@@ -1329,6 +1926,87 @@
       "documentation":"<p>Opaque pagination token.</p>",
       "sensitive":true
     },
+    "ConversationRole":{
+      "type":"string",
+      "enum":[
+        "user",
+        "assistant"
+      ]
+    },
+    "CostHistoryCurrent":{
+      "type":"structure",
+      "required":[
+        "billedCostAccrued",
+        "predictedCost",
+        "latestPeriodStart",
+        "lastReportedAt",
+        "lastCheckedAt",
+        "services"
+      ],
+      "members":{
+        "billedCostAccrued":{"shape":"Double"},
+        "predictedCost":{
+          "shape":"Double",
+          "documentation":"<p>Never absent: with no rate it falls back to the figure the projection is anchored on, the lease's <code>lastEvaluatedSpend</code> where Bedrock token monitoring is on and that is present, and the reported total otherwise.</p>"
+        },
+        "hourlyRate":{"shape":"Double"},
+        "dailyRate":{"shape":"Double"},
+        "hourlyRateWindowHours":{
+          "shape":"Double",
+          "documentation":"<p>The measurement window behind each rate, in hours — the only thing that stops a rate extrapolated from a short window being read as established. Absent exactly when the matching rate is.</p>"
+        },
+        "dailyRateWindowHours":{"shape":"Double"},
+        "rateSource":{"shape":"RateBasis"},
+        "hoursToBudgetExhaustion":{
+          "shape":"Double",
+          "documentation":"<p>Absent when the lease has no <code>maxSpend</code>, or the rate is zero or unavailable.</p>"
+        },
+        "latestPeriodStart":{"shape":"String"},
+        "lastReportedAt":{"shape":"String"},
+        "lastCheckedAt":{"shape":"String"},
+        "services":{
+          "shape":"CurrentServiceEntryList",
+          "documentation":"<p>Newest per-service figures. Empty means no share can be expressed (no breakdown collected, a fallback-served lease, a breakdown covering only part of the reported total, or a non-positive <code>billedCostAccrued</code>), NOT that nothing was spent. Where non-empty, shares sum to 1.00 because the smallest is a residual.</p>"
+        }
+      },
+      "documentation":"<p>Lease-level headline figures, computed from the newest data. Everything here describes the instant given by <code>lastCheckedAt</code>, so it can be up to an hour old.</p>"
+    },
+    "CostHistoryData":{
+      "type":"structure",
+      "required":["result"],
+      "members":{
+        "result":{
+          "shape":"CostHistoryResultRowList",
+          "documentation":"<p>The paginated reported series.</p>"
+        },
+        "nextPageIdentifier":{"shape":"ContinuationToken"}
+      },
+      "documentation":"<p>The cost-history payload, newest-first, so a client differencing it walks backwards.</p>"
+    },
+    "CostHistoryResultRow":{
+      "type":"structure",
+      "required":[
+        "timestamp",
+        "billedCostAccrued"
+      ],
+      "members":{
+        "timestamp":{"shape":"String"},
+        "billedCostAccrued":{"shape":"Double"},
+        "predictedCostAtRefresh":{
+          "shape":"Double",
+          "documentation":"<p>The projection standing when this row re-based it. Absent where no rate existed then.</p>"
+        },
+        "serviceBreakdown":{
+          "shape":"ServiceBreakdown",
+          "documentation":"<p>Absent where the deployment collects no breakdown, or on a fallback-served lease — which is not the same as an empty breakdown.</p>"
+        }
+      },
+      "documentation":"<p>One row of the paginated reported series.</p>"
+    },
+    "CostHistoryResultRowList":{
+      "type":"list",
+      "member":{"shape":"CostHistoryResultRow"}
+    },
     "CostReportGroup":{
       "type":"string",
       "max":50,
@@ -1361,7 +2039,17 @@
         },
         "meta":{"shape":"ConfigurationResponseMetadata"}
       },
-      "documentation":"<p>Cost-report grouping policy.</p>"
+      "documentation":"<p>Server-owned audit envelope echoed on each section. A never-saved section has no <code>lastSavedBy</code>: the member is simply absent on the wire. <code>meta</code> is absent until the section has been saved at least once — but when present it always carries both timestamps.</p>"
+    },
+    "CostSummaryData":{
+      "type":"structure",
+      "members":{
+        "current":{
+          "shape":"CostHistoryCurrent",
+          "documentation":"<p>Absent when no reading is available, which is not the same as a lease with no spend.</p>"
+        }
+      },
+      "documentation":"<p>The cost-summary payload.</p>"
     },
     "CreateLeaseTemplateInput":{
       "type":"structure",
@@ -1383,9 +2071,41 @@
           "shape":"String",
           "documentation":"<p>Blueprint to attach. <code>blueprintName</code> is resolved server-side.</p>"
         },
-        "allowOwnerToShareLease":{"shape":"Boolean"}
+        "allowOwnerToShareLease":{"shape":"Boolean"},
+        "predictiveBudgetEnabled":{
+          "shape":"Boolean",
+          "documentation":"<p>Opt-in: spend rates, cost projection, predicted-cost thresholds and caps.</p>"
+        },
+        "bedrockTokenMonitoringEnabled":{
+          "shape":"Boolean",
+          "documentation":"<p>Opt-in: monitored Bedrock token cost tracking. Must be true when <code>sandboxSpacesEnabled</code> is true.</p>"
+        },
+        "sandboxSpacesEnabled":{
+          "shape":"Boolean",
+          "documentation":"<p>Whether leases created from this template have Sandbox Spaces turned on. <code>true</code> requires <code>bedrockTokenMonitoringEnabled</code>; otherwise the request is rejected with 400.</p>"
+        },
+        "allowedModelIds":{
+          "shape":"AgentModelIdList",
+          "documentation":"<p>Sandbox Spaces: subset of the globally enabled model IDs this template permits. Unset inherits the global enabled set.</p>"
+        },
+        "defaultModelId":{
+          "shape":"String",
+          "documentation":"<p>Sandbox Spaces: model preselected for new chats on leases from this template. Must be enabled and, when a subset is set, one of allowedModelIds.</p>"
+        },
+        "defaultPermissionSetArn":{
+          "shape":"PermissionSetArn",
+          "documentation":"<p>Permission set assigned when an assignment does not specify an override.</p>"
+        },
+        "allowedPermissionSetArns":{
+          "shape":"PermissionSetArnList",
+          "documentation":"<p>Permission sets available for assignment overrides. The default is implicitly allowed and this list is capped at 20 entries.</p>"
+        },
+        "rateLimits":{
+          "shape":"RateLimitList",
+          "documentation":"<p>Spend-rate limits, each with its own action. A non-empty list requires <code>predictiveBudgetEnabled</code>.</p>"
+        }
       },
-      "documentation":"<p>The client-writable members of a lease template, shared by the create and update inputs. Both accept the same set — requiredness and constraints are identical and neither operation is a patch.</p> <p><code>uuid</code>, <code>createdBy</code> and <code>blueprintName</code> are deliberately absent — they are server-owned.</p>"
+      "documentation":"<p>Client-writable lease-template fields, including optional permission-profile ARN configuration.</p>"
     },
     "CreateLeaseTemplateInputCostReportGroupString":{
       "type":"string",
@@ -1422,6 +2142,31 @@
         "ownerEmail":{"shape":"OwnerEmail"}
       },
       "documentation":"<p>The lease currently occupying the account, when one does.</p>"
+    },
+    "CurrentServiceEntry":{
+      "type":"structure",
+      "required":[
+        "service",
+        "amount",
+        "shareOfBilledCost"
+      ],
+      "members":{
+        "service":{"shape":"String"},
+        "amount":{"shape":"Double"},
+        "shareOfBilledCost":{
+          "shape":"Double",
+          "documentation":"<p>The service's share of <code>billedCostAccrued</code>.</p>"
+        },
+        "changePercent":{
+          "shape":"Double",
+          "documentation":"<p>Absent until a second observation exists to difference against.</p>"
+        }
+      },
+      "documentation":"<p>One newest-observation per-service figure with its change since the prior observation.</p>"
+    },
+    "CurrentServiceEntryList":{
+      "type":"list",
+      "member":{"shape":"CurrentServiceEntry"}
     },
     "DeleteBlueprintData":{
       "type":"structure",
@@ -1524,7 +2269,11 @@
           "shape":"String",
           "documentation":"<p>IDC principal id.</p>"
         },
-        "principalType":{"shape":"PrincipalType"}
+        "principalType":{"shape":"PrincipalType"},
+        "permissionSetArn":{
+          "shape":"PermissionSetArn",
+          "documentation":"<p>Permission set selected for this principal. Absent callers use the lease default.</p>"
+        }
       },
       "documentation":"<p>A caller-supplied desired assignment: the target principal and its kind. Used by <code>RequestLease</code> and <code>UpdateLeaseAssignments</code> request bodies.</p>"
     },
@@ -1538,7 +2287,8 @@
         "principalId":{"shape":"String"},
         "principalType":{"shape":"PrincipalType"},
         "displayName":{"shape":"String"},
-        "email":{"shape":"OwnerEmail"}
+        "email":{"shape":"OwnerEmail"},
+        "permissionSetArn":{"shape":"PermissionSetArn"}
       },
       "documentation":"<p>A desired assignment enriched with display metadata.</p>"
     },
@@ -1642,6 +2392,17 @@
         "data":{"shape":"SandboxAccount"}
       }
     },
+    "GetAgentConfigurationOutput":{
+      "type":"structure",
+      "required":[
+        "status",
+        "data"
+      ],
+      "members":{
+        "status":{"shape":"JSendStatus"},
+        "data":{"shape":"AgentConfiguration"}
+      }
+    },
     "GetBlueprintInput":{
       "type":"structure",
       "required":["blueprintId"],
@@ -1717,6 +2478,181 @@
       "members":{
         "status":{"shape":"JSendStatus"},
         "data":{"shape":"LeaseAssignmentsView"}
+      }
+    },
+    "GetLeaseBedrockTokenHistoryInput":{
+      "type":"structure",
+      "required":["leaseId"],
+      "members":{
+        "leaseId":{
+          "shape":"LeaseId",
+          "location":"uri",
+          "locationName":"leaseId"
+        },
+        "pageIdentifier":{
+          "shape":"ContinuationToken",
+          "location":"querystring",
+          "locationName":"pageIdentifier"
+        },
+        "maxResults":{
+          "shape":"GetLeaseBedrockTokenHistoryInputMaxResultsInteger",
+          "location":"querystring",
+          "locationName":"maxResults"
+        },
+        "afterTimestamp":{
+          "shape":"String",
+          "documentation":"<p>Inclusive lower bound on row timestamps, as an ISO 8601 instant. Any offset is accepted and normalized to UTC.</p>",
+          "location":"querystring",
+          "locationName":"afterTimestamp"
+        },
+        "beforeTimestamp":{
+          "shape":"String",
+          "documentation":"<p>Exclusive upper bound, same spelling as <code>afterTimestamp</code>. Must be later than it.</p>",
+          "location":"querystring",
+          "locationName":"beforeTimestamp"
+        }
+      },
+      "documentation":"<p>The input every lease history operation takes: the lease, a page, and an optional time range.</p>"
+    },
+    "GetLeaseBedrockTokenHistoryInputMaxResultsInteger":{
+      "type":"integer",
+      "box":true,
+      "max":100,
+      "min":1
+    },
+    "GetLeaseBedrockTokenHistoryOutput":{
+      "type":"structure",
+      "required":[
+        "status",
+        "data"
+      ],
+      "members":{
+        "status":{"shape":"JSendStatus"},
+        "data":{"shape":"BedrockTokenHistoryData"}
+      }
+    },
+    "GetLeaseBreachHistoryInput":{
+      "type":"structure",
+      "required":["leaseId"],
+      "members":{
+        "leaseId":{
+          "shape":"LeaseId",
+          "location":"uri",
+          "locationName":"leaseId"
+        },
+        "pageIdentifier":{
+          "shape":"ContinuationToken",
+          "location":"querystring",
+          "locationName":"pageIdentifier"
+        },
+        "maxResults":{
+          "shape":"GetLeaseBreachHistoryInputMaxResultsInteger",
+          "location":"querystring",
+          "locationName":"maxResults"
+        },
+        "afterTimestamp":{
+          "shape":"String",
+          "documentation":"<p>Inclusive lower bound on row timestamps, as an ISO 8601 instant. Any offset is accepted and normalized to UTC.</p>",
+          "location":"querystring",
+          "locationName":"afterTimestamp"
+        },
+        "beforeTimestamp":{
+          "shape":"String",
+          "documentation":"<p>Exclusive upper bound, same spelling as <code>afterTimestamp</code>. Must be later than it.</p>",
+          "location":"querystring",
+          "locationName":"beforeTimestamp"
+        }
+      },
+      "documentation":"<p>The input every lease history operation takes: the lease, a page, and an optional time range.</p>"
+    },
+    "GetLeaseBreachHistoryInputMaxResultsInteger":{
+      "type":"integer",
+      "box":true,
+      "max":100,
+      "min":1
+    },
+    "GetLeaseBreachHistoryOutput":{
+      "type":"structure",
+      "required":[
+        "status",
+        "data"
+      ],
+      "members":{
+        "status":{"shape":"JSendStatus"},
+        "data":{"shape":"BreachHistoryData"}
+      }
+    },
+    "GetLeaseCostHistoryInput":{
+      "type":"structure",
+      "required":["leaseId"],
+      "members":{
+        "leaseId":{
+          "shape":"LeaseId",
+          "location":"uri",
+          "locationName":"leaseId"
+        },
+        "pageIdentifier":{
+          "shape":"ContinuationToken",
+          "location":"querystring",
+          "locationName":"pageIdentifier"
+        },
+        "maxResults":{
+          "shape":"GetLeaseCostHistoryInputMaxResultsInteger",
+          "location":"querystring",
+          "locationName":"maxResults"
+        },
+        "afterTimestamp":{
+          "shape":"String",
+          "documentation":"<p>Inclusive lower bound on row timestamps, as an ISO 8601 instant. Any offset is accepted and normalized to UTC.</p>",
+          "location":"querystring",
+          "locationName":"afterTimestamp"
+        },
+        "beforeTimestamp":{
+          "shape":"String",
+          "documentation":"<p>Exclusive upper bound, same spelling as <code>afterTimestamp</code>. Must be later than it.</p>",
+          "location":"querystring",
+          "locationName":"beforeTimestamp"
+        }
+      },
+      "documentation":"<p>The input every lease history operation takes: the lease, a page, and an optional time range.</p>"
+    },
+    "GetLeaseCostHistoryInputMaxResultsInteger":{
+      "type":"integer",
+      "box":true,
+      "max":100,
+      "min":1
+    },
+    "GetLeaseCostHistoryOutput":{
+      "type":"structure",
+      "required":[
+        "status",
+        "data"
+      ],
+      "members":{
+        "status":{"shape":"JSendStatus"},
+        "data":{"shape":"CostHistoryData"}
+      }
+    },
+    "GetLeaseCostSummaryInput":{
+      "type":"structure",
+      "required":["leaseId"],
+      "members":{
+        "leaseId":{
+          "shape":"LeaseId",
+          "location":"uri",
+          "locationName":"leaseId"
+        }
+      }
+    },
+    "GetLeaseCostSummaryOutput":{
+      "type":"structure",
+      "required":[
+        "status",
+        "data"
+      ],
+      "members":{
+        "status":{"shape":"JSendStatus"},
+        "data":{"shape":"CostSummaryData"}
       }
     },
     "GetLeaseInput":{
@@ -1797,6 +2733,28 @@
         "data":{"shape":"NotificationConfiguration"}
       }
     },
+    "GetSandboxSpacesUsageInput":{
+      "type":"structure",
+      "required":["leaseId"],
+      "members":{
+        "leaseId":{
+          "shape":"LeaseId",
+          "location":"querystring",
+          "locationName":"leaseId"
+        }
+      }
+    },
+    "GetSandboxSpacesUsageOutput":{
+      "type":"structure",
+      "required":[
+        "status",
+        "data"
+      ],
+      "members":{
+        "status":{"shape":"JSendStatus"},
+        "data":{"shape":"SandboxSpacesUsageData"}
+      }
+    },
     "GetTermsOfServiceConfigurationOutput":{
       "type":"structure",
       "required":[
@@ -1813,6 +2771,15 @@
       "enum":[
         "ALL",
         "NONE"
+      ]
+    },
+    "InsightKind":{
+      "type":"string",
+      "documentation":"<p>The kind of insight computed for a breach's notification.</p>",
+      "enum":[
+        "COMPOSITION",
+        "CHANGE",
+        "NEW_ENTRANT"
       ]
     },
     "Integer":{
@@ -1888,6 +2855,42 @@
         },
         "blueprintName":{"shape":"String"},
         "allowOwnerToShareLease":{"shape":"Boolean"},
+        "predictiveBudgetEnabled":{
+          "shape":"Boolean",
+          "documentation":"<p>Predictive budget controls opt-in. Copied from the template at creation and replaceable through <code>UpdateLease</code>.</p>"
+        },
+        "bedrockTokenMonitoringEnabled":{
+          "shape":"Boolean",
+          "documentation":"<p>Bedrock token monitoring opt-in. Saved at creation as the template's preference, or true when the template enables Sandbox Spaces, and replaceable through <code>UpdateLease</code>.</p>"
+        },
+        "sandboxSpacesEnabled":{
+          "shape":"Boolean",
+          "documentation":"<p>Snapshot of the source template's Sandbox Spaces on/off setting.</p>"
+        },
+        "allowedModelIds":{
+          "shape":"AgentModelIdList",
+          "documentation":"<p>Snapshot of the template's Sandbox Spaces model subset — the lease's own copy, so a later template edit never changes enforcement under a running lease.</p>"
+        },
+        "defaultModelId":{
+          "shape":"String",
+          "documentation":"<p>Snapshot of the template's Sandbox Spaces default model, preselected first when a chat opens under this lease.</p>"
+        },
+        "lastPredictedSpend":{
+          "shape":"Double",
+          "documentation":"<p>Predicted spend now, in USD, as of the last threshold check. The next check compares against it. Lease Monitoring and Token Poll exclude Sandbox Spaces estimated token cost.</p>"
+        },
+        "lastEvaluatedSpend":{
+          "shape":"Double",
+          "documentation":"<p>Spend so far, in USD, as of the last threshold check, with the monitored Bedrock token cost in place of the billed Bedrock part where token monitoring is on, never below the billed total. The next check compares against it. Lease Monitoring and Token Poll exclude Sandbox Spaces estimated token cost.</p>"
+        },
+        "lastEvaluatedHourlySpendRate":{
+          "shape":"Double",
+          "documentation":"<p>Most recently evaluated hourly spend rate.</p>"
+        },
+        "lastEvaluatedDailySpendRate":{
+          "shape":"Double",
+          "documentation":"<p>Most recently evaluated daily spend rate.</p>"
+        },
         "desiredAssignments":{
           "shape":"DesiredAssignmentWithDisplayList",
           "documentation":"<p>Declarative desired principal assignments (owner + shared users/groups), each optionally enriched with display metadata for the assignments UI.</p>"
@@ -1921,6 +2924,18 @@
         "ttl":{
           "shape":"Long",
           "documentation":"<p>TTL as a Unix-epoch-seconds timestamp. Present on terminal/denied leases.</p>"
+        },
+        "defaultPermissionSet":{
+          "shape":"PermissionSetReference",
+          "documentation":"<p>Backend-hydrated metadata for the default permission set.</p>"
+        },
+        "allowedPermissionSets":{
+          "shape":"PermissionSetReferenceList",
+          "documentation":"<p>Backend-hydrated metadata for the effective allowed set, including the default. Missing cache entries remain represented as UNAVAILABLE.</p>"
+        },
+        "rateLimits":{
+          "shape":"RateLimitList",
+          "documentation":"<p>Spend-rate limits stored on this lease, each with its own action. Copied from the template at creation and replaceable through <code>UpdateLease</code>. Evaluated only while <code>predictiveBudgetEnabled</code> is true.</p>"
         }
       },
       "documentation":"<p>The public lease projection. Body-returning writes (<code>RequestLease</code>, <code>UpdateLease</code>) emit this WITHOUT <code>leaseId</code>; read paths emit <code>LeaseWithId</code>.</p>"
@@ -2036,7 +3051,9 @@
         "requiresApproval",
         "createdBy",
         "visibility",
-        "allowOwnerToShareLease"
+        "allowOwnerToShareLease",
+        "predictiveBudgetEnabled",
+        "bedrockTokenMonitoringEnabled"
       ],
       "members":{
         "maxSpend":{"shape":"Double"},
@@ -2062,7 +3079,33 @@
           "documentation":"<p>Resolved from the blueprint store; not client-provided.</p>"
         },
         "allowOwnerToShareLease":{"shape":"Boolean"},
-        "meta":{"shape":"Metadata"}
+        "predictiveBudgetEnabled":{"shape":"Boolean"},
+        "bedrockTokenMonitoringEnabled":{"shape":"Boolean"},
+        "sandboxSpacesEnabled":{
+          "shape":"Boolean",
+          "documentation":"<p>Snapshot used to determine Sandbox Spaces availability.</p>"
+        },
+        "allowedModelIds":{
+          "shape":"AgentModelIdList",
+          "documentation":"<p>Sandbox Spaces: subset of globally enabled model IDs this template permits.</p>"
+        },
+        "defaultModelId":{
+          "shape":"String",
+          "documentation":"<p>Sandbox Spaces default model preselected for new chats.</p>"
+        },
+        "meta":{"shape":"Metadata"},
+        "defaultPermissionSet":{
+          "shape":"PermissionSetReference",
+          "documentation":"<p>Backend-hydrated metadata for the default permission set.</p>"
+        },
+        "allowedPermissionSets":{
+          "shape":"PermissionSetReferenceList",
+          "documentation":"<p>Backend-hydrated metadata for the effective allowed set, including the default. Missing cache entries remain represented as UNAVAILABLE.</p>"
+        },
+        "rateLimits":{
+          "shape":"RateLimitList",
+          "documentation":"<p>Spend-rate limits, each with its own action.</p>"
+        }
       },
       "documentation":"<p>Budget and duration settings shared by the template and its create input. The hour and dollar fields accept fractional values, so a 1.5-hour template is valid; each must be greater than zero.</p>"
     },
@@ -2134,6 +3177,42 @@
         },
         "blueprintName":{"shape":"String"},
         "allowOwnerToShareLease":{"shape":"Boolean"},
+        "predictiveBudgetEnabled":{
+          "shape":"Boolean",
+          "documentation":"<p>Predictive budget controls opt-in. Copied from the template at creation and replaceable through <code>UpdateLease</code>.</p>"
+        },
+        "bedrockTokenMonitoringEnabled":{
+          "shape":"Boolean",
+          "documentation":"<p>Bedrock token monitoring opt-in. Saved at creation as the template's preference, or true when the template enables Sandbox Spaces, and replaceable through <code>UpdateLease</code>.</p>"
+        },
+        "sandboxSpacesEnabled":{
+          "shape":"Boolean",
+          "documentation":"<p>Snapshot of the source template's Sandbox Spaces on/off setting.</p>"
+        },
+        "allowedModelIds":{
+          "shape":"AgentModelIdList",
+          "documentation":"<p>Snapshot of the template's Sandbox Spaces model subset — the lease's own copy, so a later template edit never changes enforcement under a running lease.</p>"
+        },
+        "defaultModelId":{
+          "shape":"String",
+          "documentation":"<p>Snapshot of the template's Sandbox Spaces default model, preselected first when a chat opens under this lease.</p>"
+        },
+        "lastPredictedSpend":{
+          "shape":"Double",
+          "documentation":"<p>Predicted spend now, in USD, as of the last threshold check. The next check compares against it. Lease Monitoring and Token Poll exclude Sandbox Spaces estimated token cost.</p>"
+        },
+        "lastEvaluatedSpend":{
+          "shape":"Double",
+          "documentation":"<p>Spend so far, in USD, as of the last threshold check, with the monitored Bedrock token cost in place of the billed Bedrock part where token monitoring is on, never below the billed total. The next check compares against it. Lease Monitoring and Token Poll exclude Sandbox Spaces estimated token cost.</p>"
+        },
+        "lastEvaluatedHourlySpendRate":{
+          "shape":"Double",
+          "documentation":"<p>Most recently evaluated hourly spend rate.</p>"
+        },
+        "lastEvaluatedDailySpendRate":{
+          "shape":"Double",
+          "documentation":"<p>Most recently evaluated daily spend rate.</p>"
+        },
         "desiredAssignments":{
           "shape":"DesiredAssignmentWithDisplayList",
           "documentation":"<p>Declarative desired principal assignments (owner + shared users/groups), each optionally enriched with display metadata for the assignments UI.</p>"
@@ -2168,9 +3247,25 @@
           "shape":"Long",
           "documentation":"<p>TTL as a Unix-epoch-seconds timestamp. Present on terminal/denied leases.</p>"
         },
-        "leaseId":{"shape":"LeaseId"}
+        "leaseId":{"shape":"LeaseId"},
+        "defaultPermissionSet":{
+          "shape":"PermissionSetReference",
+          "documentation":"<p>Backend-hydrated metadata for the default permission set.</p>"
+        },
+        "allowedPermissionSets":{
+          "shape":"PermissionSetReferenceList",
+          "documentation":"<p>Backend-hydrated metadata for the effective allowed set, including the default. Missing cache entries remain represented as UNAVAILABLE.</p>"
+        },
+        "selectableModels":{
+          "shape":"SelectableModelList",
+          "documentation":"<p>Enabled catalog narrowed to this lease's allowed models. Set by <code>GetLease</code> and <code>UnfreezeLease</code> when Sandbox Spaces is enabled globally and on the lease, resolved on each read so disabling a model takes effect on the next fetch. Unset otherwise and on list responses.</p>"
+        },
+        "rateLimits":{
+          "shape":"RateLimitList",
+          "documentation":"<p>Spend-rate limits stored on this lease, each with its own action. Copied from the template at creation and replaceable through <code>UpdateLease</code>. Evaluated only while <code>predictiveBudgetEnabled</code> is true.</p>"
+        }
       },
-      "documentation":"<p>A <code>Lease</code> that carries the <code>leaseId</code> (base64url composite key). Returned by <code>GetLease</code> and <code>UnfreezeLease</code> and as the <code>ListLeases</code> result items.</p>"
+      "documentation":"<p>A <code>Lease</code> that carries the <code>leaseId</code> (base64url composite key). Returned by <code>GetLease</code>, <code>UnfreezeLease</code>, and as the <code>ListLeases</code> result items.</p>"
     },
     "LeaseWithIdCostReportGroupString":{
       "type":"string",
@@ -2200,7 +3295,10 @@
         "maxLeaseRequestsPerWindow",
         "leaseSharingEnabled",
         "enablePrincipalSearch",
-        "groupAssignmentMode"
+        "groupAssignmentMode",
+        "allowPredictiveBudgetControls",
+        "serviceBreakdownEnabled",
+        "allowBedrockTokenMonitoring"
       ],
       "members":{
         "requireMaxBudget":{"shape":"Boolean"},
@@ -2236,13 +3334,25 @@
           "shape":"GroupAssignmentMode",
           "documentation":"<p>Controls whether IDC groups can be selected for lease assignments. Existing stored configurations that predate this policy are read as <code>NONE</code>. Existing group assignments are retained when set to <code>NONE</code>.</p>"
         },
+        "allowPredictiveBudgetControls":{
+          "shape":"Boolean",
+          "documentation":"<p>Predictive Budget Controls feature gate: allows templates and leases to opt into spend-rate limits, cost projection and predicted-cost thresholds.</p>"
+        },
+        "serviceBreakdownEnabled":{
+          "shape":"Boolean",
+          "documentation":"<p>Whether per-service cost breakdown is collected.</p>"
+        },
+        "allowBedrockTokenMonitoring":{
+          "shape":"Boolean",
+          "documentation":"<p>Feature gate for monitored Bedrock token cost tracking.</p>"
+        },
         "lastSavedBy":{
           "shape":"SensitiveEmail",
           "documentation":"<p>Email of the last administrator to save the section, or a <code>system:</code> sentinel.</p>"
         },
         "meta":{"shape":"ConfigurationResponseMetadata"}
       },
-      "documentation":"<p>Lease request/budget/duration policy.</p>"
+      "documentation":"<p>Server-owned audit envelope echoed on each section. A never-saved section has no <code>lastSavedBy</code>: the member is simply absent on the wire. <code>meta</code> is absent until the section has been saved at least once — but when present it always carries both timestamps.</p>"
     },
     "LeasesConfigurationLeaseRequestWindowHoursInteger":{
       "type":"integer",
@@ -2274,6 +3384,7 @@
     "LeasesConfigurationTtlInteger":{
       "type":"integer",
       "box":true,
+      "max":3650,
       "min":1
     },
     "ListAccountsInput":{
@@ -2317,6 +3428,92 @@
         "error":{"shape":"String"}
       },
       "documentation":"<p><code>error</code> is an optional validation-warning string forwarded verbatim; a non-contractual diagnostic, not a failure.</p>"
+    },
+    "ListAgentHistoryInput":{
+      "type":"structure",
+      "members":{
+        "leaseId":{
+          "shape":"LeaseId",
+          "location":"querystring",
+          "locationName":"leaseId"
+        },
+        "nextToken":{
+          "shape":"String",
+          "location":"querystring",
+          "locationName":"nextToken"
+        },
+        "maxResults":{
+          "shape":"ListAgentHistoryInputMaxResultsInteger",
+          "location":"querystring",
+          "locationName":"maxResults"
+        }
+      }
+    },
+    "ListAgentHistoryInputMaxResultsInteger":{
+      "type":"integer",
+      "box":true,
+      "max":100,
+      "min":1
+    },
+    "ListAgentHistoryOutput":{
+      "type":"structure",
+      "required":[
+        "status",
+        "data"
+      ],
+      "members":{
+        "status":{"shape":"JSendStatus"},
+        "data":{"shape":"AgentHistoryResponse"}
+      }
+    },
+    "ListAgentModelCatalogInput":{
+      "type":"structure",
+      "members":{
+        "nextToken":{
+          "shape":"String",
+          "documentation":"<p>Pagination cursor from a previous response. Omit to start from the beginning.</p>",
+          "location":"querystring",
+          "locationName":"nextToken"
+        },
+        "maxResults":{
+          "shape":"ListAgentModelCatalogInputMaxResultsInteger",
+          "documentation":"<p>Maximum number of models to return per page. Omit for the default page size. Clients must follow <code>nextToken</code> until absent to retrieve the full catalog.</p>",
+          "location":"querystring",
+          "locationName":"maxResults"
+        }
+      }
+    },
+    "ListAgentModelCatalogInputMaxResultsInteger":{
+      "type":"integer",
+      "box":true,
+      "max":500,
+      "min":1
+    },
+    "ListAgentModelCatalogOutput":{
+      "type":"structure",
+      "required":[
+        "status",
+        "data"
+      ],
+      "members":{
+        "status":{"shape":"JSendStatus"},
+        "data":{"shape":"AgentModelCatalogData"}
+      }
+    },
+    "ListAgentModelsInput":{
+      "type":"structure",
+      "members":{}
+    },
+    "ListAgentModelsOutput":{
+      "type":"structure",
+      "required":[
+        "status",
+        "data"
+      ],
+      "members":{
+        "status":{"shape":"JSendStatus"},
+        "data":{"shape":"AgentModelsData"}
+      }
     },
     "ListBlueprintsInput":{
       "type":"structure",
@@ -2486,6 +3683,51 @@
       },
       "documentation":"<p><code>error</code> is an optional diagnostic warning string. It is non-contractual, not a failure.</p>"
     },
+    "ListPermissionSetsInput":{
+      "type":"structure",
+      "members":{
+        "pageIdentifier":{
+          "shape":"ContinuationToken",
+          "documentation":"<p>Opaque continuation token returned by a previous response.</p>",
+          "location":"querystring",
+          "locationName":"pageIdentifier"
+        },
+        "maxResults":{
+          "shape":"ListPermissionSetsInputMaxResultsInteger",
+          "documentation":"<p>Maximum number of permission sets to return. Defaults to 50 when omitted and must be between 1 and 100 when supplied.</p>",
+          "location":"querystring",
+          "locationName":"maxResults"
+        },
+        "q":{
+          "shape":"ListPermissionSetsInputQString",
+          "documentation":"<p>Case-insensitive substring matched against name and description. An omitted or empty value returns all available permission sets.</p>",
+          "location":"querystring",
+          "locationName":"q"
+        }
+      }
+    },
+    "ListPermissionSetsInputMaxResultsInteger":{
+      "type":"integer",
+      "box":true,
+      "max":100,
+      "min":1
+    },
+    "ListPermissionSetsInputQString":{
+      "type":"string",
+      "max":200,
+      "min":0
+    },
+    "ListPermissionSetsOutput":{
+      "type":"structure",
+      "required":[
+        "status",
+        "data"
+      ],
+      "members":{
+        "status":{"shape":"JSendStatus"},
+        "data":{"shape":"PermissionSetPage"}
+      }
+    },
     "ListSharedLeasesInput":{
       "type":"structure",
       "required":[
@@ -2645,7 +3887,7 @@
         },
         "meta":{"shape":"ConfigurationResponseMetadata"}
       },
-      "documentation":"<p>Maintenance-mode toggle.</p>"
+      "documentation":"<p>Server-owned audit envelope echoed on each section. A never-saved section has no <code>lastSavedBy</code>: the member is simply absent on the wire. <code>meta</code> is absent until the section has been saved at least once — but when present it always carries both timestamps.</p>"
     },
     "Metadata":{
       "type":"structure",
@@ -2680,11 +3922,23 @@
     },
     "NotificationConfiguration":{
       "type":"structure",
-      "required":["emailFrom"],
+      "required":[
+        "emailFrom",
+        "sesEnabled",
+        "snsIntegrationTopicEnabled"
+      ],
       "members":{
         "emailFrom":{
           "shape":"NotificationConfigurationEmailFromString",
-          "documentation":"<p>From address used for notification emails; an empty string disables notifications.</p>"
+          "documentation":"<p>From address used for SES notification emails; an empty string leaves SES unable to deliver even when <code>sesEnabled</code> is true.</p>"
+        },
+        "sesEnabled":{
+          "shape":"Boolean",
+          "documentation":"<p>Whether SES email delivery is enabled. Defaults to true when not configured.</p>"
+        },
+        "snsIntegrationTopicEnabled":{
+          "shape":"Boolean",
+          "documentation":"<p>Whether publishing to the shared SNS integration topic is enabled. Defaults to false when not configured.</p>"
         },
         "lastSavedBy":{
           "shape":"SensitiveEmail",
@@ -2692,7 +3946,7 @@
         },
         "meta":{"shape":"ConfigurationResponseMetadata"}
       },
-      "documentation":"<p>Notification sender configuration.</p>"
+      "documentation":"<p>Server-owned audit envelope echoed on each section. A never-saved section has no <code>lastSavedBy</code>: the member is simply absent on the wire. <code>meta</code> is absent until the section has been saved at least once — but when present it always carries both timestamps.</p>"
     },
     "NotificationConfigurationEmailFromString":{
       "type":"string",
@@ -2705,6 +3959,101 @@
       "type":"string",
       "documentation":"<p>An email address.</p>",
       "sensitive":true
+    },
+    "PermissionSetArn":{
+      "type":"string",
+      "documentation":"<p>IAM Identity Center permission set ARN.</p>",
+      "max":1224,
+      "min":10,
+      "pattern":"arn:aws(?:-[a-z]{1,5}){0,3}:sso:::permissionSet/(?:sso)?ins-[a-zA-Z0-9.-]{16}/ps-[a-zA-Z0-9./-]{16}"
+    },
+    "PermissionSetArnList":{
+      "type":"list",
+      "member":{"shape":"PermissionSetArn"},
+      "max":20,
+      "min":0
+    },
+    "PermissionSetAvailability":{
+      "type":"string",
+      "enum":[
+        "AVAILABLE",
+        "UNAVAILABLE"
+      ]
+    },
+    "PermissionSetDescription":{
+      "type":"string",
+      "max":700,
+      "min":1,
+      "pattern":"[\\u0009\\u000a\\u000d\\u0020-\\u007e\\u00a1-\\u00ff]*"
+    },
+    "PermissionSetId":{
+      "type":"string",
+      "documentation":"<p>Stable permission set identifier parsed from the ARN.</p>",
+      "pattern":"ps-[a-zA-Z0-9./-]{16}"
+    },
+    "PermissionSetName":{
+      "type":"string",
+      "max":32,
+      "min":1,
+      "pattern":"[a-zA-Z0-9_+=,.@-]+"
+    },
+    "PermissionSetPage":{
+      "type":"structure",
+      "required":["result"],
+      "members":{
+        "result":{"shape":"PermissionSetSummaryList"},
+        "nextPageIdentifier":{
+          "shape":"ContinuationToken",
+          "documentation":"<p>Opaque continuation token. Omitted on the final page.</p>"
+        }
+      },
+      "documentation":"<p>Paginated permission-set catalog payload.</p>"
+    },
+    "PermissionSetReference":{
+      "type":"structure",
+      "required":[
+        "permissionSetArn",
+        "permissionSetId",
+        "availability"
+      ],
+      "members":{
+        "permissionSetArn":{"shape":"PermissionSetArn"},
+        "permissionSetId":{"shape":"PermissionSetId"},
+        "name":{"shape":"PermissionSetName"},
+        "description":{"shape":"PermissionSetDescription"},
+        "sessionDuration":{"shape":"PermissionSetSessionDuration"},
+        "availability":{"shape":"PermissionSetAvailability"}
+      }
+    },
+    "PermissionSetReferenceList":{
+      "type":"list",
+      "member":{"shape":"PermissionSetReference"}
+    },
+    "PermissionSetSessionDuration":{
+      "type":"string",
+      "max":100,
+      "min":1,
+      "pattern":"-?P(?=\\d|T\\d)(?:(\\d+)Y)?(?:(\\d+)M)?(?:(\\d+)([DW]))?(?:T(?:(\\d+)H)?(?:(\\d+)M)?(?:(\\d+(?:\\.\\d+)?)S)?)?"
+    },
+    "PermissionSetSummary":{
+      "type":"structure",
+      "required":[
+        "permissionSetArn",
+        "permissionSetId",
+        "name"
+      ],
+      "members":{
+        "permissionSetArn":{"shape":"PermissionSetArn"},
+        "permissionSetId":{"shape":"PermissionSetId"},
+        "name":{"shape":"PermissionSetName"},
+        "description":{"shape":"PermissionSetDescription"},
+        "sessionDuration":{"shape":"PermissionSetSessionDuration"}
+      },
+      "documentation":"<p>Public catalog summary for one available permission set.</p>"
+    },
+    "PermissionSetSummaryList":{
+      "type":"list",
+      "member":{"shape":"PermissionSetSummary"}
     },
     "Principal":{
       "type":"structure",
@@ -2765,6 +4114,43 @@
         "GROUP"
       ]
     },
+    "PutAgentModelCatalogEntryInput":{
+      "type":"structure",
+      "required":[
+        "modelId",
+        "enabled"
+      ],
+      "members":{
+        "modelId":{
+          "shape":"String",
+          "location":"uri",
+          "locationName":"modelId"
+        },
+        "enabled":{
+          "shape":"Boolean",
+          "documentation":"<p>Whether this model is available in the chat UI.</p>"
+        },
+        "expectedLastEditTime":{
+          "shape":"String",
+          "documentation":"<p>OCC token from the prior read's <code>meta.lastEditTime</code>. Omit on the first call; required on subsequent calls.</p>"
+        },
+        "modelType":{
+          "shape":"AgentModelType",
+          "documentation":"<p>Whether <code>modelId</code> is a foundation model or an inference profile. Required when creating an entry; rejected when updating one.</p>"
+        }
+      }
+    },
+    "PutAgentModelCatalogEntryOutput":{
+      "type":"structure",
+      "required":[
+        "status",
+        "data"
+      ],
+      "members":{
+        "status":{"shape":"JSendStatus"},
+        "data":{"shape":"AgentModelCatalogEntry"}
+      }
+    },
     "QuarantineAccountInput":{
       "type":"structure",
       "required":["awsAccountId"],
@@ -2782,6 +4168,37 @@
       "members":{
         "status":{"shape":"JSendStatus"}
       }
+    },
+    "RateBasis":{
+      "type":"string",
+      "documentation":"<p>The window a rate is measured over.</p>",
+      "enum":[
+        "HOURLY",
+        "DAILY"
+      ]
+    },
+    "RateLimitEntry":{
+      "type":"structure",
+      "required":[
+        "basis",
+        "rate",
+        "action"
+      ],
+      "members":{
+        "basis":{"shape":"RateBasis"},
+        "rate":{
+          "shape":"Double",
+          "documentation":"<p>Spend-rate threshold in USD per the period selected by basis.</p>"
+        },
+        "action":{"shape":"ThresholdAction"}
+      },
+      "documentation":"<p>One spend-rate limit: the measured rate of <code>basis</code> reaching <code>rate</code> (USD per hour or per day) takes <code>action</code>. The rate must be greater than zero, and a list may not repeat a (basis, rate) pair; both rules are enforced by the service rather than by a schema constraint.</p>"
+    },
+    "RateLimitList":{
+      "type":"list",
+      "member":{"shape":"RateLimitEntry"},
+      "max":10,
+      "min":0
     },
     "RegionConcurrencyType":{
       "type":"string",
@@ -2892,7 +4309,7 @@
     "RequestLeaseInputAssignmentsList":{
       "type":"list",
       "member":{"shape":"DesiredAssignment"},
-      "max":19,
+      "max":20,
       "min":0
     },
     "RequestLeaseOutput":{
@@ -3076,6 +4493,39 @@
         "Frozen"
       ]
     },
+    "SandboxSpacesUsageData":{
+      "type":"structure",
+      "required":["spendByUsers"],
+      "members":{
+        "spendByUsers":{
+          "shape":"SandboxSpacesUserSpendList",
+          "documentation":"<p>Admins and Managers: every user with recorded usage. Users: only the caller, with a zero entry when they have no recorded usage.</p>"
+        }
+      },
+      "documentation":"<p>The <code>data</code> payload of <code>GET /sandboxAgent/usage</code>.</p>"
+    },
+    "SandboxSpacesUserSpend":{
+      "type":"structure",
+      "required":[
+        "userId",
+        "sandboxSpacesEstimatedTokenCostAccrued"
+      ],
+      "members":{
+        "userId":{
+          "shape":"String",
+          "documentation":"<p>The Identity Center user id.</p>"
+        },
+        "sandboxSpacesEstimatedTokenCostAccrued":{
+          "shape":"Double",
+          "documentation":"<p>This user's accumulated Sandbox Spaces estimated token cost in US dollars.</p>"
+        }
+      },
+      "documentation":"<p>One user's Sandbox Spaces estimated token cost on the lease.</p>"
+    },
+    "SandboxSpacesUserSpendList":{
+      "type":"list",
+      "member":{"shape":"SandboxSpacesUserSpend"}
+    },
     "SearchPrincipalsInput":{
       "type":"structure",
       "members":{
@@ -3126,10 +4576,34 @@
         "data":{"shape":"PrincipalSearchResult"}
       }
     },
+    "SelectableModel":{
+      "type":"structure",
+      "required":[
+        "modelId",
+        "displayName",
+        "provider"
+      ],
+      "members":{
+        "modelId":{"shape":"String"},
+        "displayName":{"shape":"String"},
+        "provider":{"shape":"String"}
+      },
+      "documentation":"<p>One model a lease user may select for a Sandbox Space turn.</p>"
+    },
+    "SelectableModelList":{
+      "type":"list",
+      "member":{"shape":"SelectableModel"}
+    },
     "SensitiveEmail":{
       "type":"string",
       "documentation":"<p>An email address (or a <code>system:</code> sentinel for <code>lastSavedBy</code>).</p>",
       "sensitive":true
+    },
+    "ServiceBreakdown":{
+      "type":"map",
+      "key":{"shape":"String"},
+      "value":{"shape":"Double"},
+      "documentation":"<p>Cumulative cost keyed by Cost Explorer service name.</p>"
     },
     "SharedLease":{
       "type":"structure",
@@ -3174,6 +4648,42 @@
         },
         "blueprintName":{"shape":"String"},
         "allowOwnerToShareLease":{"shape":"Boolean"},
+        "predictiveBudgetEnabled":{
+          "shape":"Boolean",
+          "documentation":"<p>Predictive budget controls opt-in. Copied from the template at creation and replaceable through <code>UpdateLease</code>.</p>"
+        },
+        "bedrockTokenMonitoringEnabled":{
+          "shape":"Boolean",
+          "documentation":"<p>Bedrock token monitoring opt-in. Saved at creation as the template's preference, or true when the template enables Sandbox Spaces, and replaceable through <code>UpdateLease</code>.</p>"
+        },
+        "sandboxSpacesEnabled":{
+          "shape":"Boolean",
+          "documentation":"<p>Snapshot of the source template's Sandbox Spaces on/off setting.</p>"
+        },
+        "allowedModelIds":{
+          "shape":"AgentModelIdList",
+          "documentation":"<p>Snapshot of the template's Sandbox Spaces model subset — the lease's own copy, so a later template edit never changes enforcement under a running lease.</p>"
+        },
+        "defaultModelId":{
+          "shape":"String",
+          "documentation":"<p>Snapshot of the template's Sandbox Spaces default model, preselected first when a chat opens under this lease.</p>"
+        },
+        "lastPredictedSpend":{
+          "shape":"Double",
+          "documentation":"<p>Predicted spend now, in USD, as of the last threshold check. The next check compares against it. Lease Monitoring and Token Poll exclude Sandbox Spaces estimated token cost.</p>"
+        },
+        "lastEvaluatedSpend":{
+          "shape":"Double",
+          "documentation":"<p>Spend so far, in USD, as of the last threshold check, with the monitored Bedrock token cost in place of the billed Bedrock part where token monitoring is on, never below the billed total. The next check compares against it. Lease Monitoring and Token Poll exclude Sandbox Spaces estimated token cost.</p>"
+        },
+        "lastEvaluatedHourlySpendRate":{
+          "shape":"Double",
+          "documentation":"<p>Most recently evaluated hourly spend rate.</p>"
+        },
+        "lastEvaluatedDailySpendRate":{
+          "shape":"Double",
+          "documentation":"<p>Most recently evaluated daily spend rate.</p>"
+        },
         "desiredAssignments":{
           "shape":"DesiredAssignmentWithDisplayList",
           "documentation":"<p>Declarative desired principal assignments (owner + shared users/groups), each optionally enriched with display metadata for the assignments UI.</p>"
@@ -3213,6 +4723,22 @@
         "sourceGroupName":{
           "shape":"String",
           "documentation":"<p>The IDC group display name that granted access, present only for <code>group</code> access.</p>"
+        },
+        "defaultPermissionSet":{
+          "shape":"PermissionSetReference",
+          "documentation":"<p>Backend-hydrated metadata for the default permission set.</p>"
+        },
+        "allowedPermissionSets":{
+          "shape":"PermissionSetReferenceList",
+          "documentation":"<p>Backend-hydrated metadata for the effective allowed set, including the default. Missing cache entries remain represented as UNAVAILABLE.</p>"
+        },
+        "selectableModels":{
+          "shape":"SelectableModelList",
+          "documentation":"<p>Enabled catalog narrowed to this lease's allowed models. Set by <code>GetLease</code> and <code>UnfreezeLease</code> when Sandbox Spaces is enabled globally and on the lease, resolved on each read so disabling a model takes effect on the next fetch. Unset otherwise and on list responses.</p>"
+        },
+        "rateLimits":{
+          "shape":"RateLimitList",
+          "documentation":"<p>Spend-rate limits stored on this lease, each with its own action. Copied from the template at creation and replaceable through <code>UpdateLease</code>. Evaluated only while <code>predictiveBudgetEnabled</code> is true.</p>"
         }
       },
       "documentation":"<p>A <code>Lease</code> reachable through a shared assignment, with the access path and (for group access) the group that granted it. Also carries the <code>leaseId</code>.</p>"
@@ -3377,7 +4903,7 @@
         },
         "meta":{"shape":"ConfigurationResponseMetadata"}
       },
-      "documentation":"<p>Terms-of-service content shown at sign-in.</p>"
+      "documentation":"<p>Server-owned audit envelope echoed on each section. A never-saved section has no <code>lastSavedBy</code>: the member is simply absent on the wire. <code>meta</code> is absent until the section has been saved at least once — but when present it always carries both timestamps.</p>"
     },
     "TermsOfServiceConfigurationContentString":{
       "type":"string",
@@ -3390,6 +4916,36 @@
         "ALERT",
         "FREEZE_ACCOUNT"
       ]
+    },
+    "TokenSeriesRow":{
+      "type":"structure",
+      "required":[
+        "timestamp",
+        "region",
+        "modelId",
+        "input",
+        "output",
+        "cacheRead",
+        "cacheWrite"
+      ],
+      "members":{
+        "timestamp":{"shape":"String"},
+        "region":{"shape":"String"},
+        "modelId":{
+          "shape":"String",
+          "documentation":"<p>The Bedrock ModelId, or &quot;unattributed&quot; for counts that could not be matched to a model; those counts are never priced into <code>monitoredBedrockTokenCost</code>.</p>"
+        },
+        "input":{"shape":"Double"},
+        "output":{"shape":"Double"},
+        "cacheRead":{"shape":"Double"},
+        "cacheWrite":{"shape":"Double"},
+        "monitoredBedrockTokenCost":{"shape":"Double"}
+      },
+      "documentation":"<p>One Bedrock token reading, flattened per region per model. <code>monitoredBedrockTokenCost</code> is lease-wide as of <code>timestamp</code>, so it repeats across the rows sharing one and summing it across rows double-counts. It prices only the tokens attributed to a model, each at the rate when it was counted; a token with no rate adds nothing. It is absent only on older rows saved unpriced.</p>"
+    },
+    "TokenSeriesRowList":{
+      "type":"list",
+      "member":{"shape":"TokenSeriesRow"}
     },
     "UnauthenticatedError":{
       "type":"structure",
@@ -3456,6 +5012,29 @@
         "senderFault":true
       },
       "exception":true
+    },
+    "UpdateAgentConfigurationInput":{
+      "type":"structure",
+      "required":["sandboxSpacesEnabled"],
+      "members":{
+        "sandboxSpacesEnabled":{
+          "shape":"Boolean",
+          "documentation":"<p>Global Sandbox Spaces capability. <code>true</code> turns the feature on for every role with an active lease (still subject to the enabled-model catalog gate); <code>false</code> turns it off entirely.</p>"
+        },
+        "meta":{"shape":"ConfigurationWriteMetadata"}
+      },
+      "documentation":"<p>Optimistic-concurrency envelope accepted on a section write. Only <code>meta.lastEditTime</code> is read (the concurrency token); the server derives the rest. <code>createdTime</code> is server-owned and is deliberately NOT part of the write contract; <code>lastSavedBy</code> is server-owned and stripped if supplied.</p>"
+    },
+    "UpdateAgentConfigurationOutput":{
+      "type":"structure",
+      "required":[
+        "status",
+        "data"
+      ],
+      "members":{
+        "status":{"shape":"JSendStatus"},
+        "data":{"shape":"AgentConfiguration"}
+      }
     },
     "UpdateBlueprintInput":{
       "type":"structure",
@@ -3537,7 +5116,7 @@
         },
         "meta":{"shape":"ConfigurationWriteMetadata"}
       },
-      "documentation":"<p>Account cleanup retry/validation policy.</p>"
+      "documentation":"<p>Optimistic-concurrency envelope accepted on a section write. Only <code>meta.lastEditTime</code> is read (the concurrency token); the server derives the rest. <code>createdTime</code> is server-owned and is deliberately NOT part of the write contract; <code>lastSavedBy</code> is server-owned and stripped if supplied.</p>"
     },
     "UpdateCleanupConfigurationInputCooldownPeriodHoursInteger":{
       "type":"integer",
@@ -3599,7 +5178,7 @@
         },
         "meta":{"shape":"ConfigurationWriteMetadata"}
       },
-      "documentation":"<p>Cost-report grouping policy.</p>"
+      "documentation":"<p>Optimistic-concurrency envelope accepted on a section write. Only <code>meta.lastEditTime</code> is read (the concurrency token); the server derives the rest. <code>createdTime</code> is server-owned and is deliberately NOT part of the write contract; <code>lastSavedBy</code> is server-owned and stripped if supplied.</p>"
     },
     "UpdateCostReportingConfigurationOutput":{
       "type":"structure",
@@ -3630,7 +5209,7 @@
     "UpdateLeaseAssignmentsInputAssignmentsList":{
       "type":"list",
       "member":{"shape":"DesiredAssignment"},
-      "max":19,
+      "max":20,
       "min":0
     },
     "UpdateLeaseAssignmentsOutput":{
@@ -3666,7 +5245,39 @@
         "expirationDate":{"shape":"String"},
         "durationThresholds":{"shape":"DurationThresholdList"},
         "costReportGroup":{"shape":"UpdateLeaseInputCostReportGroupString"},
-        "allowOwnerToShareLease":{"shape":"Boolean"}
+        "allowOwnerToShareLease":{"shape":"Boolean"},
+        "defaultPermissionSetArn":{
+          "shape":"PermissionSetArn",
+          "documentation":"<p>Replace the lease's default permission set.</p>"
+        },
+        "allowedPermissionSetArns":{
+          "shape":"PermissionSetArnList",
+          "documentation":"<p>Replace the permission sets available for assignment overrides.</p>"
+        },
+        "sandboxSpacesEnabled":{
+          "shape":"Boolean",
+          "documentation":"<p>Turn Sandbox Spaces on or off for this lease.</p>"
+        },
+        "allowedModelIds":{
+          "shape":"AgentModelIdList",
+          "documentation":"<p>Replace the lease's Sandbox Spaces model subset. Clearable: an explicit null inherits every enabled catalog model.</p>"
+        },
+        "defaultModelId":{
+          "shape":"String",
+          "documentation":"<p>Replace the model preselected when a chat opens. Clearable with null.</p>"
+        },
+        "rateLimits":{
+          "shape":"RateLimitList",
+          "documentation":"<p>Replace the spend-rate limits. Clearable: the edit forms send an explicit null, which the client re-injects into the body (the serializer omits nulls). An empty list also clears. A non-empty list requires predictive budget controls on. Omitting it in a request that sets <code>predictiveBudgetEnabled</code> to false clears the stored limits.</p>"
+        },
+        "predictiveBudgetEnabled":{
+          "shape":"Boolean",
+          "documentation":"<p>Turn predictive budget controls on or off. Turning them on requires <code>allowPredictiveBudgetControls</code>. While they are off, a <code>PREDICTED</code> budget threshold or a non-empty <code>rateLimits</code> list is rejected.</p>"
+        },
+        "bedrockTokenMonitoringEnabled":{
+          "shape":"Boolean",
+          "documentation":"<p>Turn Bedrock token monitoring on or off. Turning it on requires <code>allowBedrockTokenMonitoring</code> or <code>sandboxSpacesEnabled</code> true. Must be true while <code>sandboxSpacesEnabled</code> is true. Send false in a request that turns <code>sandboxSpacesEnabled</code> off while <code>allowBedrockTokenMonitoring</code> is off.</p>"
+        }
       }
     },
     "UpdateLeaseInputCostReportGroupString":{
@@ -3707,6 +5318,26 @@
           "documentation":"<p>Blueprint to attach. <code>blueprintName</code> is resolved server-side.</p>"
         },
         "allowOwnerToShareLease":{"shape":"Boolean"},
+        "predictiveBudgetEnabled":{
+          "shape":"Boolean",
+          "documentation":"<p>Opt-in: spend rates, cost projection, predicted-cost thresholds and caps.</p>"
+        },
+        "bedrockTokenMonitoringEnabled":{
+          "shape":"Boolean",
+          "documentation":"<p>Opt-in: monitored Bedrock token cost tracking. Must be true when <code>sandboxSpacesEnabled</code> is true.</p>"
+        },
+        "sandboxSpacesEnabled":{
+          "shape":"Boolean",
+          "documentation":"<p>Whether leases created from this template have Sandbox Spaces turned on. <code>true</code> requires <code>bedrockTokenMonitoringEnabled</code>; otherwise the request is rejected with 400.</p>"
+        },
+        "allowedModelIds":{
+          "shape":"AgentModelIdList",
+          "documentation":"<p>Sandbox Spaces: subset of the globally enabled model IDs this template permits. Unset inherits the global enabled set.</p>"
+        },
+        "defaultModelId":{
+          "shape":"String",
+          "documentation":"<p>Sandbox Spaces: model preselected for new chats on leases from this template. Must be enabled and, when a subset is set, one of allowedModelIds.</p>"
+        },
         "leaseTemplateId":{
           "shape":"String",
           "documentation":"<p>Lease template UUID. The API Gateway path segment is named <code>leaseTemplateName</code>, but the value is the template's UUID, not its display name.</p>",
@@ -3716,6 +5347,18 @@
         "meta":{
           "shape":"Metadata",
           "documentation":"<p>Accepted rather than ignored: the <code>meta</code> sent in the request is written back, overriding only <code>createdTime</code>. Omitting <code>meta</code> clears <code>lastEditTime</code>, so a client performing a read-modify-write must echo it back.</p>"
+        },
+        "defaultPermissionSetArn":{
+          "shape":"PermissionSetArn",
+          "documentation":"<p>Permission set assigned when an assignment does not specify an override.</p>"
+        },
+        "allowedPermissionSetArns":{
+          "shape":"PermissionSetArnList",
+          "documentation":"<p>Permission sets available for assignment overrides. The default is implicitly allowed and this list is capped at 20 entries.</p>"
+        },
+        "rateLimits":{
+          "shape":"RateLimitList",
+          "documentation":"<p>Spend-rate limits, each with its own action. A non-empty list requires <code>predictiveBudgetEnabled</code>. When sent, it replaces the stored list. See the operation for omission rules.</p>"
         }
       },
       "documentation":"<p>The client-writable members of a lease template, shared by the create and update inputs. Both accept the same set — requiredness and constraints are identical and neither operation is a patch.</p> <p><code>uuid</code>, <code>createdBy</code> and <code>blueprintName</code> are deliberately absent — they are server-owned.</p>"
@@ -3755,7 +5398,10 @@
         "maxLeaseRequestsPerWindow",
         "leaseSharingEnabled",
         "enablePrincipalSearch",
-        "groupAssignmentMode"
+        "groupAssignmentMode",
+        "allowPredictiveBudgetControls",
+        "serviceBreakdownEnabled",
+        "allowBedrockTokenMonitoring"
       ],
       "members":{
         "requireMaxBudget":{"shape":"Boolean"},
@@ -3791,9 +5437,21 @@
           "shape":"GroupAssignmentMode",
           "documentation":"<p>Controls whether IDC groups can be selected for lease assignments. Existing stored configurations that predate this policy are read as <code>NONE</code>. Existing group assignments are retained when set to <code>NONE</code>.</p>"
         },
+        "allowPredictiveBudgetControls":{
+          "shape":"Boolean",
+          "documentation":"<p>Predictive Budget Controls feature gate: allows templates and leases to opt into spend-rate limits, cost projection and predicted-cost thresholds.</p>"
+        },
+        "serviceBreakdownEnabled":{
+          "shape":"Boolean",
+          "documentation":"<p>Whether per-service cost breakdown is collected.</p>"
+        },
+        "allowBedrockTokenMonitoring":{
+          "shape":"Boolean",
+          "documentation":"<p>Feature gate for monitored Bedrock token cost tracking.</p>"
+        },
         "meta":{"shape":"ConfigurationWriteMetadata"}
       },
-      "documentation":"<p>Lease request/budget/duration policy.</p>"
+      "documentation":"<p>Optimistic-concurrency envelope accepted on a section write. Only <code>meta.lastEditTime</code> is read (the concurrency token); the server derives the rest. <code>createdTime</code> is server-owned and is deliberately NOT part of the write contract; <code>lastSavedBy</code> is server-owned and stripped if supplied.</p>"
     },
     "UpdateLeasesConfigurationInputLeaseRequestWindowHoursInteger":{
       "type":"integer",
@@ -3825,6 +5483,7 @@
     "UpdateLeasesConfigurationInputTtlInteger":{
       "type":"integer",
       "box":true,
+      "max":3650,
       "min":1
     },
     "UpdateLeasesConfigurationOutput":{
@@ -3848,7 +5507,7 @@
         },
         "meta":{"shape":"ConfigurationWriteMetadata"}
       },
-      "documentation":"<p>Maintenance-mode toggle.</p>"
+      "documentation":"<p>Optimistic-concurrency envelope accepted on a section write. Only <code>meta.lastEditTime</code> is read (the concurrency token); the server derives the rest. <code>createdTime</code> is server-owned and is deliberately NOT part of the write contract; <code>lastSavedBy</code> is server-owned and stripped if supplied.</p>"
     },
     "UpdateMaintenanceConfigurationOutput":{
       "type":"structure",
@@ -3863,15 +5522,27 @@
     },
     "UpdateNotificationConfigurationInput":{
       "type":"structure",
-      "required":["emailFrom"],
+      "required":[
+        "emailFrom",
+        "sesEnabled",
+        "snsIntegrationTopicEnabled"
+      ],
       "members":{
         "emailFrom":{
           "shape":"UpdateNotificationConfigurationInputEmailFromString",
-          "documentation":"<p>From address used for notification emails; an empty string disables notifications.</p>"
+          "documentation":"<p>From address used for SES notification emails; an empty string leaves SES unable to deliver even when <code>sesEnabled</code> is true.</p>"
+        },
+        "sesEnabled":{
+          "shape":"Boolean",
+          "documentation":"<p>Whether SES email delivery is enabled. Defaults to true when not configured.</p>"
+        },
+        "snsIntegrationTopicEnabled":{
+          "shape":"Boolean",
+          "documentation":"<p>Whether publishing to the shared SNS integration topic is enabled. Defaults to false when not configured.</p>"
         },
         "meta":{"shape":"ConfigurationWriteMetadata"}
       },
-      "documentation":"<p>Notification sender configuration.</p>"
+      "documentation":"<p>Optimistic-concurrency envelope accepted on a section write. Only <code>meta.lastEditTime</code> is read (the concurrency token); the server derives the rest. <code>createdTime</code> is server-owned and is deliberately NOT part of the write contract; <code>lastSavedBy</code> is server-owned and stripped if supplied.</p>"
     },
     "UpdateNotificationConfigurationInputEmailFromString":{
       "type":"string",
@@ -3901,7 +5572,7 @@
         },
         "meta":{"shape":"ConfigurationWriteMetadata"}
       },
-      "documentation":"<p>Terms-of-service content shown at sign-in.</p>"
+      "documentation":"<p>Optimistic-concurrency envelope accepted on a section write. Only <code>meta.lastEditTime</code> is read (the concurrency token); the server derives the rest. <code>createdTime</code> is server-owned and is deliberately NOT part of the write contract; <code>lastSavedBy</code> is server-owned and stripped if supplied.</p>"
     },
     "UpdateTermsOfServiceConfigurationInputContentString":{
       "type":"string",
@@ -3943,5 +5614,5 @@
       ]
     }
   },
-  "documentation":"<p>Innovation Sandbox on AWS enables cloud administrators to automate the management of temporary sandbox environments by implementing service control policies, spend controls, and account recycling mechanisms.</p> <p>The API is organized into these domains:</p> <ul> <li><strong>Accounts</strong>: Register and manage sandbox accounts, cleanup runs, and account lifecycle actions.</li> <li><strong>Blueprints</strong>: Register and manage CloudFormation StackSet-backed blueprints.</li> <li><strong>Configurations</strong>: Read and update solution settings for leases, cleanup, notifications, maintenance, terms of service, and cost reporting.</li> <li><strong>Leases</strong>: Request and manage temporary sandbox access, lifecycle actions, sharing, and principal assignments.</li> <li><strong>Lease templates</strong>: Define the reusable budget, duration, blueprint, and visibility settings used to request leases.</li> <li><strong>Principals</strong>: Search IAM Identity Center users and groups for lease assignments.</li> </ul>"
+  "documentation":"<p>Innovation Sandbox on AWS enables cloud administrators to automate the management of temporary sandbox environments by implementing service control policies, spend controls, and account recycling mechanisms.</p> <p>The API is organized into these domains:</p> <ul> <li><strong>Accounts</strong>: Register and manage sandbox accounts, cleanup runs, and account lifecycle actions.</li> <li><strong>Blueprints</strong>: Register and manage CloudFormation StackSet-backed blueprints.</li> <li><strong>Configurations</strong>: Read and update solution settings for leases, cleanup, notifications, maintenance, terms of service, and cost reporting.</li> <li><strong>Leases</strong>: Request and manage temporary sandbox access, lifecycle actions, sharing, and principal assignments.</li> <li><strong>Lease templates</strong>: Define the reusable budget, duration, blueprint, and visibility settings used to request leases.</li> <li><strong>Permission sets</strong>: Discover IAM Identity Center permission sets available for lease permission profiles.</li> <li><strong>Principals</strong>: Search IAM Identity Center users and groups for lease assignments.</li> <li><strong>Sandbox Agent</strong>: AI agent that lets users interact with their sandbox account via natural language.</li> </ul>"
 }

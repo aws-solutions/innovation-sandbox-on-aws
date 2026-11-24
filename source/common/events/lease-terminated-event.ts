@@ -127,6 +127,7 @@ export class LeaseTerminatedEvent<
 export function getLeaseTerminatedReason(
   expiredStatus: ExpiredLeaseStatus,
   lease: PersistedMonitoredLease,
+  budgetTotalSpend = 0,
 ): LeaseTerminatedReason {
   switch (expiredStatus) {
     case "Expired":
@@ -143,7 +144,7 @@ export function getLeaseTerminatedReason(
       return {
         type: "BudgetExceeded",
         budget: lease.maxSpend,
-        totalSpend: lease.totalCostAccrued,
+        totalSpend: Math.max(budgetTotalSpend, lease.totalCostAccrued),
       };
     case "ManuallyTerminated":
       return {
