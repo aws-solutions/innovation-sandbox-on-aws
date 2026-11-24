@@ -83,11 +83,22 @@ export class AppConfigGlobalConfigStore extends GlobalConfigStore {
       }),
     );
 
-    return yaml.load(
-      Buffer.from(createHostedConfigurationVersionResponse.Content!).toString(
-        "utf8",
-      ),
-    ) as AppConfigGlobalConfig;
+    try {
+      const content = createHostedConfigurationVersionResponse.Content;
+      if (content === undefined) {
+        throw new Error(
+          "Hosted configuration version response did not include content.",
+        );
+      }
+
+      return GlobalConfigSchema.parse(
+        yaml.load(Buffer.from(content).toString("utf8"), {
+          schema: yaml.JSON_SCHEMA,
+        }),
+      );
+    } catch (error) {
+      throw new Error(`Could not parse configuration: ${error}`);
+    }
   }
 
   public async get(): Promise<AppConfigGlobalConfig> {
@@ -126,6 +137,7 @@ export class AppConfigGlobalConfigStore extends GlobalConfigStore {
           Buffer.from(getLatestConfigurationResponse.Configuration).toString(
             "utf8",
           ),
+          { schema: yaml.JSON_SCHEMA },
         ),
       );
     } catch (error) {

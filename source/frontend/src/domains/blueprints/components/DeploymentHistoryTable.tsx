@@ -88,15 +88,17 @@ export const DeploymentHistoryTable = ({
   const buildOverviewItems = (deployment: DeploymentHistoryView) => {
     const items: Array<{ label: string; value: string }> = [];
 
-    items.push({ label: "Lease ID", value: deployment.leaseId });
-    items.push({ label: "Account ID", value: deployment.accountId });
-    items.push({
-      label: "Started",
-      value: formatDateTime(
-        deployment.deploymentStartedAt,
-        DateTime.DATETIME_FULL,
-      ),
-    });
+    items.push(
+      { label: "Lease ID", value: deployment.leaseId },
+      { label: "Account ID", value: deployment.accountId },
+      {
+        label: "Started",
+        value: formatDateTime(
+          deployment.deploymentStartedAt,
+          DateTime.DATETIME_FULL,
+        ),
+      },
+    );
 
     if (deployment.deploymentCompletedAt) {
       items.push({

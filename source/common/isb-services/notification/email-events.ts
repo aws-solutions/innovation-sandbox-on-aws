@@ -14,6 +14,7 @@ export const SubscribedEmailEvents = [
   EventDetailTypes.AccountCleanupFailure,
   EventDetailTypes.AccountDriftDetected,
   EventDetailTypes.LeaseBudgetThresholdBreachedAlert,
+  EventDetailTypes.LeaseSpendRateThresholdBreachedAlert,
   EventDetailTypes.LeaseDurationThresholdBreachedAlert,
   EventDetailTypes.GroupCostReportGenerated,
   EventDetailTypes.GroupCostReportGeneratedFailure,
@@ -23,6 +24,8 @@ export const SubscribedEmailEvents = [
 
 export type EmailEventName = (typeof SubscribedEmailEvents)[number];
 
-export function isSubscribedEmailEvent(eventName: string): boolean {
+export function isSubscribedEmailEvent(
+  eventName: string,
+): eventName is EmailEventName {
   return SubscribedEmailEvents.includes(eventName as EmailEventName);
 }

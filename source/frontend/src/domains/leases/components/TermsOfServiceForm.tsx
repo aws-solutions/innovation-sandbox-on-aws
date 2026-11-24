@@ -45,7 +45,7 @@ export const TermsOfServiceForm = ({
         <ErrorPanel
           description="Could not retrieve terms of service."
           retry={refetch}
-          error={error as Error}
+          error={error}
         />
       </Container>
     );

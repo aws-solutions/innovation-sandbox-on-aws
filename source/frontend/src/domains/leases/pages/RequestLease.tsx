@@ -10,7 +10,7 @@ import {
 } from "@cloudscape-design/components";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { DateTime } from "luxon";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { FormProvider, useForm } from "react-hook-form";
 import { useNavigate } from "react-router-dom";
 
@@ -23,7 +23,11 @@ import {
   showErrorToast,
   showSuccessToast,
 } from "@amzn/innovation-sandbox-frontend/components/Toast";
-import { AssignmentsForm } from "@amzn/innovation-sandbox-frontend/domains/leases/components/AssignmentsForm";
+import {
+  assignmentsFingerprint,
+  upsertOwnerAssignment,
+} from "@amzn/innovation-sandbox-frontend/domains/leases/assignments/assignmentPermissionSets";
+import { AssignmentsForm } from "@amzn/innovation-sandbox-frontend/domains/leases/assignments/components/AssignmentsForm";
 import { PendingAssignmentsList } from "@amzn/innovation-sandbox-frontend/domains/leases/components/PendingAssignmentsList";
 import { ReviewForm } from "@amzn/innovation-sandbox-frontend/domains/leases/components/ReviewForm";
 import { TemplateSelectionForm } from "@amzn/innovation-sandbox-frontend/domains/leases/components/TemplateSelectionForm";
@@ -41,7 +45,10 @@ import { ApiError } from "@amzn/innovation-sandbox-frontend/helpers/apiError";
 import { useBreadcrumb } from "@amzn/innovation-sandbox-frontend/hooks/useBreadcrumb";
 import { useUser } from "@amzn/innovation-sandbox-frontend/hooks/useUser";
 import { DEFAULT_GROUP_ASSIGNMENT_MODE } from "@amzn/innovation-sandbox-shared/types/configuration.js";
-import { getUserEmail } from "@amzn/innovation-sandbox-shared/utils/auth-utils";
+import {
+  getUserEmail,
+  getUserLabel,
+} from "@amzn/innovation-sandbox-shared/utils/auth-utils";
 
 export const RequestLease = () => {
   const navigate = useNavigate();
@@ -52,7 +59,6 @@ export const RequestLease = () => {
   const { mutateAsync: requestNewLease, isPending: isSubmitting } =
     useRequestNewLease();
 
-  // Single useForm instance for the entire wizard
   const methods = useForm<RequestLeaseFormValues>({
     resolver: zodResolver(RequestLeaseValidationSchema),
     mode: "all",
@@ -65,28 +71,52 @@ export const RequestLease = () => {
 
   const { trigger, clearErrors, getFieldState, watch } = methods;
 
-  // Reset acceptTerms whenever the request changes
   const leaseTemplateUuid = watch("leaseTemplateUuid");
-  const assignmentsKey = (watch("assignments") ?? [])
-    .map((a) => a.principalId)
-    // Opaque IDC principal IDs: sort by code point for a deterministic,
-    // locale-independent key. This value only feeds the effect dependency
-    // below, so stable ordering matters, not human-readable collation.
-    .sort((a, b) => Number(a > b) - Number(a < b))
-    .join(",");
+  const assignmentsKey = assignmentsFingerprint(watch("assignments") ?? []);
   useEffect(() => {
     methods.resetField("acceptTerms");
   }, [leaseTemplateUuid, assignmentsKey, methods]);
 
-  // The "Share access" step is conditional on the global feature flag AND
-  // the selected template's allowOwnerToShareLease. We fetch both lazily —
-  // the template lookup only fires once a template is picked.
   const { data: globalConfig } = useGetConfigurations();
   const { data: selectedTemplate, isLoading: isTemplateLoading } =
     useGetLeaseTemplateById(leaseTemplateUuid || undefined);
+  const defaultPermissionSetArn =
+    selectedTemplate?.defaultPermissionSet?.permissionSetArn;
   const showAssignmentsStep =
     !!globalConfig?.leases?.leaseSharingEnabled &&
     !!selectedTemplate?.allowOwnerToShareLease;
+  const owner = useMemo(
+    () =>
+      user?.type === "user"
+        ? {
+            principalId: user.userId,
+            displayName: getUserLabel(user),
+            email: getUserEmail(user),
+          }
+        : undefined,
+    [user],
+  );
+
+  useEffect(() => {
+    if (!showAssignmentsStep || !defaultPermissionSetArn) return;
+    const currentAssignments = methods.getValues("assignments") ?? [];
+    const updatedAssignments = upsertOwnerAssignment(
+      currentAssignments,
+      owner,
+      defaultPermissionSetArn,
+    );
+    if (updatedAssignments !== currentAssignments) {
+      methods.setValue("assignments", [...updatedAssignments], {
+        shouldValidate: true,
+      });
+    }
+  }, [
+    leaseTemplateUuid,
+    methods,
+    owner,
+    defaultPermissionSetArn,
+    showAssignmentsStep,
+  ]);
 
   // Track active wizard step
   const [activeStepIndex, setActiveStepIndex] = useState(0);
@@ -221,12 +251,12 @@ export const RequestLease = () => {
           steps={[
             {
               title: "Select lease template",
-              content: <TemplateSelectionForm />,
+              content: <TemplateSelectionForm clearAssignmentsOnChange />,
             },
             ...(showAssignmentsStep
               ? [
                   {
-                    title: "Share access",
+                    title: "Configure access",
                     isOptional: true,
                     content: (
                       <AssignmentsForm
@@ -237,7 +267,13 @@ export const RequestLease = () => {
                           globalConfig?.leases?.groupAssignmentMode ??
                           DEFAULT_GROUP_ASSIGNMENT_MODE
                         }
-                        ownerEmail={user ? getUserEmail(user) : undefined}
+                        owner={owner}
+                        defaultPermissionSet={
+                          selectedTemplate?.defaultPermissionSet
+                        }
+                        allowedPermissionSets={
+                          selectedTemplate?.allowedPermissionSets
+                        }
                       />
                     ),
                   },
@@ -260,6 +296,13 @@ export const RequestLease = () => {
                   />
                   <PendingAssignmentsList
                     desiredAssignments={methods.watch("assignments")}
+                    defaultPermissionSet={
+                      selectedTemplate?.defaultPermissionSet
+                    }
+                    allowedPermissionSets={
+                      selectedTemplate?.allowedPermissionSets
+                    }
+                    ownerEmail={owner?.email}
                   />
                   <Container>
                     <TextareaField

@@ -39,7 +39,7 @@ function getCachedObjects(
   const cache = getCacheObject(cacheType);
   if (cache[key]) {
     const { users, lastUpdated } = cache[key];
-    const diff = new Date().getTime() - lastUpdated.getTime();
+    const diff = Date.now() - lastUpdated.getTime();
     if (diff > CACHE_EXPIRATION_MILLI) {
       logger.debug(`${cacheType} Cache miss - expired for key ${key}`);
       delete cachedUsers[key];

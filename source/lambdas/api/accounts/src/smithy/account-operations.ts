@@ -306,6 +306,7 @@ function ejectAccount(logger: Logger) {
           blueprintStore: IsbServices.blueprintStore(env),
           blueprintDeploymentService:
             IsbServices.blueprintDeploymentService(env),
+          sandboxSpacesUsageStore: IsbServices.sandboxSpacesUsageStore(env),
         },
       );
     } catch (error) {
@@ -379,6 +380,7 @@ function quarantineAccount(logger: Logger) {
         globalConfig,
         blueprintStore: IsbServices.blueprintStore(env),
         blueprintDeploymentService: IsbServices.blueprintDeploymentService(env),
+        sandboxSpacesUsageStore: IsbServices.sandboxSpacesUsageStore(env),
       },
     );
 
@@ -486,7 +488,7 @@ function skipCooldown(logger: Logger) {
 
     logger.info("CooldownSkipped", {
       accountId: awsAccountId,
-      skippedBy: userEmail,
+      skippedBy: user.type === "user" ? user.userId : user.clientId,
       durableExecutionArn: report.durableExecutionArn,
     });
 
@@ -517,10 +519,5 @@ export function accountsService(
     QuarantineAccount: withDelegatedErrors(quarantineAccount(logger)),
     RetryCleanup: withDelegatedErrors(retryCleanup(logger)),
     SkipCooldown: withDelegatedErrors(skipCooldown(logger)),
-    // Whole-object cast: `withDelegatedErrors` wraps each operation in a generic
-    // that erases the per-operation `...ServerOutput` return type, so the object
-    // literal no longer structurally matches `AccountsApiService`. Each inner
-    // operation is still individually typed against its own `...ServerInput`/
-    // `...ServerOutput` above, which is where the real signature checking happens.
-  } as unknown as AccountsApiService<AccountsSmithyContext>;
+  };
 }

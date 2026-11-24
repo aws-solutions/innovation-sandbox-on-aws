@@ -12,13 +12,46 @@ export function base64EncodeCompositeKey(
   return Buffer.from(jsonStr, "utf8").toString("base64url");
 }
 
-export function base64DecodeCompositeKey(
+export function base64DecodeCompositeKey<
+  T extends Record<string, unknown> = Record<string, unknown>,
+>(encodedKey: string, validate?: (decoded: unknown) => T): T {
+  const jsonStr = Buffer.from(encodedKey, "base64url").toString("utf8");
+  const decoded: unknown = JSON.parse(jsonStr);
+  return validate ? validate(decoded) : (decoded as T);
+}
+
+export class InvalidPageIdentifierError extends Error {
+  constructor() {
+    super("Invalid page identifier.");
+    this.name = "InvalidPageIdentifierError";
+  }
+}
+
+export function decodePageIdentifier<
+  T extends Record<string, unknown> = Record<string, unknown>,
+>(encodedKey: string, validate?: (decoded: unknown) => T): T;
+export function decodePageIdentifier<
+  T extends Record<string, unknown> = Record<string, unknown>,
+>(encodedKey: undefined, validate?: (decoded: unknown) => T): undefined;
+export function decodePageIdentifier<
+  T extends Record<string, unknown> = Record<string, unknown>,
+>(
   encodedKey: string | undefined,
-): Record<string, any> | undefined {
+  validate?: (decoded: unknown) => T,
+): T | undefined;
+export function decodePageIdentifier<
+  T extends Record<string, unknown> = Record<string, unknown>,
+>(
+  encodedKey: string | undefined,
+  validate?: (decoded: unknown) => T,
+): T | undefined {
   if (encodedKey === undefined) {
     return undefined;
   }
 
-  const jsonStr = Buffer.from(encodedKey, "base64url").toString("utf8");
-  return JSON.parse(jsonStr);
+  try {
+    return base64DecodeCompositeKey(encodedKey, validate);
+  } catch {
+    throw new InvalidPageIdentifierError();
+  }
 }

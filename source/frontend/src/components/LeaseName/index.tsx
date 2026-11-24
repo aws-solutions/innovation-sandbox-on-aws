@@ -1,9 +1,10 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+import { LinkProps } from "@cloudscape-design/components";
+
 import { TextLink } from "@amzn/innovation-sandbox-frontend/components/TextLink";
 import { getLeaseDisplayName } from "@amzn/innovation-sandbox-frontend/domains/leases/helpers";
-import { LinkProps } from "@cloudscape-design/components";
 
 interface LeaseNameProps {
   /** The lease UUID (used for display name derivation). */

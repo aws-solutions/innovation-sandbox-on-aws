@@ -13,7 +13,6 @@ import {
   ResourceSummary,
 } from "@amzn/innovation-sandbox-commons/data/cleanup-report/cleanup-report.js";
 import {
-  AwsAccountId,
   PaginatedQueryResult,
   SingleItemResult,
 } from "@amzn/innovation-sandbox-commons/data/common-types.js";
@@ -85,14 +84,14 @@ export abstract class CleanupReportStore {
    * Uses ScanIndexForward: false, Limit: 1.
    */
   abstract getLatestReport(
-    accountId: AwsAccountId,
+    accountId: string,
   ): Promise<SingleItemResult<PersistedCleanupReport>>;
 
   /**
    * Lists recent cleanup reports for an account, ordered newest first.
    */
   abstract listRecentReports(args: {
-    accountId: AwsAccountId;
+    accountId: string;
     limit?: number;
     pageIdentifier?: string;
   }): Promise<PaginatedQueryResult<PersistedCleanupReport>>;

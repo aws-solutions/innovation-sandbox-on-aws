@@ -58,7 +58,7 @@ export default function CardsField<
   cardsProps,
   valueExtractor,
   itemMatcher,
-}: CardsFieldProps<T, TFieldValues, TName>) {
+}: Readonly<CardsFieldProps<T, TFieldValues, TName>>) {
   const {
     field: { onChange: onFieldChange, value: fieldValue, ref: fieldRef },
     fieldState: { error: fieldError },

@@ -1,6 +1,6 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
-import { Stack } from "aws-cdk-lib";
+import { ArnFormat, Stack } from "aws-cdk-lib";
 import {
   AccountRootPrincipal,
   CfnRole,
@@ -37,6 +37,20 @@ export function getSandboxAccountRoleName(namespace: string) {
   return `InnovationSandbox-${namespace}-SandboxAccountRole`;
 }
 
+export function getPermissionSetEventForwardingRoleName(namespace: string) {
+  return `${namespace}-PermissionSetEventForwardingRole`;
+}
+
+/**
+ * Role name for the sandbox agent role.
+ * Does not start with InnovationSandbox-{namespace} — as the SCP denies actions
+ * on `InnovationSandbox-{namespace}*` roles, so this role must use a different
+ * prefix to remain accessible from within the sandbox account.
+ */
+export function getSandboxAgentRoleName(namespace: string) {
+  return `SandboxAgentRole-${namespace}`;
+}
+
 export function getOrgMgtRoleArn(
   scope: Construct,
   namespace: string,
@@ -62,6 +76,21 @@ export function getIdcRoleArn(
     region: "",
     account: idcAccountId,
     resourceName: getIdcRoleName(namespace),
+  });
+}
+
+export function getPermissionSetEventForwardingRoleArn(
+  scope: Construct,
+  namespace: string,
+  idcAccountId: string,
+) {
+  return Stack.of(scope).formatArn({
+    service: "iam",
+    resource: "role",
+    region: "",
+    account: idcAccountId,
+    resourceName: getPermissionSetEventForwardingRoleName(namespace),
+    arnFormat: ArnFormat.SLASH_RESOURCE_NAME,
   });
 }
 
@@ -120,7 +149,7 @@ export class IntermediateRole {
       );
       IntermediateRole.instance.addToPolicy(
         new PolicyStatement({
-          actions: ["sts:AssumeRole"],
+          actions: ["sts:AssumeRole", "sts:SetSourceIdentity"],
           resources: [
             Stack.of(scope).formatArn({
               service: "iam",
@@ -128,6 +157,20 @@ export class IntermediateRole {
               region: "",
               account: "*",
               resourceName: getSandboxAccountRoleName(props.namespace),
+            }),
+          ],
+        }),
+      );
+      IntermediateRole.instance.addToPolicy(
+        new PolicyStatement({
+          actions: ["sts:AssumeRole", "sts:SetSourceIdentity"],
+          resources: [
+            Stack.of(scope).formatArn({
+              service: "iam",
+              resource: "role",
+              region: "",
+              account: "*",
+              resourceName: getSandboxAgentRoleName(props.namespace),
             }),
           ],
         }),
@@ -146,7 +189,7 @@ export class IntermediateRole {
     cfnRole.addPropertyOverride("AssumeRolePolicyDocument.Statement", [
       {
         Effect: "Allow",
-        Action: "sts:AssumeRole",
+        Action: ["sts:AssumeRole", "sts:SetSourceIdentity"],
         Principal: {
           AWS: {
             "Fn::Join": [

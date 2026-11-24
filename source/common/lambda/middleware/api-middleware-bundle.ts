@@ -128,7 +128,11 @@ function captureIsbUser<T extends BaseApiLambdaEnvironment>(): MiddlewareObj<
     // Driving path selection from header presence opens a privilege-escalation
     // primitive where an M2M caller attaches a victim's ID token and inherits
     // their roles.
-    const m2m = parseM2mAssumedRoleArn(userArn, env.ISB_NAMESPACE);
+    const m2m = parseM2mAssumedRoleArn(
+      userArn,
+      env.ISB_NAMESPACE,
+      env.HUB_ACCOUNT_ID,
+    );
 
     if (m2m) {
       // Hybrid request guard: M2M IAM principals must NOT carry x-isb-identity.

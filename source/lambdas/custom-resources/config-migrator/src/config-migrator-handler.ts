@@ -130,6 +130,7 @@ async function onUpdate(
     maintenance: { enabled: pick(globalConfig, "maintenanceMode") },
     termsOfService: { content: pick(globalConfig, "termsOfService") },
     costReporting: reportingConfig,
+    agent: {},
   };
 
   const validatedSections: {
@@ -292,7 +293,7 @@ function pickKnownFields(section: ConfigSection, fields: unknown): unknown {
  * raw configuration values (threat model I-3.1).
  */
 function validateSection(section: ConfigSection, fields: unknown): object {
-  const result = (ConfigSchemas[section] as z.ZodTypeAny).safeParse(
+  const result = (ConfigSchemas[section] as z.ZodType).safeParse(
     pickKnownFields(section, fields),
   );
   if (!result.success) {

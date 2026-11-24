@@ -1,7 +1,7 @@
 {
   "name": "@amzn/innovation-sandbox-shared",
   "description": "Browser-safe shared types and utilities - Innovation Sandbox on AWS (SO0284)",
-  "version": "1.3.7",
+  "version": "1.4.0",
   "scripts": {
     "lint": "eslint types utils test",
     "prebuild": "npm run lint",
@@ -17,7 +17,8 @@
   ],
   "peerDependencies": {
     "zod": "^4.1.12",
-    "zocker": "^3.0.0"
+    "zocker": "^3.0.0",
+    "luxon": "^3.5.0"
   },
   "peerDependenciesMeta": {
     "zod": {
@@ -29,7 +30,9 @@
   },
   "devDependencies": {
     "zod": "^4.1.12",
-    "zocker": "^3.0.0"
+    "zocker": "^3.0.0",
+    "luxon": "^3.5.0",
+    "@types/luxon": "^3.4.2"
   },
   "license": "Apache-2.0"
 }

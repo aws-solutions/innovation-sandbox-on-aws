@@ -18,6 +18,7 @@ import {
 
 import { PersistedCleanupReport } from "@amzn/innovation-sandbox-commons/data/cleanup-report/cleanup-report.js";
 import { DynamoCleanupReportStore } from "@amzn/innovation-sandbox-commons/data/cleanup-report/dynamo-cleanup-report-store.js";
+import { InvalidPageIdentifierError } from "@amzn/innovation-sandbox-commons/data/encoding.js";
 import { GlobalConfig } from "@amzn/innovation-sandbox-commons/data/global-config/global-config.js";
 import { DynamoLeaseStore } from "@amzn/innovation-sandbox-commons/data/lease/dynamo-lease-store.js";
 import { PersistedMonitoredLeaseSchema } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
@@ -26,6 +27,7 @@ import {
   PersistedSandboxAccount,
   PersistedSandboxAccountSchema,
 } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account.js";
+import { DynamoSandboxSpacesUsageStore } from "@amzn/innovation-sandbox-commons/data/sandbox-spaces-usage/dynamo-sandbox-spaces-usage-store.js";
 import { EventDetailTypes } from "@amzn/innovation-sandbox-commons/events/index.js";
 import {
   AccountInCleanUpError,
@@ -1077,9 +1079,6 @@ describe("Accounts Handler", () => {
       const moveAccountSpy = vi
         .spyOn(SandboxOuService.prototype, "moveAccount")
         .mockImplementation(async (account) => ({ newItem: account }));
-      const revokeAllUserAccessSpy = vi
-        .spyOn(IdcService.prototype, "revokeAllUserAccess")
-        .mockResolvedValue();
       const getUserFromEmailSpy = vi
         .spyOn(IdcService.prototype, "getUserFromEmail")
         .mockResolvedValue(undefined);
@@ -1112,9 +1111,20 @@ describe("Accounts Handler", () => {
       vi.spyOn(DynamoLeaseStore.prototype, "releaseLock").mockResolvedValue(
         undefined,
       );
+      vi.spyOn(
+        DynamoSandboxSpacesUsageStore.prototype,
+        "stampLeaseTtl",
+      ).mockResolvedValue();
+      vi.spyOn(
+        DynamoSandboxSpacesUsageStore.prototype,
+        "listLeaseUserUsage",
+      ).mockResolvedValue({ usage: [] });
+      vi.spyOn(
+        DynamoLeaseStore.prototype,
+        "recordLifecycleDispatch",
+      ).mockResolvedValue();
       return {
         moveAccountSpy,
-        revokeAllUserAccessSpy,
         getUserFromEmailSpy,
         sendIsbEventSpy,
         sendIsbEventsSpy,
@@ -1135,7 +1145,6 @@ describe("Accounts Handler", () => {
         .mockResolvedValue({ result: [], nextPageIdentifier: null });
       const {
         moveAccountSpy,
-        revokeAllUserAccessSpy,
         sendIsbEventSpy,
         sendIsbEventsSpy,
         leaseUpdateSpy,
@@ -1158,7 +1167,6 @@ describe("Accounts Handler", () => {
       // Lease store queried for each monitored status, but no lease found
       expect(findLeasesByStatusSpy).toHaveBeenCalled();
       expect(leaseUpdateSpy).not.toHaveBeenCalled();
-      expect(revokeAllUserAccessSpy).not.toHaveBeenCalled();
       // Account moved from Available to Quarantine
       expect(moveAccountSpy).toHaveBeenCalledWith(
         expect.objectContaining({ awsAccountId: mockedAccount.awsAccountId }),
@@ -1823,6 +1831,34 @@ describe("Accounts Handler", () => {
 
       const response = await handler(event, mockAuthorizedContext(testEnv));
       expect(response.statusCode).toBe(500);
+    });
+
+    it("should return 400 when the page identifier is invalid", async () => {
+      const event = createAPIGatewayProxyEvent({
+        httpMethod: "GET",
+        path: `/accounts/${accountId}/cleanup-reports`,
+        queryStringParameters: {
+          pageIdentifier: "invalid-token",
+        },
+        headers: {
+          "Content-Type": "application/json",
+        },
+        isbUser: isbAuthorizedUser.user,
+      });
+      vi.spyOn(
+        DynamoCleanupReportStore.prototype,
+        "listRecentReports",
+      ).mockRejectedValue(new InvalidPageIdentifierError());
+
+      const response = await handler(event, mockAuthorizedContext(testEnv));
+
+      expect(response).toEqual({
+        statusCode: 400,
+        body: createFailureResponseBody({
+          message: "The page identifier is invalid for this request.",
+        }),
+        headers: responseHeadersWithErrorType("ValidationError"),
+      });
     });
 
     it("should map maxResults and pageIdentifier to the store", async () => {

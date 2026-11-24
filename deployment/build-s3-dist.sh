@@ -50,8 +50,8 @@ while [[ $# -gt 0 ]]; do
       shift # past argument
       shift # past value
       ;;
-    --private-ecr-repo)
-      PRIVATE_ECR_REPO="$2"
+    --private-account-cleaner-ecr-repo)
+      PRIVATE_ACCOUNT_CLEANER_ECR_REPO="$2"
       shift # past argument
       shift # past value
       ;;
@@ -141,7 +141,7 @@ CONTEXT_FLAGS+=("--context" "distOutputBucket=$DIST_OUTPUT_BUCKET")
 [ -n "$SOLUTION_ID" ] && CONTEXT_FLAGS+=("--context" "solutionId=$SOLUTION_ID")
 [ -n "$PUBLIC_ECR_REGISTRY" ] && CONTEXT_FLAGS+=("--context" "publicEcrRegistry=$PUBLIC_ECR_REGISTRY")
 [ -n "$PUBLIC_ECR_TAG" ] && CONTEXT_FLAGS+=("--context" "publicEcrTag=$PUBLIC_ECR_TAG")
-[ -n "$PRIVATE_ECR_REPO" ] && CONTEXT_FLAGS+=("--context" "privateEcrRepo=$PRIVATE_ECR_REPO")
+[ -n "$PRIVATE_ACCOUNT_CLEANER_ECR_REPO" ] && CONTEXT_FLAGS+=("--context" "privateAccountCleanerEcrRepo=$PRIVATE_ACCOUNT_CLEANER_ECR_REPO")
 [ -n "$NUKE_CONFIG_FILE_PATH" ] && CONTEXT_FLAGS+=("--context" "nukeConfigFilePath=$NUKE_CONFIG_FILE_PATH")
 [ -n "$SCP_DIRECTORY_PATH" ] && CONTEXT_FLAGS+=("--context" "scpDirectoryPath=$SCP_DIRECTORY_PATH")
 [ -n "$LOG_LEVEL" ] && CONTEXT_FLAGS+=("--context" "logLevel=$LOG_LEVEL")
@@ -174,8 +174,38 @@ find "$root_dir/source" -name Dockerfile | while read file; do
     # Copy the whole context directory. Everything the Dockerfile COPYs must live
     # here, because the build context at publish time is this staging directory
     # rather than the source tree.
-    mkdir -p "$ecr_dir/$SOLUTION_NAME-$image_dir"
-    cp -r "$source_dir/." "$ecr_dir/$SOLUTION_NAME-$image_dir/"
+    staging_dir="$ecr_dir/$SOLUTION_NAME-$image_dir"
+    mkdir -p "$staging_dir"
+    cp -r "$source_dir/." "$staging_dir/"
+
+    # The agent runtime is compiled from three npm workspaces — these
+    # paths have to be staged alongside the Dockerfile for its COPY lines to
+    # resolve.
+    if [ "$image_dir" = "sandbox-agent-runtime" ]; then
+        for context_path in \
+            package.json \
+            package-lock.json \
+            source/common \
+            source/shared \
+            source/agent-runtime \
+            source/layers/dependencies/package.json
+        do
+            if [ ! -e "$root_dir/$context_path" ]; then
+                echo "ERROR: $image_dir build context is missing '$context_path'" >&2
+                exit 1
+            fi
+            mkdir -p "$staging_dir/$(dirname "$context_path")"
+            rsync -a \
+                --exclude 'node_modules' \
+                --exclude 'dist' \
+                --exclude 'test' \
+                --exclude 'coverage' \
+                --exclude 'vitest.config.ts' \
+                --exclude '*.tsbuildinfo' \
+                "$root_dir/$context_path" \
+                "$staging_dir/$(dirname "$context_path")/"
+        done
+    fi
 done
 
 print_final_success "S3 distribution build completed successfully!"

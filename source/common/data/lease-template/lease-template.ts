@@ -9,7 +9,7 @@ import {
 } from "@amzn/innovation-sandbox-shared/types/lease-template.js";
 
 // IMPORTANT -- this value must be updated whenever the schema changes.
-export const LeaseTemplateSchemaVersion = 4; // v1.3.0 - Added allowOwnerToShareLease for multi-user leases
+export const LeaseTemplateSchemaVersion = 5; // v1.4.0
 
 const PersistedLeaseTemplateSupportedVersionsSchema = createVersionRangeSchema(
   1,
@@ -21,9 +21,13 @@ export const PersistedLeaseTemplateMetadataSchema =
     schemaVersion: PersistedLeaseTemplateSupportedVersionsSchema,
   });
 
-export const PersistedLeaseTemplateSchema = z.strictObject({
-  ...LeaseTemplateWritableSchema.shape,
+export const PersistedLeaseTemplateKeySchema = z.strictObject({
   uuid: z.uuid(),
+});
+
+export const PersistedLeaseTemplateSchema = z.strictObject({
+  ...PersistedLeaseTemplateKeySchema.shape,
+  ...LeaseTemplateWritableSchema.shape,
   createdBy: z.email(),
   blueprintName: z.string().nullable().optional(), // Resolved from blueprint store on create/update (not client-provided)
   meta: PersistedLeaseTemplateMetadataSchema.optional(),

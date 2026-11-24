@@ -9,11 +9,13 @@ export function groupAssignmentsEnabled(mode: GroupAssignmentMode): boolean {
 
 /**
  * Returns group-to-lease associations that the configured mode rejects.
- * `NONE` means no new associations: users remain allowed, while a group is allowed
- * only when that same group is already associated with this lease. Existing groups
- * can therefore remain, be removed, and continue through lifecycle operations such
- * as approval. Principal search is gated separately so `NONE` does not expose group
- * discovery.
+ * `NONE` means no new group-to-lease associations: users remain allowed, while a
+ * group is allowed only when that same group ID is already associated with this
+ * lease. The policy deliberately ignores permission-set tuples, so an existing
+ * group can remain, be removed, or have its permission sets changed without
+ * temporarily enabling new group assignments. Existing groups also continue
+ * through lifecycle operations such as approval. Principal search is gated
+ * separately so `NONE` does not expose group discovery.
  *
  * This check intentionally relies on the supplied principal type. Before access is
  * granted, assignment processing resolves the principal ID in IDC as that type; a

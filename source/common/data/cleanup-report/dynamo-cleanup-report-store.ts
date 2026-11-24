@@ -13,16 +13,16 @@ import {
   CleanupReportKey,
   CleanupReportSchemaVersion,
   PersistedCleanupReport,
+  PersistedCleanupReportKeySchema,
   PersistedCleanupReportSchema,
 } from "@amzn/innovation-sandbox-commons/data/cleanup-report/cleanup-report.js";
 import {
-  AwsAccountId,
   PaginatedQueryResult,
   SingleItemResult,
 } from "@amzn/innovation-sandbox-commons/data/common-types.js";
 import {
-  base64DecodeCompositeKey,
   base64EncodeCompositeKey,
+  decodePageIdentifier,
 } from "@amzn/innovation-sandbox-commons/data/encoding.js";
 import {
   parseResults,
@@ -291,7 +291,7 @@ export class DynamoCleanupReportStore extends CleanupReportStore {
   }
 
   public async getLatestReport(
-    accountId: AwsAccountId,
+    accountId: string,
   ): Promise<SingleItemResult<PersistedCleanupReport>> {
     const result = await this.ddbClient.send(
       new QueryCommand({
@@ -315,7 +315,7 @@ export class DynamoCleanupReportStore extends CleanupReportStore {
   }
 
   public async listRecentReports(args: {
-    accountId: AwsAccountId;
+    accountId: string;
     limit?: number;
     pageIdentifier?: string;
   }): Promise<PaginatedQueryResult<PersistedCleanupReport>> {
@@ -335,7 +335,13 @@ export class DynamoCleanupReportStore extends CleanupReportStore {
         },
         ScanIndexForward: false,
         Limit: limit,
-        ExclusiveStartKey: base64DecodeCompositeKey(args.pageIdentifier),
+        ExclusiveStartKey: decodePageIdentifier(
+          args.pageIdentifier,
+          (decoded) =>
+            PersistedCleanupReportKeySchema.refine(
+              (cursor) => cursor.pk === args.accountId,
+            ).parse(decoded),
+        ),
       }),
     );
 

@@ -1,40 +1,21 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { AccountCleanupFailureEvent } from "@amzn/innovation-sandbox-commons/events/account-cleanup-failure-event.js";
-import { AccountDriftDetectedAlert } from "@amzn/innovation-sandbox-commons/events/account-drift-detected-alert.js";
-import { AssignmentCreatedEvent } from "@amzn/innovation-sandbox-commons/events/assignment-created-event.js";
-import { AssignmentRemovedEvent } from "@amzn/innovation-sandbox-commons/events/assignment-removed-event.js";
-import { GroupCostReportGeneratedEvent } from "@amzn/innovation-sandbox-commons/events/group-cost-report-generated-event.js";
-import { GroupCostReportGeneratedFailureEvent } from "@amzn/innovation-sandbox-commons/events/group-cost-report-generated-failure-event.js";
-import { LeaseApprovedEvent } from "@amzn/innovation-sandbox-commons/events/lease-approved-event.js";
-import { LeaseBudgetThresholdBreachedAlert } from "@amzn/innovation-sandbox-commons/events/lease-budget-threshold-breached-alert.js";
-import { LeaseDeniedEvent } from "@amzn/innovation-sandbox-commons/events/lease-denied-event.js";
-import { LeaseDurationThresholdBreachedAlert } from "@amzn/innovation-sandbox-commons/events/lease-duration-threshold-breached-alert.js";
-import { LeaseFrozenEvent } from "@amzn/innovation-sandbox-commons/events/lease-frozen-event.js";
-import { LeaseProvisioningFailedEvent } from "@amzn/innovation-sandbox-commons/events/lease-provisioning-failed-event.js";
-import { LeaseRequestedEvent } from "@amzn/innovation-sandbox-commons/events/lease-requested-event.js";
-import { LeaseTerminatedEvent } from "@amzn/innovation-sandbox-commons/events/lease-terminated-event.js";
-import { LeaseUnfrozenEvent } from "@amzn/innovation-sandbox-commons/events/lease-unfrozen-event.js";
-import { IdcService } from "@amzn/innovation-sandbox-commons/isb-services/idc-service.js";
-import {
-  IsbServices,
-  ServiceEnv,
-} from "@amzn/innovation-sandbox-commons/isb-services/index.js";
-import {
-  allAdmins,
-  allManagers,
-  union,
-} from "@amzn/innovation-sandbox-commons/isb-services/notification/email-address-utils.js";
+import { ServiceEnv } from "@amzn/innovation-sandbox-commons/isb-services/index.js";
+import type { SynthesizedAudienceMessage } from "@amzn/innovation-sandbox-commons/isb-services/notification-publishing/notification-message-synthesis.js";
 import { EmailEventName } from "@amzn/innovation-sandbox-commons/isb-services/notification/email-events.js";
+import { EmailDestination } from "@amzn/innovation-sandbox-commons/isb-services/notification/email-templates.js";
 import {
-  EmailDestination,
-  EmailTemplates,
-} from "@amzn/innovation-sandbox-commons/isb-services/notification/email-templates.js";
+  isSenderAddressCoveredBySesIdentity,
+  parseValidatedSesIdentityArn,
+} from "@amzn/innovation-sandbox-commons/isb-services/notification/ses-identity.js";
 import { LogPatterns } from "@amzn/innovation-sandbox-commons/observability/logging.js";
+import {
+  getNotificationErrorNames,
+  NOTIFICATION_DELIVERY_FAILED_METRIC_TYPE,
+  NotificationFailureMetricLog,
+} from "@amzn/innovation-sandbox-commons/observability/notification-metrics.js";
 import { IsbClients } from "@amzn/innovation-sandbox-commons/sdk-clients/index.js";
-import { assertNever } from "@amzn/innovation-sandbox-commons/types/type-guards.js";
-import { fromTemporaryIsbIdcCredentials } from "@amzn/innovation-sandbox-commons/utils/cross-account-roles.js";
 import { isSyntheticM2mEmail } from "@amzn/innovation-sandbox-shared/utils/auth-utils.js";
 import { Logger } from "@aws-lambda-powertools/logger";
 import {
@@ -49,510 +30,201 @@ export type SynthesizedEmail = {
   textBody: string;
 } & EmailDestination;
 
+type EmailSendFailure = {
+  error: unknown;
+  recipient?: string;
+};
+
+type EmailSendResult = {
+  failures: readonly EmailSendFailure[];
+  fatal?: { error: unknown };
+};
+
 export interface EmailServiceProps {
   fromAddress: string;
-  webAppUrl: string;
   logger: Logger;
+  /**
+   * ARN of a delegated SES sender identity (cross-account SES delegated
+   * sending). When set, used as `SourceArn` on the send instead of the
+   * hub account's own identity.
+   */
+  sesIdentityArn?: string;
 }
 
 export class EmailService {
   private readonly sesClient: SESClient;
   private readonly fromAddress: string;
-  private readonly webAppUrl: string;
-  private readonly idcService: IdcService;
-  private logger: Logger;
+  private readonly sesIdentityArn?: string;
+  private readonly isbNamespace: string;
+  private readonly logger: Logger;
 
   constructor(env: ServiceEnv.emailService, props: EmailServiceProps) {
     this.sesClient = IsbClients.ses(env);
     this.fromAddress = props.fromAddress;
-    this.webAppUrl = props.webAppUrl;
-    this.idcService = IsbServices.idcService(
-      env,
-      fromTemporaryIsbIdcCredentials(env),
-    );
+    this.sesIdentityArn = props.sesIdentityArn;
+    this.isbNamespace = env.ISB_NAMESPACE;
     this.logger = props.logger;
+
+    if (
+      this.sesIdentityArn &&
+      !isSenderAddressCoveredBySesIdentity(
+        parseValidatedSesIdentityArn(this.sesIdentityArn),
+        this.fromAddress,
+      )
+    ) {
+      // Never log the sender or identity value.
+      this.logger.warn(
+        "Configured emailFrom is not covered by the configured delegated SES identity",
+      );
+    }
   }
 
+  /** Sends each non-empty audience message through SES. */
   async sendNotificationEmail(
     emailEventName: EmailEventName,
-    isbAlert: unknown,
+    messages: SynthesizedAudienceMessage[],
   ) {
     this.logger.info(`Sending email for ${emailEventName}`);
-    switch (emailEventName) {
-      case "LeaseRequested":
-        const leaseRequestedEvent = LeaseRequestedEvent.parse(isbAlert);
-        const leaseRequestedContext = {
-          webAppUrl: this.webAppUrl,
-          destination: {
-            bcc: await union(
-              await allAdmins(this.idcService),
-              await allManagers(this.idcService),
-            ),
-          },
-        };
-        await this.sendEmail(
-          EmailTemplates.LeaseRequested(
-            leaseRequestedEvent,
-            leaseRequestedContext,
-          ),
-        );
-        break;
-      case "LeaseApproved":
-        const leaseApprovedEvent = LeaseApprovedEvent.parse(isbAlert);
-        const leaseApprovedContext = {
-          webAppUrl: this.webAppUrl,
-          destination: {
-            to: [leaseApprovedEvent.Detail.userEmail],
-          },
-        };
-        await this.sendEmail(
-          EmailTemplates.LeaseApproved(
-            leaseApprovedEvent,
-            leaseApprovedContext,
-          ),
-        );
-        break;
-      case "LeaseDenied":
-        const leaseDeniedEvent = LeaseDeniedEvent.parse(isbAlert);
-        const leaseDeniedContext = {
-          webAppUrl: this.webAppUrl,
-          destination: {
-            to: [leaseDeniedEvent.Detail.userEmail],
-          },
-        };
-        await this.sendEmail(
-          EmailTemplates.LeaseDenied(leaseDeniedEvent, leaseDeniedContext),
-        );
-        break;
-      case "LeaseBudgetThresholdAlert":
-        const leaseBudgetEvent =
-          LeaseBudgetThresholdBreachedAlert.parse(isbAlert);
-        const leaseBudgetContext = {
-          webAppUrl: this.webAppUrl,
-          destination: {
-            to: [leaseBudgetEvent.Detail.leaseId.userEmail],
-          },
-        };
-        await this.sendEmail(
-          EmailTemplates.LeaseBudgetAlert(leaseBudgetEvent, leaseBudgetContext),
-        );
-        break;
-      case "LeaseDurationThresholdAlert":
-        const leaseDurationEvent =
-          LeaseDurationThresholdBreachedAlert.parse(isbAlert);
-        const leaseDurationContext = {
-          webAppUrl: this.webAppUrl,
-          destination: {
-            to: [leaseDurationEvent.Detail.leaseId.userEmail],
-          },
-        };
-        await this.sendEmail(
-          EmailTemplates.LeaseDurationThresholdAlert(
-            leaseDurationEvent,
-            leaseDurationContext,
-          ),
-        );
-        break;
-      case "AccountCleanupFailed":
-        const cleanupFailureEvent = AccountCleanupFailureEvent.parse(isbAlert);
-        const cleanupFailureContext = {
-          webAppUrl: this.webAppUrl,
-          destination: {
-            bcc: await allAdmins(this.idcService),
-          },
-        };
-        await this.sendEmail(
-          EmailTemplates.AccountCleanupFailure(
-            cleanupFailureEvent,
-            cleanupFailureContext,
-          ),
-        );
-        break;
-      case "AccountDriftDetected":
-        const driftEvent = AccountDriftDetectedAlert.parse(isbAlert);
-        const driftContext = {
-          webAppUrl: this.webAppUrl,
-          destination: {
-            bcc: await allAdmins(this.idcService),
-          },
-        };
-        await this.sendEmail(
-          EmailTemplates.AccountDrift(driftEvent, driftContext),
-        );
-        break;
-      case "LeaseUnfrozen":
-        const leaseUnfrozenEvent = LeaseUnfrozenEvent.parse(isbAlert);
-        const leaseUnfrozenContext = {
-          webAppUrl: this.webAppUrl,
-          destination: {
-            to: [leaseUnfrozenEvent.Detail.leaseId.userEmail],
-          },
-        };
-        await this.sendEmail(
-          EmailTemplates.LeaseUnfrozen(
-            leaseUnfrozenEvent,
-            leaseUnfrozenContext,
-          ),
-        );
-        break;
-      case "GroupCostReportGenerated":
-        const groupCostReportGeneratedEvent =
-          GroupCostReportGeneratedEvent.parse(isbAlert);
-        const groupCostReportGeneratedContext = {
-          webAppUrl: this.webAppUrl,
-          destination: {
-            bcc: await allAdmins(this.idcService),
-          },
-        };
-        await this.sendEmail(
-          EmailTemplates.GroupCostReportGenerated(
-            groupCostReportGeneratedEvent,
-            groupCostReportGeneratedContext,
-          ),
-        );
-        break;
-      case "GroupCostReportGeneratedFailure":
-        const groupCostReportGeneratedFailureEvent =
-          GroupCostReportGeneratedFailureEvent.parse(isbAlert);
-        const groupCostReportGeneratedFailureContext = {
-          webAppUrl: this.webAppUrl,
-          destination: {
-            bcc: await allAdmins(this.idcService),
-          },
-        };
-        await this.sendEmail(
-          EmailTemplates.GroupCostReportGenerationFailure(
-            groupCostReportGeneratedFailureEvent,
-            groupCostReportGeneratedFailureContext,
-          ),
-        );
-        break;
-      case "LeaseTerminated":
-        await this.sendTerminatedEmails(LeaseTerminatedEvent.parse(isbAlert));
-        break;
-      case "LeaseFrozen":
-        await this.sendFrozenEmails(LeaseFrozenEvent.parse(isbAlert));
-        break;
-      case "LeaseProvisioningFailed":
-        const leaseProvisioningFailedEvent =
-          LeaseProvisioningFailedEvent.parse(isbAlert);
-        const provisioningFailedContext = {
-          webAppUrl: this.webAppUrl,
-          destination: {
-            bcc: await union(
-              await allAdmins(this.idcService),
-              await allManagers(this.idcService),
-            ),
-          },
-        };
-        await this.sendEmail(
-          EmailTemplates.LeaseProvisioningFailed(
-            leaseProvisioningFailedEvent,
-            provisioningFailedContext,
-          ),
-        );
-        break;
-      case "AssignmentCreated":
-        const assignmentCreatedEvent = AssignmentCreatedEvent.parse(isbAlert);
-        const assignmentCreatedRecipients = [
-          ...new Set([
-            assignmentCreatedEvent.Detail.leaseOwner,
-            ...(assignmentCreatedEvent.Detail.assigneeEmail
-              ? [assignmentCreatedEvent.Detail.assigneeEmail]
-              : []),
-          ]),
-        ];
-        const assignmentCreatedContext = {
-          webAppUrl: this.webAppUrl,
-          destination: {
-            to: assignmentCreatedRecipients,
-          },
-        };
-        await this.sendEmail(
-          EmailTemplates.AssignmentCreated(
-            assignmentCreatedEvent,
-            assignmentCreatedContext,
-          ),
-        );
-        break;
-      case "AssignmentRemoved":
-        const assignmentRemovedEvent = AssignmentRemovedEvent.parse(isbAlert);
-        const assignmentRemovedRecipients = [
-          ...new Set([
-            assignmentRemovedEvent.Detail.leaseOwner,
-            ...(assignmentRemovedEvent.Detail.assigneeEmail
-              ? [assignmentRemovedEvent.Detail.assigneeEmail]
-              : []),
-          ]),
-        ];
-        const assignmentRemovedContext = {
-          webAppUrl: this.webAppUrl,
-          destination: {
-            to: assignmentRemovedRecipients,
-          },
-        };
-        await this.sendEmail(
-          EmailTemplates.AssignmentRemoved(
-            assignmentRemovedEvent,
-            assignmentRemovedContext,
-          ),
-        );
-        break;
-      default:
-        assertNever(emailEventName);
-    }
-  }
+    for (const message of messages) {
+      if (message.recipientEmails.length === 0) {
+        continue;
+      }
 
-  private async sendFrozenEmails(parsedEvent: LeaseFrozenEvent) {
-    const eventType = parsedEvent.Detail.reason.type;
-    const userEmailContext = {
-      webAppUrl: this.webAppUrl,
-      destination: {
-        to: [parsedEvent.Detail.leaseId.userEmail],
-      },
-    };
-    const adminManagerEmailContext = {
-      webAppUrl: this.webAppUrl,
-      destination: {
-        bcc: await union(
-          await allAdmins(this.idcService),
-          await allManagers(this.idcService),
-        ),
-      },
-    };
-    switch (eventType) {
-      case "BudgetExceeded":
-        const leaseFrozenByBudgetEvent =
-          parsedEvent as LeaseFrozenEvent<"BudgetExceeded">;
-        await this.sendEmail(
-          EmailTemplates.LeaseFrozen.byBudgetUser(
-            leaseFrozenByBudgetEvent,
-            userEmailContext,
-          ),
+      const result = await this.sendEmailAttempt(toSynthesizedEmail(message));
+      if (result.failures.length > 0) {
+        this.logNotificationDeliveryFailure(
+          result.failures.map(({ error }) => error),
+          emailEventName,
         );
-        await this.sendEmail(
-          EmailTemplates.LeaseFrozen.byBudgetAdminManager(
-            leaseFrozenByBudgetEvent,
-            adminManagerEmailContext,
-          ),
-        );
-        break;
-      case "Expired":
-        const leaseFrozenByDurationEvent =
-          parsedEvent as LeaseFrozenEvent<"Expired">;
-        await this.sendEmail(
-          EmailTemplates.LeaseFrozen.byDurationUser(
-            leaseFrozenByDurationEvent,
-            userEmailContext,
-          ),
-        );
-        await this.sendEmail(
-          EmailTemplates.LeaseFrozen.byDurationAdminManager(
-            leaseFrozenByDurationEvent,
-            adminManagerEmailContext,
-          ),
-        );
-        break;
-      case "ManuallyFrozen":
-        await this.sendEmail(
-          EmailTemplates.LeaseFrozen.byManuallyFrozenUser(
-            parsedEvent as LeaseFrozenEvent<"ManuallyFrozen">,
-            userEmailContext,
-          ),
-        );
-        break;
-    }
-  }
-
-  private async sendTerminatedEmails(parsedEvent: LeaseTerminatedEvent) {
-    const eventType = parsedEvent.Detail.reason.type;
-    const userEmailContext = {
-      webAppUrl: this.webAppUrl,
-      destination: {
-        to: [parsedEvent.Detail.leaseId.userEmail],
-      },
-    };
-    const adminManagerEmailContext = {
-      webAppUrl: this.webAppUrl,
-      destination: {
-        bcc: await union(
-          await allAdmins(this.idcService),
-          await allManagers(this.idcService),
-        ),
-      },
-    };
-
-    switch (eventType) {
-      case "BudgetExceeded": {
-        await this.sendEmail(
-          EmailTemplates.LeaseTerminated.byBudgetUser(
-            parsedEvent as LeaseTerminatedEvent<"BudgetExceeded">,
-            userEmailContext,
-          ),
-        );
-        await this.sendEmail(
-          EmailTemplates.LeaseTerminated.byBudgetAdminManager(
-            parsedEvent as LeaseTerminatedEvent<"BudgetExceeded">,
-            adminManagerEmailContext,
-          ),
-        );
-        break;
       }
-      case "Expired": {
-        await this.sendEmail(
-          EmailTemplates.LeaseTerminated.byDurationUser(
-            parsedEvent as LeaseTerminatedEvent<"Expired">,
-            userEmailContext,
-          ),
-        );
-        await this.sendEmail(
-          EmailTemplates.LeaseTerminated.byDurationAdminManager(
-            parsedEvent as LeaseTerminatedEvent<"Expired">,
-            adminManagerEmailContext,
-          ),
-        );
-        break;
+      if (result.fatal) {
+        throw result.fatal.error;
       }
-      case "ManuallyTerminated": {
-        await this.sendEmail(
-          EmailTemplates.LeaseTerminated.byManuallyTerminatedUser(
-            parsedEvent as LeaseTerminatedEvent<"ManuallyTerminated">,
-            userEmailContext,
-          ),
-        );
-        break;
-      }
-      case "UserTerminated": {
-        // User self-termination does not send an email - user initiated the
-        // action and the UI already shows a success toast.
-        break;
-      }
-      case "AccountQuarantined": {
-        await this.sendEmail(
-          EmailTemplates.LeaseTerminated.byAccountQuarantinedUser(
-            parsedEvent as LeaseTerminatedEvent<"AccountQuarantined">,
-            userEmailContext,
-          ),
-        );
-        break;
-      }
-      case "Ejected": {
-        await this.sendEmail(
-          EmailTemplates.LeaseTerminated.byEjectedUser(
-            parsedEvent as LeaseTerminatedEvent<"Ejected">,
-            userEmailContext,
-          ),
-        );
-        break;
-      }
-      case "ProvisioningFailed": {
-        await this.sendEmail(
-          EmailTemplates.LeaseTerminated.byProvisioningFailedUser(
-            parsedEvent as LeaseTerminatedEvent<"ProvisioningFailed">,
-            userEmailContext,
-          ),
-        );
-        await this.sendEmail(
-          EmailTemplates.LeaseTerminated.byProvisioningFailedAdminManager(
-            parsedEvent as LeaseTerminatedEvent<"ProvisioningFailed">,
-            adminManagerEmailContext,
-          ),
-        );
-        break;
-      }
-      default:
-        assertNever(eventType);
     }
   }
 
   async sendEmail(email: SynthesizedEmail) {
-    // Drop M2M synthetic recipients (@automation.local) from direct-to-assignee
-    // sends — they can't receive mail and would hard-bounce, hurting SES sender
-    // reputation. The entry guard should keep them out of lease events anyway;
-    // this is defense in depth. The admin/manager bcc path is untouched.
+    const result = await this.sendEmailAttempt(email);
+    for (const failure of result.failures) {
+      this.logger.error(
+        failure.recipient
+          ? `${LogPatterns.EmailSendingError.pattern} to ${failure.recipient}`
+          : LogPatterns.EmailSendingError.pattern,
+        failure.error instanceof Error ? failure.error : String(failure.error),
+      );
+    }
+    if (result.fatal) {
+      throw result.fatal.error;
+    }
+  }
+
+  private async sendEmailAttempt(
+    email: SynthesizedEmail,
+  ): Promise<EmailSendResult> {
+    // Synthetic M2M recipients cannot receive mail and would hard-bounce.
     if (email.to !== undefined) {
       const to = email.to.filter((address) => !isSyntheticM2mEmail(address));
       if (to.length === 0) {
         this.logger.warn(
-          "Skipping email send: all to: recipients are M2M synthetic addresses. The entry guard should prevent M2M-assignee leases, so this signals legacy data or a bypass path.",
+          "Skipping email send: all to recipients are M2M synthetic addresses; this may indicate legacy data or a bypass path",
         );
-        return;
+        return { failures: [] };
       }
       email = { ...email, to };
     }
 
+    const recipientCount = (email.to?.length ?? 0) + (email.bcc?.length ?? 0);
+    if (recipientCount === 0) {
+      this.logger.warn("Skipping email send: no recipients");
+      return { failures: [] };
+    }
+
     try {
       await this.batchSendEmail(email);
+      return { failures: [] };
     } catch (error) {
-      await this.handleSendEmailExceptions(error, email);
+      return this.handleSendEmailException(error, email);
     }
   }
 
   private async handleBisectableSendEmailException(
-    error: Error,
-    email: SynthesizedEmail,
-  ) {
-    const allRecipients = [...(email.to ?? []), ...(email.bcc ?? [])];
-    if (allRecipients.length === 1) {
-      this.logger.error(
-        `${LogPatterns.EmailSendingError.pattern} to ${allRecipients[0]}`,
-        error,
-      );
-    } else {
-      await this.retryBisectSendEmail(email);
-    }
-  }
-
-  private async handleSendEmailExceptions(
     error: unknown,
     email: SynthesizedEmail,
-  ) {
+  ): Promise<EmailSendResult> {
+    const allRecipients = [...(email.to ?? []), ...(email.bcc ?? [])];
+    if (allRecipients.length === 1) {
+      return {
+        failures: [{ error, recipient: allRecipients[0]! }],
+      };
+    }
+    return this.retryBisectSendEmail(email);
+  }
+
+  private async handleSendEmailException(
+    error: unknown,
+    email: SynthesizedEmail,
+  ): Promise<EmailSendResult> {
     if (error instanceof SESServiceException) {
       switch (error.name) {
         case "AccessDenied":
         case "AccountSendingPausedException":
         case "ConfigurationSetDoesNotExistException":
         case "ConfigurationSetSendingPausedException":
-          this.logger.error(LogPatterns.EmailSendingError.pattern, error);
-          throw error;
+          return {
+            failures: [{ error }],
+            fatal: { error },
+          };
         case "InvalidParameterValueException":
         default:
-          await this.handleBisectableSendEmailException(error, email);
-          break;
+          return this.handleBisectableSendEmailException(error, email);
       }
-    } else {
-      await this.handleBisectableSendEmailException(error as Error, email);
     }
+    return this.handleBisectableSendEmailException(error, email);
   }
 
-  private async retryBisectSendEmail(email: SynthesizedEmail) {
+  private logNotificationDeliveryFailure(
+    errors: readonly unknown[],
+    notificationType: EmailEventName,
+  ): void {
+    const log: NotificationFailureMetricLog = {
+      notificationMetricType: NOTIFICATION_DELIVERY_FAILED_METRIC_TYPE,
+      isbNamespace: this.isbNamespace,
+      channel: "SES",
+      notificationType,
+      errorNames: getNotificationErrorNames(errors),
+    };
+    this.logger.error(LogPatterns.NotificationFailed.pattern, log);
+  }
+
+  private async retryBisectSendEmail(
+    email: SynthesizedEmail,
+  ): Promise<EmailSendResult> {
     const isBcc = email.bcc !== undefined;
-    if (isBcc) {
-      const mid = Math.floor(email.bcc!.length / 2);
-      await this.sendEmail({
-        ...email,
-        bcc: email.bcc!.slice(0, mid),
-      });
-      await this.sendEmail({
-        ...email,
-        bcc: email.bcc!.slice(mid),
-      });
-    } else {
-      const mid = Math.floor(email.to!.length / 2);
-      await this.sendEmail({
-        ...email,
-        to: email.to!.slice(0, mid),
-      });
-      await this.sendEmail({
-        ...email,
-        to: email.to!.slice(mid),
-      });
+    const recipients = isBcc ? email.bcc : email.to;
+    const mid = Math.floor(recipients.length / 2);
+    const firstEmail = isBcc
+      ? { ...email, bcc: recipients.slice(0, mid) }
+      : { ...email, to: recipients.slice(0, mid) };
+    const secondEmail = isBcc
+      ? { ...email, bcc: recipients.slice(mid) }
+      : { ...email, to: recipients.slice(mid) };
+
+    const firstResult = await this.sendEmailAttempt(firstEmail);
+    if (firstResult.fatal) {
+      return firstResult;
     }
+
+    const secondResult = await this.sendEmailAttempt(secondEmail);
+    return {
+      failures: [...firstResult.failures, ...secondResult.failures],
+      ...(secondResult.fatal ? { fatal: secondResult.fatal } : {}),
+    };
   }
 
   private async batchSendEmail(email: SynthesizedEmail) {
     const sendEmailCommand = new SendEmailCommand({
       Source: this.fromAddress,
+      ...(this.sesIdentityArn ? { SourceArn: this.sesIdentityArn } : {}),
       Destination: {
         ToAddresses: email.to,
         BccAddresses: email.bcc,
@@ -573,4 +245,24 @@ export class EmailService {
     });
     await this.sesClient.send(sendEmailCommand);
   }
+}
+
+/**
+ * Converts one shared-routing audience message into the shape `sendEmail`
+ * expects: `persona="user"` addresses go in `to`; `persona="manager"` and
+ * `persona="admin"` both go in `bcc`. Every `EmailTemplates` function pairs
+ * its audience with exactly one of the two, so persona alone determines
+ * which field is populated.
+ */
+function toSynthesizedEmail(
+  message: SynthesizedAudienceMessage,
+): SynthesizedEmail {
+  const base = {
+    subject: message.subject,
+    textBody: message.textBody,
+    htmlBody: message.htmlBody ?? "",
+  };
+  return message.persona === "user"
+    ? { ...base, to: message.recipientEmails }
+    : { ...base, bcc: message.recipientEmails };
 }

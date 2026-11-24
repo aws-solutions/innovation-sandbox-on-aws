@@ -2,20 +2,24 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import {
-  Alert,
-  Badge,
+  Box,
   Button,
-  Container,
+  Grid,
   Header,
-  Icon,
-  KeyValuePairs,
-  Link,
+  Modal,
   SpaceBetween,
-  Tabs,
-  Tooltip,
+  StatusIndicator,
 } from "@cloudscape-design/components";
-import { ReactNode, useEffect, useRef, useState } from "react";
-import { useLocation } from "react-router-dom";
+import { DateTime } from "luxon";
+import {
+  Fragment,
+  ReactNode,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 
 import { useAppLayoutContext } from "@amzn/innovation-sandbox-frontend/components/AppLayout/AppLayoutContext";
 import { ContentLayout } from "@amzn/innovation-sandbox-frontend/components/ContentLayout";
@@ -23,278 +27,357 @@ import { ErrorPanel } from "@amzn/innovation-sandbox-frontend/components/ErrorPa
 import { InfoLink } from "@amzn/innovation-sandbox-frontend/components/InfoLink";
 import { Loader } from "@amzn/innovation-sandbox-frontend/components/Loader";
 import { Markdown } from "@amzn/innovation-sandbox-frontend/components/Markdown";
-import { CleanupForm } from "@amzn/innovation-sandbox-frontend/domains/settings/components/forms/CleanupForm";
-import { CostReportingForm } from "@amzn/innovation-sandbox-frontend/domains/settings/components/forms/CostReportingForm";
-import { LeasesForm } from "@amzn/innovation-sandbox-frontend/domains/settings/components/forms/LeasesForm";
-import { MaintenanceForm } from "@amzn/innovation-sandbox-frontend/domains/settings/components/forms/MaintenanceForm";
-import { NotificationForm } from "@amzn/innovation-sandbox-frontend/domains/settings/components/forms/NotificationForm";
-import { TermsOfServiceForm } from "@amzn/innovation-sandbox-frontend/domains/settings/components/forms/TermsOfServiceForm";
 import {
-  UnsavedChangesProvider,
-  useDirtySections,
-} from "@amzn/innovation-sandbox-frontend/domains/settings/components/UnsavedChangesGuard";
+  showErrorToast,
+  showSuccessToast,
+} from "@amzn/innovation-sandbox-frontend/components/Toast";
+import { DefaultSettingsAlert } from "@amzn/innovation-sandbox-frontend/domains/settings/components/DefaultSettingsAlert";
+import { LastSavedDescription } from "@amzn/innovation-sandbox-frontend/domains/settings/components/forms/LastSavedDescription";
+import { useSettingsGroups } from "@amzn/innovation-sandbox-frontend/domains/settings/components/groups/useSettingsGroups";
+import { SettingsFormContext } from "@amzn/innovation-sandbox-frontend/domains/settings/components/SettingsFormContext";
+import { SettingsNavigation } from "@amzn/innovation-sandbox-frontend/domains/settings/components/SettingsNavigation";
+import { UnsavedChangesProvider } from "@amzn/innovation-sandbox-frontend/domains/settings/components/UnsavedChangesGuard";
 import { useGetConfigurations } from "@amzn/innovation-sandbox-frontend/domains/settings/hooks";
 import { AdminConfigurationView } from "@amzn/innovation-sandbox-frontend/domains/settings/model";
-import { useBreadcrumb } from "@amzn/innovation-sandbox-frontend/hooks/useBreadcrumb";
 import {
-  ConfigSection,
-  ConfigurationResponseMetadata,
-} from "@amzn/innovation-sandbox-shared/types/configuration.js";
+  SETTINGS_GROUPS,
+  settingsGroupHref,
+  SettingsGroupId,
+} from "@amzn/innovation-sandbox-frontend/domains/settings/settings-navigation";
+import { resolveSettingsHash } from "@amzn/innovation-sandbox-frontend/domains/settings/settings-search";
+import { ConfigurationForm } from "@amzn/innovation-sandbox-frontend/domains/settings/useConfigurationForm";
+import { useBreadcrumb } from "@amzn/innovation-sandbox-frontend/hooks/useBreadcrumb";
+import { useUser } from "@amzn/innovation-sandbox-frontend/hooks/useUser";
 
-/**
- * The audit envelope every section response carries. A section that has never
- * been saved to DynamoDB has `lastSavedBy: null` and no `meta`.
- */
-type SectionEnvelope = {
-  lastSavedBy: string | null;
-  meta?: ConfigurationResponseMetadata;
-};
+export const GROUP_HELP = Object.fromEntries(
+  SETTINGS_GROUPS.map((group) => [group.id, group.help]),
+) as Record<SettingsGroupId, string>;
+type Selection = { group: SettingsGroupId; target?: string };
 
-/**
- * Deploy-time fields resolved from environment variables (not stored in the
- * config table and not writable via PUT), shown read-only for all roles.
- */
-function ReadOnlySettings({ config }: { config: AdminConfigurationView }) {
-  return (
-    <Container
-      header={
-        <Header
-          variant="h2"
-          description="Configured at deployment time and cannot be changed here."
-        >
-          Read-Only Settings
-        </Header>
-      }
-    >
-      <KeyValuePairs
-        columns={2}
-        items={[
-          {
-            label: "Innovation Sandbox managed regions",
-            // Render each region as a read-only Badge chip (non-interactive)
-            // rather than a comma-joined string, matching the cost-report-groups
-            // read-only view.
-            value: config.isbManagedRegions.length ? (
-              <SpaceBetween direction="horizontal" size="xs">
-                {config.isbManagedRegions.map((region) => (
-                  <Badge key={region}>{region}</Badge>
-                ))}
-              </SpaceBetween>
-            ) : (
-              "(none)"
-            ),
-          },
-          {
-            label: "AWS access portal URL",
-            value: config.awsAccessPortalUrl ? (
-              <Link external href={config.awsAccessPortalUrl}>
-                {config.awsAccessPortalUrl}
-              </Link>
-            ) : (
-              "(not set)"
-            ),
-          },
-        ]}
-      />
-    </Container>
-  );
+function getBlockedReason(state: ReturnType<ConfigurationForm["status"]>) {
+  if (state.conflict) return "Reload latest values before saving.";
+  if (state.invalid) return "Fix validation errors before saving.";
+  if (!state.dirty && !state.needsSetup) return "No changes to save.";
+  return undefined;
 }
 
-/**
- * True when EVERY editable config section is unsaved (`lastSavedBy === null`) —
- * i.e. a fresh install still on all defaults. Drives the aggregate
- * "Initial setup required" banner. Shown only when all sections are unsaved (not
- * a partial state), so it does not duplicate the per-section finish-setup alerts
- * once the admin has started saving sections.
- */
-function allSectionsUnsaved(config: AdminConfigurationView): boolean {
-  const sections: SectionEnvelope[] = [
-    config.leases,
-    config.cleanup,
-    config.maintenance,
-    config.termsOfService,
-    config.notification,
-    config.costReporting,
-  ];
-  return sections.every((s) => s.lastSavedBy === null);
-}
-
-/** Tab ids — also the values used in the `/settings#<tab>` deep-link hash. */
-const TAB_IDS = {
-  leasesCost: "leases-cost",
-  cleanup: "cleanup",
-  general: "general",
-  readOnly: "read-only",
-} as const;
-
-type TabId = (typeof TAB_IDS)[keyof typeof TAB_IDS];
-
-/**
- * Help panel markdown file per tab (public/markdown/<file>.md), so the info
- * panel shows only the active tab's documentation rather than the whole page's.
- * Keyed exhaustively over TAB_IDS so adding a tab without help fails to compile.
- * Exported so tests can pin every value to an existing file.
- */
-export const TAB_HELP: Record<TabId, string> = {
-  [TAB_IDS.leasesCost]: "settings-leases-cost",
-  [TAB_IDS.cleanup]: "settings-cleanup",
-  [TAB_IDS.general]: "settings-general",
-  [TAB_IDS.readOnly]: "settings-read-only",
-};
-
-/**
- * Anchor ids for the sections, used as deep-link scroll targets (e.g. the
- * maintenance banner links to `/settings#maintenance`, and each help file's
- * section headings link to sections by these anchors).
- */
-const SECTION_ANCHORS = {
-  leases: "lease-policies",
-  costReporting: "cost-reporting",
-  cleanup: "cleanup-section",
-  maintenance: "maintenance",
-  termsOfService: "terms-of-service",
-  notification: "notification",
-} as const;
-
-/**
- * Maps a deep-link hash to the tab that should open (and, when the hash is a
- * section anchor, the section to scroll to). E.g. the maintenance banner and
- * the help panel link to `#maintenance`, which lives in the General tab.
- */
-const HASH_TO_TAB: Record<string, TabId> = {
-  [SECTION_ANCHORS.leases]: TAB_IDS.leasesCost,
-  [SECTION_ANCHORS.costReporting]: TAB_IDS.leasesCost,
-  [SECTION_ANCHORS.cleanup]: TAB_IDS.cleanup,
-  [SECTION_ANCHORS.maintenance]: TAB_IDS.general,
-  [SECTION_ANCHORS.termsOfService]: TAB_IDS.general,
-  [SECTION_ANCHORS.notification]: TAB_IDS.general,
-  // Allow linking directly to a tab by its id too.
-  ...Object.fromEntries(Object.values(TAB_IDS).map((id) => [id, id])),
-};
-
-const UNSAVED_INDICATOR_LABEL = "Unsaved changes on this tab";
-
-/**
- * Non-focusable hover-tooltip shell for the small indicators inside a tab
- * label (the amber unsaved-edits icon, the red never-saved count badge).
- * Uses Cloudscape's public `Tooltip` component (exported from
- * @cloudscape-design/components) with its public props — it is uncontrolled
- * (visibility is caller-managed), so we drive it from pointer handlers; the
- * other tooltip-like option, Popover, is click-triggered, not hover. The
- * trigger is deliberately NOT focusable (no tabIndex): it renders inside the
- * tab's own interactive element, so a nested focus stop would break the
- * tablist's roving-tabindex model. Screen readers get the meaning from
- * `role="img"` + `aria-label` (announced with the tab), matching the visible
- * tooltip text so both modalities read identically.
- */
-function IndicatorTooltip({
-  label,
-  children,
-}: Readonly<{
-  label: string;
-  children: ReactNode;
-}>) {
-  const [visible, setVisible] = useState(false);
-  const triggerRef = useRef<HTMLSpanElement>(null);
-
-  return (
-    <span
-      ref={triggerRef}
-      role="img"
-      aria-label={label}
-      style={{ display: "inline-flex", cursor: "default" }}
-      onMouseEnter={() => setVisible(true)}
-      onMouseLeave={() => setVisible(false)}
-    >
-      {children}
-      {visible && (
-        <Tooltip
-          getTrack={() => triggerRef.current}
-          content={label}
-          onEscape={() => setVisible(false)}
-        />
-      )}
-    </span>
-  );
-}
-
-/** Amber warning icon flagging unsaved edits on a tab, with a hover tooltip. */
-function UnsavedIndicator() {
-  return (
-    <IndicatorTooltip label={UNSAVED_INDICATOR_LABEL}>
-      <Icon name="status-warning" variant="warning" />
-    </IndicatorTooltip>
-  );
-}
-
-/**
- * Red count Badge of a tab's never-saved sections, with a hover tooltip. The
- * bare count is not self-explanatory, so the badge carries a tooltip +
- * aria-label phrased in the app's established vocabulary ("using default
- * values" — matching the per-section alerts and the initial-setup banner;
- * deliberately NOT "not configured", since the system is fully operational on
- * defaults).
- */
-function NeverSavedBadge({ count }: Readonly<{ count: number }>) {
-  return (
-    <IndicatorTooltip
-      label={`${count} ${count === 1 ? "section" : "sections"} using default values`}
-    >
-      <Badge color="red">{count}</Badge>
-    </IndicatorTooltip>
-  );
-}
-
-/**
- * Tab label with two distinct attention indicators for the tab's sections:
- *  - a red count Badge of never-saved sections (`lastSavedBy === null`) — the
- *    per-tab analogue of the side-nav SettingsBadge, flagging setup still to do;
- *  - an amber warning icon when any of the tab's sections has an edit that has
- *    not been saved yet (dirty), so switching away from a tab does not hide
- *    in-progress work.
- * A never-saved section is already covered by the red badge, so the warning
- * icon counts only saved-but-dirty sections — the two indicators never
- * double-mark one section, matching "red = never saved, warning = edited-but-
- * not-saved".
- */
-function TabLabel({
-  label,
+function SettingsContent({
   config,
-  sectionKeys,
-}: {
-  label: string;
-  config: AdminConfigurationView;
-  sectionKeys: ConfigSection[];
-}) {
-  const dirtySections = useDirtySections();
-  const unsavedCount = sectionKeys.filter(
-    (key) => config[key].lastSavedBy === null,
-  ).length;
-  const hasDirtyEdit = sectionKeys.some(
-    (key) => config[key].lastSavedBy !== null && dirtySections.has(key),
+}: Readonly<{ config: AdminConfigurationView }>) {
+  const { isAdmin } = useUser();
+  const { setTools } = useAppLayoutContext();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [selection, setSelection] = useState<Selection>(() =>
+    resolveSettingsHash(location.hash.slice(1)),
   );
-
-  if (unsavedCount === 0 && !hasDirtyEdit) {
-    return label;
-  }
+  const { group: activeGroup } = selection;
+  const [query, setQuery] = useState("");
+  const [pending, setPending] = useState<Selection | "cancel" | null>(null);
+  const [confirmation, setConfirmation] = useState<{
+    message: ReactNode;
+    onSaved?: () => void;
+  } | null>(null);
+  const [operationInProgress, setOperationInProgress] = useState(false);
+  const consumedLocation = useRef(location.key);
+  const { groups, sections } = useSettingsGroups(config);
+  // Page operations also cover preflight checks and requests owned by each group.
+  const busy =
+    operationInProgress || Object.values(groups).some((group) => group.busy);
+  const interactionBlocked = busy || !!confirmation;
+  const formContext = useMemo(
+    () => ({ sections, busy: interactionBlocked }),
+    [sections, interactionBlocked],
+  );
+  const activeController = groups[activeGroup];
+  const status = (group: SettingsGroupId) => ({
+    needsSetup: isAdmin && groups[group].status().needsSetup,
+  });
+  const state = activeController.status();
+  const group = SETTINGS_GROUPS.find((group) => group.id === activeGroup)!;
+  const blockedReason = getBlockedReason(state);
+  const applySelection = (selection: Selection) => {
+    setSelection(selection);
+    setQuery("");
+    const hash = selection.target ?? selection.group;
+    if (location.hash !== `#${hash}`)
+      navigate(
+        selection.target
+          ? `/settings#${selection.target}`
+          : settingsGroupHref(selection.group),
+      );
+  };
+  const choose = (selection: Selection) => {
+    if (interactionBlocked) return;
+    if (selection.group !== activeGroup && isAdmin && state.dirty)
+      setPending(selection);
+    else applySelection(selection);
+  };
+  useEffect(() => {
+    setTools(<Markdown file={GROUP_HELP[activeGroup]} />);
+  }, [activeGroup]);
+  useEffect(() => {
+    // Leave blocked history navigation unconsumed so it resumes after the operation.
+    if (interactionBlocked || consumedLocation.current === location.key) return;
+    consumedLocation.current = location.key;
+    choose(resolveSettingsHash(location.hash.slice(1)));
+  }, [location.key, interactionBlocked]);
+  useEffect(() => {
+    const target = selection.target;
+    if (!target) return;
+    const frame = requestAnimationFrame(() => {
+      const element = document.getElementById(target);
+      element?.scrollIntoView?.({ block: "start", behavior: "smooth" });
+      (
+        element?.querySelector<HTMLElement>(
+          "input, textarea, button, select, [tabindex='0']",
+        ) ?? element
+      )?.focus({ preventScroll: true });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [selection]);
+  const discard = () => activeController.discard();
+  const performSave = async (onSaved?: () => void) => {
+    setOperationInProgress(true);
+    try {
+      if (await activeController.save()) {
+        showSuccessToast("Settings saved.");
+        onSaved?.();
+      }
+    } finally {
+      setOperationInProgress(false);
+    }
+  };
+  const save = async (onSaved?: () => void) => {
+    if (interactionBlocked) return;
+    if (!activeController.validate() || state.conflict) return;
+    setOperationInProgress(true);
+    try {
+      const warning = await activeController.getSaveWarning?.();
+      if (warning) setConfirmation({ message: warning, onSaved });
+      else await performSave(onSaved);
+    } catch (error) {
+      showErrorToast(
+        error instanceof Error ? error.message : "Unable to prepare settings.",
+        "Save not started",
+      );
+    } finally {
+      setOperationInProgress(false);
+    }
+  };
+  const mostRecent = activeController.audit
+    .filter((section) => section.lastSavedBy)
+    .sort(
+      (a, b) =>
+        (DateTime.fromISO(b.meta?.lastEditTime ?? "").toMillis() || 0) -
+        (DateTime.fromISO(a.meta?.lastEditTime ?? "").toMillis() || 0),
+    )[0];
+  const reload = async () => {
+    if (interactionBlocked) return;
+    setOperationInProgress(true);
+    try {
+      await activeController.reload();
+    } finally {
+      setOperationInProgress(false);
+    }
+  };
   return (
-    <SpaceBetween direction="horizontal" size="xs">
-      <span>{label}</span>
-      {unsavedCount > 0 && <NeverSavedBadge count={unsavedCount} />}
-      {hasDirtyEdit && <UnsavedIndicator />}
-    </SpaceBetween>
+    <SettingsFormContext.Provider value={formContext}>
+      <SpaceBetween size="l">
+        <Grid
+          gridDefinition={[
+            { colspan: { default: 12, s: 3 } },
+            { colspan: { default: 12, s: 9 } },
+          ]}
+        >
+          <SettingsNavigation
+            activeGroup={activeGroup}
+            query={query}
+            onQueryChange={setQuery}
+            onSelect={choose}
+            status={status}
+          />
+          <section aria-label={`${group.label} settings`}>
+            <SpaceBetween size="l">
+              <Header
+                variant="h2"
+                description={group.description}
+                info={<InfoLink markdown={group.help} />}
+              >
+                {group.label}
+              </Header>
+              {isAdmin && state.needsSetup && <DefaultSettingsAlert />}
+              {SETTINGS_GROUPS.map(({ id }) => (
+                <Fragment key={id}>
+                  {groups[id].render(id === activeGroup, interactionBlocked)}
+                </Fragment>
+              ))}
+              <Box padding={{ bottom: "l" }}>
+                <section
+                  aria-label={`${group.label} ${isAdmin ? "save bar" : "footer"}`}
+                >
+                  <Grid
+                    gridDefinition={
+                      isAdmin && (state.invalid || state.conflict)
+                        ? [
+                            { colspan: { default: 12, s: 6 } },
+                            { colspan: { default: 12, s: 6 } },
+                          ]
+                        : [{ colspan: 12 }]
+                    }
+                  >
+                    {isAdmin && (state.invalid || state.conflict) && (
+                      <StatusIndicator
+                        type={state.conflict ? "warning" : "error"}
+                        nativeAttributes={{ role: "status" }}
+                      >
+                        {blockedReason}
+                      </StatusIndicator>
+                    )}
+                    <SpaceBetween size="s">
+                      <Box textAlign={isAdmin ? "right" : "left"}>
+                        <section aria-label={`${group.label} last edited`}>
+                          <LastSavedDescription
+                            data={mostRecent ?? { lastSavedBy: null }}
+                          />
+                        </section>
+                      </Box>
+                      {isAdmin && (
+                        <Box float="right">
+                          <SpaceBetween direction="horizontal" size="xs">
+                            {state.conflict && (
+                              <Button
+                                formAction="none"
+                                onClick={reload}
+                                disabled={interactionBlocked}
+                              >
+                                Reload latest values
+                              </Button>
+                            )}
+                            <Button
+                              variant="link"
+                              disabled={!state.dirty || interactionBlocked}
+                              onClick={() => setPending("cancel")}
+                            >
+                              Cancel
+                            </Button>
+                            <Button
+                              variant="primary"
+                              loading={busy}
+                              disabled={interactionBlocked || !!blockedReason}
+                              disabledReason={blockedReason}
+                              onClick={() => void save()}
+                            >
+                              Save changes
+                            </Button>
+                          </SpaceBetween>
+                        </Box>
+                      )}
+                    </SpaceBetween>
+                  </Grid>
+                </section>
+              </Box>
+            </SpaceBetween>
+          </section>
+        </Grid>
+      </SpaceBetween>
+      {pending !== null && (
+        <Modal
+          visible
+          header={
+            pending === "cancel"
+              ? "Discard unsaved changes?"
+              : "Unsaved changes"
+          }
+          closeAriaLabel="Close"
+          onDismiss={() => {
+            setPending(null);
+            navigate(settingsGroupHref(activeGroup), { replace: true });
+          }}
+          footer={
+            <Box float="right">
+              <SpaceBetween direction="horizontal" size="xs">
+                <Button
+                  variant="link"
+                  onClick={() => {
+                    setPending(null);
+                    navigate(settingsGroupHref(activeGroup), { replace: true });
+                  }}
+                >
+                  Keep editing
+                </Button>
+                <Button
+                  disabled={interactionBlocked}
+                  onClick={() => {
+                    const selection = pending;
+                    discard();
+                    setPending(null);
+                    if (selection && selection !== "cancel")
+                      applySelection(selection);
+                  }}
+                >
+                  Discard changes
+                </Button>
+                {pending !== "cancel" && (
+                  <Button
+                    variant="primary"
+                    disabled={
+                      interactionBlocked || state.invalid || state.conflict
+                    }
+                    onClick={() => {
+                      const selection = pending;
+                      setPending(null);
+                      void save(() => {
+                        if (selection) applySelection(selection);
+                      });
+                    }}
+                  >
+                    Save changes
+                  </Button>
+                )}
+              </SpaceBetween>
+            </Box>
+          }
+        >
+          You have unsaved changes in {group.label}.
+        </Modal>
+      )}
+      {confirmation !== null && (
+        <Modal
+          visible
+          header="Confirm settings changes"
+          closeAriaLabel="Close"
+          onDismiss={() => setConfirmation(null)}
+          footer={
+            <Box float="right">
+              <SpaceBetween direction="horizontal" size="xs">
+                <Button variant="link" onClick={() => setConfirmation(null)}>
+                  Keep editing
+                </Button>
+                <Button
+                  variant="primary"
+                  disabled={busy}
+                  onClick={() => {
+                    const action = confirmation?.onSaved;
+                    setConfirmation(null);
+                    void performSave(action);
+                  }}
+                >
+                  Save changes
+                </Button>
+              </SpaceBetween>
+            </Box>
+          }
+        >
+          {confirmation.message}
+        </Modal>
+      )}
+    </SettingsFormContext.Provider>
   );
 }
 
-/**
- * Admin Settings page. Renders each configuration section as an independent
- * Container with its own form and Save button (the form components own the
- * save/409/reload and role-based read-only logic). Replaces the legacy
- * read-only Settings page.
- */
-export const AdminSettings = () => {
+export function AdminSettings() {
   const setBreadcrumb = useBreadcrumb();
-  const { setTools } = useAppLayoutContext();
   const {
     data: config,
     isLoading,
@@ -302,64 +385,31 @@ export const AdminSettings = () => {
     refetch,
     error,
   } = useGetConfigurations();
-  const location = useLocation();
-
-  const [activeTabId, setActiveTabId] = useState<TabId>(TAB_IDS.leasesCost);
-  // Each deep-link NAVIGATION is consumed once, identified by location.key
-  // (unique per history entry) rather than the hash string: re-clicking a help
-  // link whose hash is already in the URL is a new navigation that must still
-  // switch tabs, while a re-render (e.g. the config refetch invalidated by a
-  // section Save) keeps the same key and must not yank the user back.
-  const consumedNavKey = useRef<string | null>(null);
-
+  const user = useUser();
   useEffect(() => {
     setBreadcrumb([
       { text: "Home", href: "/" },
       { text: "Settings", href: "/settings" },
     ]);
   }, []);
-
-  // Keep the help panel's content in sync with the active tab (including tab
-  // switches driven by a deep-link hash), so an already-open panel updates too.
-  useEffect(() => {
-    setTools(<Markdown file={TAB_HELP[activeTabId]} />);
-  }, [activeTabId]);
-
-  // Honor a `/settings#<hash>` deep-link: select the mapped tab, then scroll to
-  // the section anchor if the hash names one. Runs once per navigation.
-  useEffect(() => {
-    const hash = location.hash.replace(/^#/, "");
-    if (!hash || location.key === consumedNavKey.current) {
-      return;
-    }
-    const targetTab = HASH_TO_TAB[hash];
-    if (!targetTab) {
-      return;
-    }
-    consumedNavKey.current = location.key;
-    setActiveTabId(targetTab);
-    // Scroll after the tab content has rendered. The section element only
-    // exists once its tab is active; a rAF lets that render commit first.
-    // scrollIntoView is guarded — it is absent in some environments (e.g. jsdom)
-    // and is a non-essential enhancement, so its absence must not throw.
-    requestAnimationFrame(() => {
-      const target = document.getElementById(hash);
-      if (typeof target?.scrollIntoView === "function") {
-        target.scrollIntoView({ behavior: "smooth", block: "start" });
-      }
-    });
-  }, [location.key]);
-
+  const renderContent = () => {
+    if (isLoading || user.isLoading) return <Loader />;
+    if (config) return <SettingsContent config={config} />;
+    return (
+      <ErrorPanel
+        description="There was a problem loading settings."
+        retry={refetch}
+        error={error as Error}
+      />
+    );
+  };
   return (
-    // The provider collects each SectionForm's dirty state and guards
-    // navigation (route blocker + beforeunload) while any edits are unsaved.
     <UnsavedChangesProvider>
       <ContentLayout
         header={
           <Header
             variant="h1"
-            info={<InfoLink markdown={TAB_HELP[activeTabId]} />}
-            description="Manage global configuration settings for Innovation Sandbox."
+            description="Deployment-wide configuration for Innovation Sandbox."
             actions={
               <Button
                 iconName="refresh"
@@ -373,105 +423,8 @@ export const AdminSettings = () => {
           </Header>
         }
       >
-        {isLoading ? (
-          <Loader />
-        ) : !config ? (
-          // Only blow away the page when there is no usable config at all. A
-          // background refetch (e.g. the invalidation after a section Save) can
-          // fail transiently while React Query still holds the last-good config —
-          // in that case keep rendering the cached sections rather than replacing
-          // the whole page with the error panel.
-          <ErrorPanel
-            description="There was a problem loading settings."
-            retry={refetch}
-            error={error as Error}
-          />
-        ) : (
-          // Each tab groups one or more WHOLE config sections. A section is the
-          // unit of saving (one form + Save + concurrency token per DynamoDB
-          // section), so a section is never split across tabs.
-          //
-          // contentRenderStrategy="eager" keeps every tab's content mounted (just
-          // hidden) so a section's in-progress edits survive switching tabs —
-          // Cloudscape's default would unmount the inactive tab and discard the
-          // unsaved form state.
-          <SpaceBetween size="l">
-            {allSectionsUnsaved(config) && (
-              <Alert type="warning" header="Initial setup required">
-                All configuration sections are using default values. Review each
-                section and save to apply your preferred settings. The system is
-                fully operational with these defaults in the meantime.
-              </Alert>
-            )}
-            <Tabs
-              activeTabId={activeTabId}
-              // Cloudscape types activeTabId as plain string; the rendered
-              // tabs below only carry TAB_IDS values, so narrowing is safe.
-              onChange={({ detail }) =>
-                setActiveTabId(detail.activeTabId as TabId)
-              }
-              tabs={[
-                {
-                  id: TAB_IDS.leasesCost,
-                  label: (
-                    <TabLabel
-                      label="Leases & Cost"
-                      config={config}
-                      sectionKeys={["leases", "costReporting"]}
-                    />
-                  ),
-                  contentRenderStrategy: "eager",
-                  content: (
-                    <SpaceBetween size="l">
-                      <LeasesForm data={config.leases} />
-                      <CostReportingForm data={config.costReporting} />
-                    </SpaceBetween>
-                  ),
-                },
-                {
-                  id: TAB_IDS.cleanup,
-                  label: (
-                    <TabLabel
-                      label="Cleanup"
-                      config={config}
-                      sectionKeys={["cleanup"]}
-                    />
-                  ),
-                  contentRenderStrategy: "eager",
-                  content: <CleanupForm data={config.cleanup} />,
-                },
-                {
-                  id: TAB_IDS.general,
-                  label: (
-                    <TabLabel
-                      label="General"
-                      config={config}
-                      sectionKeys={[
-                        "maintenance",
-                        "termsOfService",
-                        "notification",
-                      ]}
-                    />
-                  ),
-                  contentRenderStrategy: "eager",
-                  content: (
-                    <SpaceBetween size="l">
-                      <MaintenanceForm data={config.maintenance} />
-                      <TermsOfServiceForm data={config.termsOfService} />
-                      <NotificationForm data={config.notification} />
-                    </SpaceBetween>
-                  ),
-                },
-                {
-                  id: TAB_IDS.readOnly,
-                  label: "Read-only",
-                  content: <ReadOnlySettings config={config} />,
-                },
-              ]}
-            />
-          </SpaceBetween>
-        )}
+        {renderContent()}
       </ContentLayout>
     </UnsavedChangesProvider>
   );
-};
+}

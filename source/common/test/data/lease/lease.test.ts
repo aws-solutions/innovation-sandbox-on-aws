@@ -4,10 +4,13 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  LeaseSchemaVersion,
+  newestCopyOfEachLease,
   PersistedApprovalDeniedLeaseSchema,
   PersistedExpiredLease,
   PersistedExpiredLeaseSchema,
   PersistedLeaseSchema,
+  PersistedLeaseStatusIndexKeySchema,
   PersistedMonitoredLease,
   PersistedMonitoredLeaseSchema,
   PersistedPendingLease,
@@ -15,12 +18,14 @@ import {
 } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
 import {
   AllLeaseStatusSchema,
+  DesiredAssignmentSchema,
   isActiveLease,
   isApprovalDeniedLease,
   isExpiredLease,
   isFrozenLease,
   isMonitoredLease,
   isPendingLease,
+  LeaseKeySchema,
 } from "@amzn/innovation-sandbox-shared/types/lease.js";
 import {
   ResourceLockSchema,
@@ -31,12 +36,19 @@ const baseMeta = {
   meta: { schemaVersion: 4, createdTime: "2024-01-01T00:00:00Z" },
 };
 
+const DEFAULT_PERMISSION_SET_ARN =
+  "arn:aws:sso:::permissionSet/ins-1234567890abcdef/ps-0000000000000001";
+
+const permissionSetArn = (index: number) =>
+  `arn:aws:sso:::permissionSet/ins-1234567890abcdef/ps-${index.toString().padStart(16, "0")}`;
+
 const basePendingLease: PersistedPendingLease = {
   userEmail: "user@example.com",
   uuid: "550e8400-e29b-41d4-a716-446655440000",
   status: "PendingApproval" as const,
   originalLeaseTemplateUuid: "660e8400-e29b-41d4-a716-446655440001",
   originalLeaseTemplateName: "Default Template",
+  sandboxSpacesEnabled: false,
   ...baseMeta,
 };
 
@@ -65,10 +77,102 @@ const validResourceLock: ResourceLock = {
   meta: { intent: "UPDATE" },
 };
 
-describe("PendingLeaseSchema", () => {
+describe("Persisted lease key schemas", () => {
+  const tableKey = {
+    userEmail: basePendingLease.userEmail,
+    uuid: basePendingLease.uuid,
+  };
+
+  it("accepts a valid table key", () => {
+    expect(LeaseKeySchema.safeParse(tableKey).success).toBe(true);
+  });
+
+  it.each([
+    { ...tableKey, userEmail: "not-an-email" },
+    { ...tableKey, uuid: "not-a-uuid" },
+  ])("rejects an invalid table key", (key) => {
+    expect(LeaseKeySchema.safeParse(key).success).toBe(false);
+  });
+
+  it("strips unknown table-key fields", () => {
+    expect(LeaseKeySchema.parse({ ...tableKey, unexpected: true })).toEqual(
+      tableKey,
+    );
+  });
+
+  it("accepts a valid StatusIndex key", () => {
+    expect(
+      PersistedLeaseStatusIndexKeySchema.safeParse({
+        ...tableKey,
+        status: basePendingLease.status,
+        originalLeaseTemplateUuid: basePendingLease.originalLeaseTemplateUuid,
+      }).success,
+    ).toBe(true);
+  });
+
+  it.each([{ status: "Unknown" }, { originalLeaseTemplateUuid: "not-a-uuid" }])(
+    "rejects an invalid StatusIndex key",
+    (override) => {
+      expect(
+        PersistedLeaseStatusIndexKeySchema.safeParse({
+          ...tableKey,
+          status: basePendingLease.status,
+          originalLeaseTemplateUuid: basePendingLease.originalLeaseTemplateUuid,
+          ...override,
+        }).success,
+      ).toBe(false);
+    },
+  );
+});
+
+describe("PersistedPendingLeaseSchema", () => {
   it("should accept a minimal valid pending lease", () => {
     const result = PersistedPendingLeaseSchema.safeParse(basePendingLease);
     expect(result.success).toBe(true);
+  });
+
+  it("should default legacy pending leases to false", () => {
+    const { sandboxSpacesEnabled: _, ...legacyPendingLease } = basePendingLease;
+    expect(
+      PersistedPendingLeaseSchema.parse(legacyPendingLease)
+        .sandboxSpacesEnabled,
+    ).toBe(false);
+  });
+
+  it("should parse a pre-migration lease without allowedModelIds", () => {
+    // allowedModelIds is optional so existing lease records (written before
+    // Sandbox Spaces) parse with no migration; absent stays absent.
+    const result = PersistedPendingLeaseSchema.safeParse(basePendingLease);
+    expect(result.success).toBe(true);
+    expect(result.data?.allowedModelIds).toBeUndefined();
+  });
+
+  it("should carry the allowedModelIds snapshot when present", () => {
+    const result = PersistedPendingLeaseSchema.safeParse({
+      ...basePendingLease,
+      allowedModelIds: ["global.anthropic.claude-sonnet-4-6"],
+    });
+    expect(result.success).toBe(true);
+    expect(result.data?.allowedModelIds).toEqual([
+      "global.anthropic.claude-sonnet-4-6",
+    ]);
+  });
+
+  it("should carry the defaultModelId snapshot when present", () => {
+    const result = PersistedPendingLeaseSchema.safeParse({
+      ...basePendingLease,
+      defaultModelId: "global.anthropic.claude-sonnet-4-6",
+    });
+    expect(result.success).toBe(true);
+    expect(result.data?.defaultModelId).toBe(
+      "global.anthropic.claude-sonnet-4-6",
+    );
+  });
+
+  it("should parse a lease without defaultModelId (no preselection)", () => {
+    const result = PersistedPendingLeaseSchema.safeParse(basePendingLease);
+    expect(result.success).toBe(true);
+    expect(result.data?.defaultModelId).toBeUndefined();
   });
 
   it("should accept pending lease with all optional fields", () => {
@@ -119,20 +223,141 @@ describe("PendingLeaseSchema", () => {
     expect(result.success).toBe(false);
   });
 
-  it.each([1, 2, 3, 4])("should accept schema version %i", (version) => {
+  it.each([1, 2, 3, 4, 5, LeaseSchemaVersion])(
+    "should accept schema version %i",
+    (version) => {
+      const result = PersistedPendingLeaseSchema.safeParse({
+        ...basePendingLease,
+        meta: { schemaVersion: version },
+      });
+      expect(result.success).toBe(true);
+    },
+  );
+
+  it.each([0, LeaseSchemaVersion + 1, -1])(
+    "should reject schema version %i",
+    (version) => {
+      const result = PersistedPendingLeaseSchema.safeParse({
+        ...basePendingLease,
+        meta: { schemaVersion: version },
+      });
+      expect(result.success).toBe(false);
+    },
+  );
+});
+
+describe("Lease permission profile fields", () => {
+  it("should accept a legacy v5 lease without permission profile fields", () => {
     const result = PersistedPendingLeaseSchema.safeParse({
       ...basePendingLease,
-      meta: { schemaVersion: version },
+      meta: { schemaVersion: 5, createdTime: "2024-01-01T00:00:00Z" },
     });
+
     expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.defaultPermissionSetArn).toBeUndefined();
+      expect(result.data.allowedPermissionSetArns).toBeUndefined();
+    }
   });
 
-  it.each([0, 5, -1])("should reject schema version %i", (version) => {
+  it("should model only ARN configuration on persisted leases", () => {
     const result = PersistedPendingLeaseSchema.safeParse({
       ...basePendingLease,
-      meta: { schemaVersion: version },
+      defaultPermissionSetArn: DEFAULT_PERMISSION_SET_ARN,
+      allowedPermissionSetArns: [DEFAULT_PERMISSION_SET_ARN],
     });
-    expect(result.success).toBe(false);
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.defaultPermissionSetArn).toBe(
+        DEFAULT_PERMISSION_SET_ARN,
+      );
+      expect(result.data.allowedPermissionSetArns).toEqual([
+        DEFAULT_PERMISSION_SET_ARN,
+      ]);
+      expect(PersistedPendingLeaseSchema.shape).not.toHaveProperty(
+        "defaultPermissionSet",
+      );
+      expect(PersistedPendingLeaseSchema.shape).not.toHaveProperty(
+        "allowedPermissionSets",
+      );
+    }
+  });
+
+  it("should enforce the 20-item allowed permission set ARN cap", () => {
+    const permissionSetArns = Array.from({ length: 21 }, (_, index) =>
+      permissionSetArn(index),
+    );
+
+    expect(
+      PersistedPendingLeaseSchema.safeParse({
+        ...basePendingLease,
+        allowedPermissionSetArns: permissionSetArns.slice(0, 20),
+      }).success,
+    ).toBe(true);
+    expect(
+      PersistedPendingLeaseSchema.safeParse({
+        ...basePendingLease,
+        allowedPermissionSetArns: permissionSetArns,
+      }).success,
+    ).toBe(false);
+  });
+
+  it("should reject malformed permission set ARNs", () => {
+    expect(
+      PersistedPendingLeaseSchema.safeParse({
+        ...basePendingLease,
+        defaultPermissionSetArn: "not-an-arn",
+      }).success,
+    ).toBe(false);
+    expect(
+      PersistedPendingLeaseSchema.safeParse({
+        ...basePendingLease,
+        allowedPermissionSetArns: ["not-an-arn"],
+      }).success,
+    ).toBe(false);
+    expect(
+      DesiredAssignmentSchema.safeParse({
+        principalId: "9367e8a0-30e1-70dc-f4b7-1d4b6c8f1234",
+        principalType: "USER",
+        permissionSetArn: "not-an-arn",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("should propagate persisted ARN configuration to monitored and expired leases", () => {
+    const profileFields = {
+      defaultPermissionSetArn: DEFAULT_PERMISSION_SET_ARN,
+      allowedPermissionSetArns: [DEFAULT_PERMISSION_SET_ARN],
+    };
+
+    expect(
+      PersistedMonitoredLeaseSchema.safeParse({
+        ...baseMonitoredLease,
+        ...profileFields,
+      }).success,
+    ).toBe(true);
+    expect(
+      PersistedExpiredLeaseSchema.safeParse({
+        ...baseExpiredLease,
+        ...profileFields,
+      }).success,
+    ).toBe(true);
+  });
+
+  it("should accept desired assignments with or without a permission set ARN", () => {
+    const assignment = {
+      principalId: "9367e8a0-30e1-70dc-f4b7-1d4b6c8f1234",
+      principalType: "USER" as const,
+    };
+
+    expect(DesiredAssignmentSchema.safeParse(assignment).success).toBe(true);
+    expect(
+      DesiredAssignmentSchema.safeParse({
+        ...assignment,
+        permissionSetArn: DEFAULT_PERMISSION_SET_ARN,
+      }).success,
+    ).toBe(true);
   });
 });
 
@@ -221,7 +446,7 @@ describe("Lease allowOwnerToShareLease validation", () => {
     expect(result.success).toBe(false);
   });
 
-  it("should propagate to MonitoredLeaseSchema", () => {
+  it("should propagate to PersistedMonitoredLeaseSchema", () => {
     const result = PersistedMonitoredLeaseSchema.safeParse({
       ...baseMonitoredLease,
       allowOwnerToShareLease: true,
@@ -232,7 +457,7 @@ describe("Lease allowOwnerToShareLease validation", () => {
     }
   });
 
-  it("should propagate to ExpiredLeaseSchema", () => {
+  it("should propagate to PersistedExpiredLeaseSchema", () => {
     const result = PersistedExpiredLeaseSchema.safeParse({
       ...baseExpiredLease,
       allowOwnerToShareLease: false,
@@ -317,7 +542,7 @@ describe("Lease resourceLock field validation", () => {
     expect(result.success).toBe(false);
   });
 
-  it("should propagate to MonitoredLeaseSchema", () => {
+  it("should propagate to PersistedMonitoredLeaseSchema", () => {
     const result = PersistedMonitoredLeaseSchema.safeParse({
       ...baseMonitoredLease,
       resourceLock: validResourceLock,
@@ -329,7 +554,7 @@ describe("Lease resourceLock field validation", () => {
   });
 });
 
-describe("ApprovalDeniedLeaseSchema", () => {
+describe("PersistedApprovalDeniedLeaseSchema", () => {
   it("should accept valid denied lease", () => {
     const result = PersistedApprovalDeniedLeaseSchema.safeParse({
       ...basePendingLease,
@@ -348,7 +573,7 @@ describe("ApprovalDeniedLeaseSchema", () => {
   });
 });
 
-describe("MonitoredLeaseSchema", () => {
+describe("PersistedMonitoredLeaseSchema", () => {
   it.each(["Active", "Frozen", "Provisioning"])(
     "should accept %s status",
     (status) => {
@@ -385,7 +610,7 @@ describe("MonitoredLeaseSchema", () => {
   });
 });
 
-describe("ExpiredLeaseSchema", () => {
+describe("PersistedExpiredLeaseSchema", () => {
   it("should accept valid expired lease", () => {
     const result = PersistedExpiredLeaseSchema.safeParse(baseExpiredLease);
     expect(result.success).toBe(true);
@@ -420,18 +645,18 @@ describe("ExpiredLeaseSchema", () => {
   });
 });
 
-describe("LeaseSchema (discriminated union)", () => {
-  it("should parse PendingApproval as PendingLease", () => {
+describe("PersistedLeaseSchema (discriminated union)", () => {
+  it("should parse PendingApproval as PersistedPendingLease", () => {
     const result = PersistedLeaseSchema.safeParse(basePendingLease);
     expect(result.success).toBe(true);
   });
 
-  it("should parse Active as MonitoredLease", () => {
+  it("should parse Active as PersistedMonitoredLease", () => {
     const result = PersistedLeaseSchema.safeParse(baseMonitoredLease);
     expect(result.success).toBe(true);
   });
 
-  it("should parse Expired as ExpiredLease", () => {
+  it("should parse Expired as PersistedExpiredLease", () => {
     const result = PersistedLeaseSchema.safeParse(baseExpiredLease);
     expect(result.success).toBe(true);
   });
@@ -509,5 +734,38 @@ describe("Type guard functions", () => {
     const lease = PersistedLeaseSchema.parse(baseExpiredLease);
     expect(isExpiredLease(lease)).toBe(true);
     expect(isMonitoredLease(lease)).toBe(false);
+  });
+});
+
+describe("newestCopyOfEachLease", () => {
+  const copy = (uuid: string, status: string, lastEditTime?: string) => ({
+    uuid,
+    status,
+    meta: lastEditTime === undefined ? {} : { lastEditTime },
+  });
+
+  it("keeps the most recently edited copy of a lease, whichever comes first", () => {
+    const older = copy("lease-1", "Active", "2026-10-20T00:00:00.000Z");
+    const newer = copy("lease-1", "Frozen", "2026-10-20T00:00:01.000Z");
+    const unstamped = copy("lease-1", "Active");
+
+    expect(newestCopyOfEachLease([older, newer])).toEqual([newer]);
+    expect(newestCopyOfEachLease([newer, older])).toEqual([newer]);
+    expect(newestCopyOfEachLease([unstamped, older])).toEqual([older]);
+    expect(newestCopyOfEachLease([older, unstamped])).toEqual([older]);
+  });
+
+  it("keeps the later copy in the list when the stamps tie or are both missing", () => {
+    const active = copy("lease-1", "Active", "2026-10-20T00:00:00.000Z");
+    const frozen = copy("lease-1", "Frozen", "2026-10-20T00:00:00.000Z");
+
+    expect(newestCopyOfEachLease([active, frozen])).toEqual([frozen]);
+    expect(newestCopyOfEachLease([frozen, active])).toEqual([active]);
+    expect(
+      newestCopyOfEachLease([
+        copy("lease-1", "Active"),
+        copy("lease-1", "Frozen"),
+      ]),
+    ).toEqual([copy("lease-1", "Frozen")]);
   });
 });

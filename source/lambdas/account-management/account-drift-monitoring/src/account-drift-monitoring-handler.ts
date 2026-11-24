@@ -155,14 +155,14 @@ async function detectDriftStatus(
   for await (const account of stream(accountStore, accountStore.findAll, {})) {
     const actualOu = untrackedAccounts.get(account.awsAccountId);
 
-    if (account.status != actualOu) {
+    if (account.status === actualOu) {
+      accountsNotInDrift.push(account);
+    } else {
       accountsInDrift.push({
         account: account,
         actualOu: actualOu,
         expectedOu: account.status,
       });
-    } else {
-      accountsNotInDrift.push(account);
     }
 
     untrackedAccounts.delete(account.awsAccountId);

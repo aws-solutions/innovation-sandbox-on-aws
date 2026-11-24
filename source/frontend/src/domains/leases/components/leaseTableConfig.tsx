@@ -6,30 +6,34 @@ import { PropertyFilterProps } from "@cloudscape-design/components/property-filt
 
 import { AccessTypeBadge } from "@amzn/innovation-sandbox-frontend/components/AccessTypeBadge";
 import { AccountId } from "@amzn/innovation-sandbox-frontend/components/AccountId";
-import { AccountLoginLink } from "@amzn/innovation-sandbox-frontend/components/AccountLoginLink";
 import { BlueprintName } from "@amzn/innovation-sandbox-frontend/components/BlueprintName";
 import { BudgetProgressBar } from "@amzn/innovation-sandbox-frontend/components/BudgetProgressBar";
 import { DurationStatus } from "@amzn/innovation-sandbox-frontend/components/DurationStatus";
 import { FilterableColumnDefinition } from "@amzn/innovation-sandbox-frontend/components/FilterableTable";
 import { LeaseName } from "@amzn/innovation-sandbox-frontend/components/LeaseName";
 import { LeaseTemplateName } from "@amzn/innovation-sandbox-frontend/components/LeaseTemplateName";
+import { LeaseAccessCell } from "@amzn/innovation-sandbox-frontend/domains/leases/components/LeaseAccessCell";
 import { LeaseStatusBadge } from "@amzn/innovation-sandbox-frontend/domains/leases/components/LeaseStatusBadge";
 import {
   canLoginToLease,
   leaseExpirySortingComparator,
   type LeaseLoginPermissions,
+  leaseSpendSortingComparator,
   leaseStatusSortingComparator,
 } from "@amzn/innovation-sandbox-frontend/domains/leases/helpers";
 import {
   LeaseView,
   SharedLeaseAccessType,
 } from "@amzn/innovation-sandbox-frontend/domains/leases/model";
+import { canOpenSandboxSpace } from "@amzn/innovation-sandbox-frontend/domains/sandbox-agent/helpers";
 import { getLeaseExpiryInfo } from "@amzn/innovation-sandbox-frontend/helpers/LeaseExpiryInfo";
 import {
+  getCurrentLeaseSpend,
   isExpiredLease,
   isMonitoredLease,
   LeaseStatus,
 } from "@amzn/innovation-sandbox-shared/types/lease.js";
+import type { IsbUser } from "@amzn/innovation-sandbox-shared/utils/auth-utils.js";
 
 // ─── Column Definitions ────────────────────────────────────────────────────────
 
@@ -39,12 +43,23 @@ export type LeaseTableItem = LeaseView & {
 };
 
 /**
+ * What the Access column needs to offer Open Space. Pass it only when an
+ * administrator has turned Sandbox Spaces on for the deployment; omit it to
+ * show only Login.
+ */
+export interface LeaseSandboxSpaceOptions {
+  readonly user: IsbUser | undefined;
+  readonly onOpenSpace: (lease: LeaseTableItem) => void;
+}
+
+/**
  * Builds lease table column definitions.
  * All data columns are always included; visibility is controlled by
  * default visible columns preferences, not by omitting definitions.
  */
 export function getLeaseColumnDefinitions(
   permissions: LeaseLoginPermissions,
+  sandboxSpaces?: LeaseSandboxSpaceOptions,
 ): FilterableColumnDefinition<LeaseTableItem>[] {
   return [
     {
@@ -102,12 +117,12 @@ export function getLeaseColumnDefinitions(
     {
       id: "budget",
       header: "Budget",
-      sortingField: "totalCostAccrued",
+      sortingComparator: leaseSpendSortingComparator,
       minWidth: 150,
       cell: (lease) =>
         isMonitoredLease(lease) || isExpiredLease(lease) ? (
           <BudgetProgressBar
-            currentValue={lease.totalCostAccrued}
+            currentValue={getCurrentLeaseSpend(lease)}
             maxValue={lease.maxSpend}
           />
         ) : (
@@ -160,7 +175,14 @@ export function getLeaseColumnDefinitions(
       header: "Access",
       cell: (lease) =>
         canLoginToLease(lease, permissions) ? (
-          <AccountLoginLink accountId={lease.awsAccountId} wrapText={false} />
+          <LeaseAccessCell
+            accountId={lease.awsAccountId}
+            openSpace={
+              sandboxSpaces && canOpenSandboxSpace(lease, sandboxSpaces.user)
+                ? { onOpen: () => sandboxSpaces.onOpenSpace(lease) }
+                : undefined
+            }
+          />
         ) : null,
     },
   ];

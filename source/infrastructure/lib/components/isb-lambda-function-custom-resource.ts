@@ -13,14 +13,14 @@ import { Construct } from "constructs";
 import { z } from "zod";
 
 interface IsbLambdaFunctionCRProps<
-  T extends z.ZodSchema<any>,
+  T extends z.ZodType<any>,
 > extends IsbLambdaFunctionProps<T> {
   customResourceType: `Custom::${string}`;
   customResourceProperties?: { [p: string]: any };
 }
 
 export class IsbLambdaFunctionCustomResource<
-  T extends z.ZodSchema<any>,
+  T extends z.ZodType<any>,
 > extends IsbLambdaFunction<T> {
   readonly provider: Provider;
   readonly customResource: CustomResource;
@@ -30,12 +30,10 @@ export class IsbLambdaFunctionCustomResource<
     id: string,
     props: IsbLambdaFunctionCRProps<T>,
   ) {
-    if (!props.logGroup) {
-      props.logGroup = IsbLogGroups.customResourceLogGroup(
-        scope,
-        props.namespace,
-      );
-    }
+    props.logGroup ??= IsbLogGroups.customResourceLogGroup(
+      scope,
+      props.namespace,
+    );
     super(scope, id, props);
 
     this.provider = new Provider(this, "IsbProvider", {

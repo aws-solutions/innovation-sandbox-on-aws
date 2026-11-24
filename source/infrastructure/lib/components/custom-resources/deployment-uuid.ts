@@ -1,7 +1,7 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 import { Construct } from "constructs";
-import path from "path";
+import path from "node:path";
 
 import { DeploymentUuidLambdaEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/deployment-uuid-lambda-environment.js";
 import { IsbLambdaFunctionCustomResource } from "@amzn/innovation-sandbox-infrastructure/components/isb-lambda-function-custom-resource";

@@ -44,4 +44,23 @@ describe("group assignment policy", () => {
       ),
     ).toEqual([newGroup]);
   });
+
+  it("allows permission-set changes for an existing group in NONE mode", () => {
+    const existingGroupWithDefault = {
+      ...existingGroup,
+      permissionSetArn: "arn:aws:sso:::permissionSet/instance/default",
+    };
+    const existingGroupWithCustom = {
+      ...existingGroup,
+      permissionSetArn: "arn:aws:sso:::permissionSet/instance/custom",
+    };
+
+    expect(
+      findDisallowedGroupAssignments(
+        "NONE",
+        [existingGroupWithDefault, existingGroupWithCustom],
+        [existingGroupWithDefault],
+      ),
+    ).toEqual([]);
+  });
 });

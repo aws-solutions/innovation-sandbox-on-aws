@@ -44,11 +44,12 @@ import { useBreadcrumb } from "@amzn/innovation-sandbox-frontend/hooks/useBreadc
 import { useModal } from "@amzn/innovation-sandbox-frontend/hooks/useModal";
 import { SandboxAccountStatus } from "@amzn/innovation-sandbox-shared/types/sandbox-account";
 
+// prettier-ignore
 const StatusCell = ({ account }: { account: SandboxAccountView }) => (
   <AccountStatusIndicator
     status={account.status}
     activeCleanup={account.activeCleanup}
-    lastCleanupStartTime={
+    lastCleanupStartTime={ // NOSONAR typescript:S1874: Pass the legacy timestamp for accounts without activeCleanup.
       account.cleanupExecutionContext?.stateMachineExecutionStartTime
     }
   />
@@ -154,34 +155,40 @@ const EjectModalContent = ({
   queryClient,
   setSelectedAccounts,
 }: EjectModalProps) => (
-  <BatchActionReview
-    items={selectedAccounts}
-    description={`${selectedAccounts.length} account(s) to eject`}
-    columnDefinitions={createColumnDefinitions(false)}
-    identifierKey="awsAccountId"
-    sequential
-    onSubmit={async (account: SandboxAccountView) => {
-      await ejectAccount(account.awsAccountId);
-      setSelectedAccounts((prev) =>
-        prev.filter((a) => a.awsAccountId !== account.awsAccountId),
-      );
-    }}
-    onSuccess={() => {
-      queryClient.invalidateQueries({
-        queryKey: ["accounts"],
-        refetchType: "all",
-      });
-      showSuccessToast(
-        "Account(s) were successfully ejected from the account pool.",
-      );
-    }}
-    onError={() =>
-      showErrorToast(
-        "One or more accounts failed to eject, try resubmitting.",
-        "Failed to eject account(s)",
-      )
-    }
-  />
+  <SpaceBetween size="m">
+    <Alert type="warning" header="Ejection does not run account cleanup">
+      Any resources that remain in the selected accounts can continue to incur
+      charges.
+    </Alert>
+    <BatchActionReview
+      items={selectedAccounts}
+      description={`${selectedAccounts.length} account(s) to eject`}
+      columnDefinitions={createColumnDefinitions(false)}
+      identifierKey="awsAccountId"
+      sequential
+      onSubmit={async (account: SandboxAccountView) => {
+        await ejectAccount(account.awsAccountId);
+        setSelectedAccounts((prev) =>
+          prev.filter((a) => a.awsAccountId !== account.awsAccountId),
+        );
+      }}
+      onSuccess={() => {
+        queryClient.invalidateQueries({
+          queryKey: ["accounts"],
+          refetchType: "all",
+        });
+        showSuccessToast(
+          "Account(s) were successfully ejected from the account pool.",
+        );
+      }}
+      onError={() =>
+        showErrorToast(
+          "One or more accounts failed to eject, try resubmitting.",
+          "Failed to eject account(s)",
+        )
+      }
+    />
+  </SpaceBetween>
 );
 
 type CleanupModalProps = {

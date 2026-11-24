@@ -3,6 +3,7 @@
 import { z } from "zod";
 
 import { BaseLambdaEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/base-lambda-environment.js";
+import { AwsAccountIdSchema } from "@amzn/innovation-sandbox-commons/utils/zod.js";
 
 export const DurableCleanupLambdaEnvironmentSchema =
   BaseLambdaEnvironmentSchema.extend({
@@ -13,9 +14,9 @@ export const DurableCleanupLambdaEnvironmentSchema =
     PRINCIPAL_TABLE_NAME: z.string(),
     APP_CONFIG_APPLICATION_ID: z.string(),
     APP_CONFIG_ENVIRONMENT_ID: z.string(),
-    ORG_MGT_ACCOUNT_ID: z.string(),
-    IDC_ACCOUNT_ID: z.string(),
-    HUB_ACCOUNT_ID: z.string(),
+    ORG_MGT_ACCOUNT_ID: AwsAccountIdSchema,
+    IDC_ACCOUNT_ID: AwsAccountIdSchema,
+    HUB_ACCOUNT_ID: AwsAccountIdSchema,
     CLEANUP_SPOKE_ROLE_NAME: z.string(),
     INTERMEDIATE_ROLE_ARN: z.string(),
     ORG_MGT_ROLE_ARN: z.string(),

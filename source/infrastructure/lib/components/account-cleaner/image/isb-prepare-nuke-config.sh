@@ -16,7 +16,8 @@
 #
 # Usage:
 #   isb-prepare-nuke-config --config <path> --account-id <id> --hub-account-id <id> \
-#                           --role-name <name> --regions <comma-separated>
+#                           --role-name <name> --namespace <namespace> \
+#                           --regions <comma-separated>
 set -eo pipefail
 
 OVERLAY=${ISB_NUKE_OVERLAY_PATH:-/opt/isb/nuke-config.isb-overlay.yaml}
@@ -25,6 +26,7 @@ CONFIG=""
 ACCOUNT_ID=""
 HUB_ACCOUNT_ID=""
 ROLE_NAME=""
+NAMESPACE=""
 REGIONS=""
 
 while [ $# -gt 0 ]; do
@@ -33,12 +35,13 @@ while [ $# -gt 0 ]; do
     --account-id) ACCOUNT_ID="$2"; shift 2 ;;
     --hub-account-id) HUB_ACCOUNT_ID="$2"; shift 2 ;;
     --role-name) ROLE_NAME="$2"; shift 2 ;;
+    --namespace) NAMESPACE="$2"; shift 2 ;;
     --regions) REGIONS="$2"; shift 2 ;;
     *) echo "isb-prepare-nuke-config: unknown argument '$1'" >&2; exit 2 ;;
   esac
 done
 
-for REQUIRED in CONFIG ACCOUNT_ID HUB_ACCOUNT_ID ROLE_NAME REGIONS; do
+for REQUIRED in CONFIG ACCOUNT_ID HUB_ACCOUNT_ID ROLE_NAME NAMESPACE REGIONS; do
   eval "VALUE=\$$REQUIRED"
   [ -n "$VALUE" ] || {
     echo "isb-prepare-nuke-config: missing required argument for $REQUIRED" >&2
@@ -70,6 +73,7 @@ sed -i \
   -e "s/%HUB_ACCOUNT_ID%/${HUB_ACCOUNT_ID}/g" \
   -e "s/%CLEANUP_ACCOUNT_ID%/${ACCOUNT_ID}/g" \
   -e "s/%CLEANUP_ROLE_NAME%/${ROLE_NAME}/g" \
+  -e "s/%NAMESPACE%/${NAMESPACE}/g" \
   "$CONFIG"
 
 # The shipped config carries `regions: [global]`; the rest come from the account pool

@@ -283,6 +283,27 @@ describe("httpErrorHandler - Error Mappings", () => {
       const parsed = JSON.parse((request.error as any).message);
       expect(parsed.data.errors[0].message).toBe("Invalid Request.");
     });
+
+    it("should map InvalidPageIdentifierError to 400", async () => {
+      const error = new Error("Invalid page identifier");
+      error.name = "InvalidPageIdentifierError";
+
+      const request = {
+        error,
+        response: {},
+      };
+
+      await middleware.onError!(request as any);
+
+      expect(request.error).toMatchObject({
+        statusCode: 400,
+      });
+
+      const parsed = JSON.parse((request.error as any).message);
+      expect(parsed.data.errors[0].message).toBe(
+        "The page identifier is invalid for this request.",
+      );
+    });
   });
 
   describe("Transaction Error Handling", () => {

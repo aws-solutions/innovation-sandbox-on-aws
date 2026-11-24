@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { Button, Header } from "@cloudscape-design/components";
+import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { useAppLayoutContext } from "@amzn/innovation-sandbox-frontend/components/AppLayout/AppLayoutContext";
@@ -10,7 +11,6 @@ import { InfoLink } from "@amzn/innovation-sandbox-frontend/components/InfoLink"
 import { Markdown } from "@amzn/innovation-sandbox-frontend/components/Markdown";
 import { LeaseTemplatesTable } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/components/LeaseTemplatesTable";
 import { useBreadcrumb } from "@amzn/innovation-sandbox-frontend/hooks/useBreadcrumb";
-import { useEffect } from "react";
 
 export const ListLeaseTemplates = () => {
   const navigate = useNavigate();

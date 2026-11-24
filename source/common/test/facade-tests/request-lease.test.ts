@@ -17,6 +17,7 @@ import {
 import { LeaseApprovedEvent } from "@amzn/innovation-sandbox-commons/events/lease-approved-event.js";
 import { LeaseRequestedEvent } from "@amzn/innovation-sandbox-commons/events/lease-requested-event.js";
 import { InnovationSandbox } from "@amzn/innovation-sandbox-commons/innovation-sandbox.js";
+import { MaxAssignmentsExceededError } from "@amzn/innovation-sandbox-commons/isb-services/lease-assignment/index.js";
 import { IsbEventBridgeClient } from "@amzn/innovation-sandbox-commons/sdk-clients/event-bridge-client.js";
 import { generateSchemaData } from "@amzn/innovation-sandbox-commons/test/generate-schema-data.js";
 import { mockGlobalConfig } from "@amzn/innovation-sandbox-commons/test/lambdas/fixtures.js";
@@ -38,7 +39,12 @@ import {
 } from "@amzn/innovation-sandbox-shared/utils/auth-utils.js";
 import { Logger } from "@aws-lambda-powertools/logger";
 import { Tracer } from "@aws-lambda-powertools/tracer";
+import { randomUUID } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+
+const defaultPermissionSetArn =
+  "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-user123456789012";
+const defaultPermissionSetConfig = { defaultPermissionSetArn };
 
 function createMockContext() {
   const context = {
@@ -70,7 +76,7 @@ describe("InnovationSandbox.requestLease()", () => {
     mockContext = createMockContext();
     mockUser = generateSchemaData(IdcIdentitySchema);
 
-    mockContext.idcService.getUserFromEmail.mockImplementation(
+    mockContext.idcService.getIsbMemberFromEmail.mockImplementation(
       async (email) => {
         if (email === mockUser.email) {
           return mockUser;
@@ -186,6 +192,7 @@ describe("InnovationSandbox.requestLease()", () => {
           requiresApproval: true,
         }),
         targetUser: mockUser,
+        permissionSetConfig: defaultPermissionSetConfig,
       },
       mockContext,
     );
@@ -202,6 +209,34 @@ describe("InnovationSandbox.requestLease()", () => {
         userEmail: mockUser.email,
       }),
     );
+  });
+
+  test("snapshots the template's spend-rate limits onto the lease", async () => {
+    const rateLimits = [
+      { basis: "HOURLY", rate: 10, action: "ALERT" },
+      { basis: "DAILY", rate: 200, action: "FREEZE_ACCOUNT" },
+    ] as const;
+    await InnovationSandbox.requestLease(
+      {
+        leaseTemplate: generateSchemaData(PersistedLeaseTemplateSchema, {
+          rateLimits: [...rateLimits],
+          predictiveBudgetEnabled: true,
+          requiresApproval: true,
+        }),
+        targetUser: mockUser,
+        permissionSetConfig: defaultPermissionSetConfig,
+      },
+      mockContext,
+    );
+
+    expect(mockContext.leaseStore.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        rateLimits,
+        predictiveBudgetEnabled: true,
+      }),
+    );
+    const created = vi.mocked(mockContext.leaseStore.create).mock.calls[0]![0];
+    expect(created).not.toHaveProperty("rateLimit");
   });
 
   test("HappyPath - Request lease auto-approved", async () => {
@@ -223,6 +258,7 @@ describe("InnovationSandbox.requestLease()", () => {
           blueprintId: null,
         }),
         targetUser: mockUser,
+        permissionSetConfig: defaultPermissionSetConfig,
       },
       mockContext,
     );
@@ -259,6 +295,7 @@ describe("InnovationSandbox.requestLease()", () => {
             requiresApproval: true,
           }),
           targetUser: mockUser,
+          permissionSetConfig: defaultPermissionSetConfig,
         },
         mockContext,
       ),
@@ -289,6 +326,7 @@ describe("InnovationSandbox.requestLease()", () => {
           }),
           targetUser: mockUser,
           createdBy: managerEmail,
+          permissionSetConfig: defaultPermissionSetConfig,
         },
         mockContext,
       )) as PersistedMonitoredLease;
@@ -318,6 +356,7 @@ describe("InnovationSandbox.requestLease()", () => {
             requiresApproval: true,
           }),
           targetUser: mockUser,
+          permissionSetConfig: defaultPermissionSetConfig,
           // No createdBy provided
         },
         mockContext,
@@ -339,6 +378,7 @@ describe("InnovationSandbox.requestLease()", () => {
             requiresApproval: true,
           }),
           targetUser: m2mUser,
+          permissionSetConfig: defaultPermissionSetConfig,
         },
         mockContext,
       ),
@@ -366,6 +406,7 @@ describe("InnovationSandbox.requestLease()", () => {
           }),
           targetUser: mockUser,
           assignments,
+          permissionSetConfig: defaultPermissionSetConfig,
         },
         mockContext,
       );
@@ -404,6 +445,7 @@ describe("InnovationSandbox.requestLease()", () => {
             allowOwnerToShareLease: true,
           }),
           targetUser: mockUser,
+          permissionSetConfig: defaultPermissionSetConfig,
         },
         mockContext,
       );
@@ -426,6 +468,7 @@ describe("InnovationSandbox.requestLease()", () => {
           }),
           targetUser: mockUser,
           assignments: [],
+          permissionSetConfig: defaultPermissionSetConfig,
         },
         mockContext,
       );
@@ -439,6 +482,98 @@ describe("InnovationSandbox.requestLease()", () => {
       ]);
     });
 
+    test("should preserve an explicit owner assignment without adding the default", async () => {
+      const defaultPermissionSetArn =
+        "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-default123456789";
+      const customPermissionSetArn =
+        "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-custom1234567890";
+
+      const result = await InnovationSandbox.requestLease(
+        {
+          leaseTemplate: generateSchemaData(PersistedLeaseTemplateSchema, {
+            requiresApproval: true,
+            allowOwnerToShareLease: true,
+            defaultPermissionSetArn,
+            allowedPermissionSetArns: [customPermissionSetArn],
+          }),
+          targetUser: mockUser,
+          assignments: [
+            {
+              principalId: mockUser.userId,
+              principalType: "USER",
+              permissionSetArn: customPermissionSetArn,
+            },
+          ],
+          permissionSetConfig: {
+            defaultPermissionSetArn,
+            allowedPermissionSetArns: [customPermissionSetArn],
+          },
+        },
+        mockContext,
+      );
+
+      expect(
+        result.desiredAssignments?.filter(
+          ({ principalId }) => principalId === mockUser.userId,
+        ),
+      ).toEqual([
+        expect.objectContaining({
+          permissionSetArn: customPermissionSetArn,
+        }),
+      ]);
+    });
+
+    test("should reject 20 non-owner tuples because owner injection would make 21", async () => {
+      const assignments = Array.from({ length: 20 }, () => ({
+        principalId: randomUUID(),
+        principalType: "USER" as const,
+      }));
+
+      await expect(
+        InnovationSandbox.requestLease(
+          {
+            leaseTemplate: generateSchemaData(PersistedLeaseTemplateSchema, {
+              requiresApproval: true,
+              allowOwnerToShareLease: true,
+            }),
+            targetUser: mockUser,
+            assignments,
+            permissionSetConfig: defaultPermissionSetConfig,
+          },
+          mockContext,
+        ),
+      ).rejects.toThrow(MaxAssignmentsExceededError);
+      expect(mockContext.leaseStore.create).not.toHaveBeenCalled();
+    });
+
+    test("should accept exactly 20 total tuples when one is the owner", async () => {
+      const assignments = [
+        {
+          principalId: mockUser.userId,
+          principalType: "USER" as const,
+        },
+        ...Array.from({ length: 19 }, () => ({
+          principalId: randomUUID(),
+          principalType: "USER" as const,
+        })),
+      ];
+
+      const result = await InnovationSandbox.requestLease(
+        {
+          leaseTemplate: generateSchemaData(PersistedLeaseTemplateSchema, {
+            requiresApproval: true,
+            allowOwnerToShareLease: true,
+          }),
+          targetUser: mockUser,
+          assignments,
+          permissionSetConfig: defaultPermissionSetConfig,
+        },
+        mockContext,
+      );
+
+      expect(result.desiredAssignments).toHaveLength(20);
+    });
+
     test("should denormalize allowOwnerToShareLease from template to lease", async () => {
       const result = await InnovationSandbox.requestLease(
         {
@@ -447,11 +582,190 @@ describe("InnovationSandbox.requestLease()", () => {
             allowOwnerToShareLease: true,
           }),
           targetUser: mockUser,
+          permissionSetConfig: defaultPermissionSetConfig,
         },
         mockContext,
       );
 
       expect(result.allowOwnerToShareLease).toBe(true);
     });
+  });
+
+  test("should persist only the resolved ARN snapshot and ignore hydrated template metadata", async () => {
+    const allowedPermissionSetArns = [
+      "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-custom1234567890",
+    ];
+    const leaseTemplate = {
+      ...generateSchemaData(PersistedLeaseTemplateSchema, {
+        requiresApproval: true,
+        defaultPermissionSetArn: undefined,
+        allowedPermissionSetArns,
+      }),
+      defaultPermissionSet: {
+        permissionSetArn: allowedPermissionSetArns[0],
+        permissionSetId: "ps-custom1234567890",
+        name: "Mutable display name",
+        description: "Mutable description",
+        sessionDuration: "PT1H",
+        availability: "AVAILABLE",
+      },
+      allowedPermissionSets: [],
+    };
+
+    const result = await InnovationSandbox.requestLease(
+      {
+        leaseTemplate,
+        targetUser: mockUser,
+        permissionSetConfig: {
+          defaultPermissionSetArn,
+          allowedPermissionSetArns,
+        },
+      },
+      mockContext,
+    );
+
+    const persistedLease = mockContext.leaseStore.create.mock.calls[0]![0];
+    expect(persistedLease.defaultPermissionSetArn).toBe(
+      "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-user123456789012",
+    );
+    expect(persistedLease.allowedPermissionSetArns).toEqual(
+      allowedPermissionSetArns,
+    );
+    expect(persistedLease).not.toHaveProperty("defaultPermissionSet");
+    expect(persistedLease).not.toHaveProperty("allowedPermissionSets");
+
+    allowedPermissionSetArns.push(
+      "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-later12345678901",
+    );
+    expect(result.allowedPermissionSetArns).toEqual([
+      "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-custom1234567890",
+    ]);
+  });
+
+  test("should use the resolved default for the injected owner assignment", async () => {
+    const defaultPermissionSetArn =
+      "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-resolved12345678";
+    const allowedPermissionSetArns = [
+      "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-custom1234567890",
+    ];
+    await InnovationSandbox.requestLease(
+      {
+        leaseTemplate: generateSchemaData(PersistedLeaseTemplateSchema, {
+          requiresApproval: true,
+          defaultPermissionSetArn: undefined,
+          allowedPermissionSetArns: undefined,
+        }),
+        targetUser: mockUser,
+        permissionSetConfig: {
+          defaultPermissionSetArn,
+          allowedPermissionSetArns,
+        },
+      },
+      mockContext,
+    );
+
+    expect(mockContext.leaseStore.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        defaultPermissionSetArn,
+        allowedPermissionSetArns,
+        desiredAssignments: [
+          expect.objectContaining({
+            principalId: mockUser.userId,
+            permissionSetArn: defaultPermissionSetArn,
+          }),
+        ],
+      }),
+    );
+  });
+
+  // Token polling selects leases by the copied monitoring value, so a lease
+  // with a Sandbox Space is monitored even when the template's saved
+  // preference is off.
+  test.each([
+    { sandboxSpacesEnabled: true, configured: false, expected: true },
+    { sandboxSpacesEnabled: true, configured: true, expected: true },
+    { sandboxSpacesEnabled: false, configured: false, expected: false },
+    { sandboxSpacesEnabled: false, configured: true, expected: true },
+  ])(
+    "should copy sandboxSpacesEnabled $sandboxSpacesEnabled and materialize monitoring $expected (preference $configured)",
+    async ({ sandboxSpacesEnabled, configured, expected }) => {
+      const result = await InnovationSandbox.requestLease(
+        {
+          leaseTemplate: generateSchemaData(PersistedLeaseTemplateSchema, {
+            requiresApproval: true,
+            sandboxSpacesEnabled,
+            bedrockTokenMonitoringEnabled: configured,
+          }),
+          targetUser: mockUser,
+          permissionSetConfig: defaultPermissionSetConfig,
+        },
+        mockContext,
+      );
+
+      expect(result.sandboxSpacesEnabled).toBe(sandboxSpacesEnabled);
+      expect(result.bedrockTokenMonitoringEnabled).toBe(expected);
+    },
+  );
+
+  test("should snapshot allowedModelIds from template to lease", async () => {
+    const allowedModelIds = [
+      "global.anthropic.claude-sonnet-4-6",
+      "us.anthropic.claude-sonnet-4-6",
+    ];
+    const result = await InnovationSandbox.requestLease(
+      {
+        leaseTemplate: generateSchemaData(PersistedLeaseTemplateSchema, {
+          requiresApproval: true,
+          allowedModelIds,
+        }),
+        targetUser: mockUser,
+        permissionSetConfig: defaultPermissionSetConfig,
+      },
+      mockContext,
+    );
+
+    // Copied by value at creation — the lease carries its own snapshot so a
+    // later template edit cannot change the model set on the running lease.
+    expect(result.allowedModelIds).toEqual(allowedModelIds);
+  });
+
+  test("should snapshot defaultModelId from template to lease", async () => {
+    const allowedModelIds = ["global.anthropic.claude-sonnet-4-6"];
+    const result = await InnovationSandbox.requestLease(
+      {
+        leaseTemplate: generateSchemaData(PersistedLeaseTemplateSchema, {
+          requiresApproval: true,
+          allowedModelIds,
+          defaultModelId: "global.anthropic.claude-sonnet-4-6",
+        }),
+        targetUser: mockUser,
+        permissionSetConfig: defaultPermissionSetConfig,
+      },
+      mockContext,
+    );
+
+    expect(result.defaultModelId).toBe("global.anthropic.claude-sonnet-4-6");
+  });
+
+  test("should denormalize predictive budget fields from template to lease", async () => {
+    const result = await InnovationSandbox.requestLease(
+      {
+        leaseTemplate: generateSchemaData(PersistedLeaseTemplateSchema, {
+          rateLimits: [{ basis: "HOURLY", rate: 2, action: "ALERT" }],
+          predictiveBudgetEnabled: true,
+          bedrockTokenMonitoringEnabled: true,
+          requiresApproval: true,
+        }),
+        targetUser: mockUser,
+        permissionSetConfig: defaultPermissionSetConfig,
+      },
+      mockContext,
+    );
+
+    expect(result.predictiveBudgetEnabled).toBe(true);
+    expect(result.bedrockTokenMonitoringEnabled).toBe(true);
+    expect(result.rateLimits).toEqual([
+      { basis: "HOURLY", rate: 2, action: "ALERT" },
+    ]);
   });
 });

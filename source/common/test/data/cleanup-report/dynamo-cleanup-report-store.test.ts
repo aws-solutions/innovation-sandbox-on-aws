@@ -327,6 +327,40 @@ describe("DynamoCleanupReportStore", () => {
       expect(input.ExclusiveStartKey).toEqual(lastKey);
     });
 
+    test.each([
+      [
+        "invalid account ID",
+        {
+          pk: "not-an-account-id",
+          sk: "CleanupReport#2024-05-01T12:00:00.000Z",
+        },
+      ],
+      [
+        "invalid sort key",
+        { pk: "123456789012", sk: "OtherReport#2024-05-01T12:00:00.000Z" },
+      ],
+      [
+        "another account",
+        {
+          pk: "210987654321",
+          sk: "CleanupReport#2024-05-01T12:00:00.000Z",
+        },
+      ],
+    ])("rejects a cursor for %s", async (_description, lastKey) => {
+      const pageIdentifier = Buffer.from(
+        JSON.stringify(lastKey),
+        "utf8",
+      ).toString("base64url");
+
+      await expect(
+        store.listRecentReports({
+          accountId: "123456789012",
+          pageIdentifier,
+        }),
+      ).rejects.toThrow();
+      expect(mockDynamoClient.commandCalls(QueryCommand)).toHaveLength(0);
+    });
+
     test("returns nextPageIdentifier when more pages exist", async () => {
       const lastKey = {
         pk: "123456789012",

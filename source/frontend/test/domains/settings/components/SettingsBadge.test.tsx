@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { SettingsBadge } from "@amzn/innovation-sandbox-frontend/domains/settings/components/SettingsBadge";
 import { useGetConfigurations } from "@amzn/innovation-sandbox-frontend/domains/settings/hooks";
@@ -12,19 +12,7 @@ import {
 } from "@amzn/innovation-sandbox-frontend/mocks/handlers/configurationHandlers";
 import { server } from "@amzn/innovation-sandbox-frontend/mocks/server";
 import { createQueryClientWrapper } from "@amzn/innovation-sandbox-frontend/setupTests";
-
-/**
- * Renders a marker once the shared admin-config query has resolved. The badge
- * renders nothing in TWO states — while the query is still loading and when
- * every section is saved — so a plain "assert empty" check passes against the
- * loading render and never observes the post-load state. Gating the assertion
- * on this probe forces the query to settle first, so the empty assertion
- * actually exercises the all-saved branch.
- */
-const ConfigSettledProbe = () => {
-  const { isSuccess } = useGetConfigurations();
-  return isSuccess ? <div data-testid="config-settled" /> : null;
-};
+import { ConfigSection } from "@amzn/innovation-sandbox-shared/types/configuration.js";
 
 vi.mock("@amzn/innovation-sandbox-frontend/helpers/CognitoAuthService", () => ({
   CognitoAuthService: {
@@ -39,48 +27,98 @@ vi.mock("@amzn/innovation-sandbox-frontend/helpers/CognitoAuthService", () => ({
   },
 }));
 
-const renderBadge = () =>
-  render(<SettingsBadge />, { wrapper: createQueryClientWrapper() });
-
-const renderBadgeWithProbe = () =>
-  render(
-    <>
-      <SettingsBadge />
-      <ConfigSettledProbe />
-    </>,
-    { wrapper: createQueryClientWrapper() },
-  );
+function ConfigSettledProbe() {
+  const { isSuccess } = useGetConfigurations();
+  return isSuccess ? <div data-testid="config-settled" /> : null;
+}
 
 describe("SettingsBadge", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
+  it.each([
+    {
+      unsaved: ["agent"],
+      count: 1,
+      label: "1 settings page has unsaved defaults",
+    },
+    {
+      unsaved: ["maintenance"],
+      count: 1,
+      label: "1 settings page has unsaved defaults",
+    },
+    {
+      unsaved: ["termsOfService"],
+      count: 1,
+      label: "1 settings page has unsaved defaults",
+    },
+    {
+      unsaved: ["maintenance", "termsOfService"],
+      count: 1,
+      label: "1 settings page has unsaved defaults",
+    },
+    {
+      unsaved: ["maintenance", "termsOfService", "cleanup"],
+      count: 2,
+      label: "2 settings pages have unsaved defaults",
+    },
+    {
+      unsaved: ["leases"],
+      count: 2,
+      label: "2 settings pages have unsaved defaults",
+    },
+    {
+      unsaved: ["costReporting"],
+      count: 1,
+      label: "1 settings page has unsaved defaults",
+    },
+    {
+      unsaved: ["leases", "costReporting"],
+      count: 2,
+      label: "2 settings pages have unsaved defaults",
+    },
+    {
+      unsaved: ["leases", "cleanup"],
+      count: 3,
+      label: "3 settings pages have unsaved defaults",
+    },
+    {
+      unsaved: [
+        "agent",
+        "leases",
+        "cleanup",
+        "maintenance",
+        "notification",
+        "termsOfService",
+        "costReporting",
+      ],
+      count: 6,
+      label: "6 settings pages have unsaved defaults",
+    },
+  ])(
+    "counts $count settings pages with unsaved defaults when $unsaved are unsaved",
+    async ({ unsaved, count, label }) => {
+      server.use(
+        adminConfigGetHandler(
+          createAdminConfig({ unsaved: unsaved as ConfigSection[] }),
+        ),
+      );
+      render(<SettingsBadge />, { wrapper: createQueryClientWrapper() });
+      expect(screen.queryByRole("img")).not.toBeInTheDocument();
+      expect(await screen.findByRole("img", { name: label })).toHaveTextContent(
+        String(count),
+      );
+    },
+  );
 
-  it("shows the count of never-saved sections", async () => {
-    server.use(
-      adminConfigGetHandler(
-        createAdminConfig({ unsaved: ["leases", "cleanup"] }),
-      ),
-    );
-
-    renderBadge();
-
-    expect(await screen.findByText("2")).toBeInTheDocument();
-  });
-
-  it("renders nothing when every section has been saved", async () => {
+  it("renders nothing after every section has been saved", async () => {
     server.use(adminConfigGetHandler(createAdminConfig()));
-
-    renderBadgeWithProbe();
-
-    // Wait for the query to actually resolve before asserting emptiness —
-    // otherwise the assertion would pass against the badge's loading render
-    // (also null) and never exercise the all-saved branch.
+    render(
+      <>
+        <SettingsBadge />
+        <ConfigSettledProbe />
+      </>,
+      { wrapper: createQueryClientWrapper() },
+    );
     await screen.findByTestId("config-settled");
-
-    // The badge renders no element once every section is saved. (A regression
-    // that dropped the all-saved guard would render "0" here.)
+    expect(screen.queryByRole("img")).not.toBeInTheDocument();
     expect(screen.queryByText("0")).not.toBeInTheDocument();
-    expect(screen.queryByText(/\d+/)).not.toBeInTheDocument();
   });
 });

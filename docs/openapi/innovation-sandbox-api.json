@@ -3,7 +3,7 @@
     "info": {
         "title": "Innovation Sandbox on AWS",
         "version": "2026-08-25",
-        "description": "Innovation Sandbox on AWS enables cloud administrators to automate the\nmanagement of temporary sandbox environments by implementing service\ncontrol policies, spend controls, and account recycling mechanisms.\n\nThe API is organized into these domains:\n\n- **Accounts**: Register and manage sandbox accounts, cleanup runs, and\n  account lifecycle actions.\n- **Blueprints**: Register and manage CloudFormation StackSet-backed\n  blueprints.\n- **Configurations**: Read and update solution settings for leases, cleanup,\n  notifications, maintenance, terms of service, and cost reporting.\n- **Leases**: Request and manage temporary sandbox access, lifecycle actions,\n  sharing, and principal assignments.\n- **Lease templates**: Define the reusable budget, duration, blueprint, and\n  visibility settings used to request leases.\n- **Principals**: Search IAM Identity Center users and groups for lease\n  assignments.",
+        "description": "Innovation Sandbox on AWS enables cloud administrators to automate the\nmanagement of temporary sandbox environments by implementing service\ncontrol policies, spend controls, and account recycling mechanisms.\n\nThe API is organized into these domains:\n\n- **Accounts**: Register and manage sandbox accounts, cleanup runs, and\n  account lifecycle actions.\n- **Blueprints**: Register and manage CloudFormation StackSet-backed\n  blueprints.\n- **Configurations**: Read and update solution settings for leases, cleanup,\n  notifications, maintenance, terms of service, and cost reporting.\n- **Leases**: Request and manage temporary sandbox access, lifecycle actions,\n  sharing, and principal assignments.\n- **Lease templates**: Define the reusable budget, duration, blueprint, and\n  visibility settings used to request leases.\n- **Permission sets**: Discover IAM Identity Center permission sets available\n  for lease permission profiles.\n- **Principals**: Search IAM Identity Center users and groups for lease\n  assignments.\n- **Sandbox Agent**: AI agent that lets users interact with their sandbox\n  account via natural language.",
         "license": {
             "name": "Apache 2.0",
             "url": "http://www.apache.org/licenses/LICENSE-2.0.html"
@@ -1611,6 +1611,352 @@
                 ]
             }
         },
+        "/configurations/agent": {
+            "get": {
+                "description": "Reads the `agent` configuration section: its current values (or code defaults\nif never saved) plus the `lastSavedBy` audit field. Governs the Sandbox Spaces\nchat feature and its per-principal token budget.",
+                "operationId": "GetAgentConfiguration",
+                "responses": {
+                    "200": {
+                        "description": "GetAgentConfiguration 200 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GetAgentConfigurationResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "ValidationError 400 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "UnauthenticatedError 401 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/UnauthenticatedErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "AccessDeniedError 403 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AccessDeniedErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "InternalServerError 500 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/InternalServerErrorResponseContent"
+                                }
+                            }
+                        }
+                    }
+                },
+                "tags": [
+                    "configurations"
+                ]
+            },
+            "put": {
+                "description": "Replaces the `agent` configuration section. Uses optimistic concurrency:\necho `meta.lastEditTime` from a prior read to detect a concurrent edit (409\n`ConflictError` on mismatch); omit it on the first save. Admin role only.",
+                "operationId": "UpdateAgentConfiguration",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/UpdateAgentConfigurationRequestContent"
+                            },
+                            "examples": {
+                                "UpdateAgentConfiguration_example1": {
+                                    "summary": "Save the agent configuration",
+                                    "description": "",
+                                    "value": {
+                                        "sandboxSpacesEnabled": true
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "UpdateAgentConfiguration 200 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/UpdateAgentConfigurationResponseContent"
+                                },
+                                "examples": {
+                                    "UpdateAgentConfiguration_example1": {
+                                        "summary": "Save the agent configuration",
+                                        "description": "",
+                                        "value": {
+                                            "status": "success",
+                                            "data": {
+                                                "sandboxSpacesEnabled": true,
+                                                "lastSavedBy": "admin@example.com"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "ValidationError 400 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "UnauthenticatedError 401 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/UnauthenticatedErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "AccessDeniedError 403 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AccessDeniedErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "ConflictError 409 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ConflictErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "415": {
+                        "description": "UnsupportedMediaTypeError 415 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/UnsupportedMediaTypeErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "InternalServerError 500 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/InternalServerErrorResponseContent"
+                                }
+                            }
+                        }
+                    }
+                },
+                "tags": [
+                    "configurations"
+                ]
+            }
+        },
+        "/configurations/agent/models": {
+            "get": {
+                "description": "Returns all agent-model catalog rows, enabled and disabled, for the Admin\nSettings table and for lease-template model selection.\nPricing rate fields are optional — present if provided during initial\ncatalog entry creation or populated later.\nReadable by every role; only Admin may change a row.",
+                "operationId": "ListAgentModelCatalog",
+                "parameters": [
+                    {
+                        "name": "nextToken",
+                        "in": "query",
+                        "description": "Pagination cursor from a previous response. Omit to start from the beginning.",
+                        "schema": {
+                            "type": "string",
+                            "description": "Pagination cursor from a previous response. Omit to start from the beginning."
+                        }
+                    },
+                    {
+                        "name": "maxResults",
+                        "in": "query",
+                        "description": "Maximum number of models to return per page. Omit for the default page size.\nClients must follow `nextToken` until absent to retrieve the full catalog.",
+                        "schema": {
+                            "type": "number",
+                            "maximum": 500,
+                            "minimum": 1,
+                            "description": "Maximum number of models to return per page. Omit for the default page size.\nClients must follow `nextToken` until absent to retrieve the full catalog."
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "ListAgentModelCatalog 200 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ListAgentModelCatalogResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "ValidationError 400 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "UnauthenticatedError 401 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/UnauthenticatedErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "AccessDeniedError 403 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AccessDeniedErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "InternalServerError 500 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/InternalServerErrorResponseContent"
+                                }
+                            }
+                        }
+                    }
+                },
+                "tags": [
+                    "configurations"
+                ]
+            }
+        },
+        "/configurations/agent/models/{modelId}": {
+            "put": {
+                "description": "Creates a Bedrock model catalog entry or updates its enabled state.\nWhen creating an entry, omit `expectedLastEditTime` and provide `modelType`.\nThe service looks the model up in Amazon Bedrock as that type and stores its\ncanonical metadata.\nWhen updating an existing entry, provide its current `meta.lastEditTime` and\nomit `modelType`; the operation updates only its enabled state.",
+                "operationId": "PutAgentModelCatalogEntry",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PutAgentModelCatalogEntryRequestContent"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "parameters": [
+                    {
+                        "name": "modelId",
+                        "in": "path",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "PutAgentModelCatalogEntry 200 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PutAgentModelCatalogEntryResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "ValidationError 400 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "UnauthenticatedError 401 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/UnauthenticatedErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "AccessDeniedError 403 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AccessDeniedErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "ConflictError 409 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ConflictErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "InternalServerError 500 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/InternalServerErrorResponseContent"
+                                }
+                            }
+                        }
+                    }
+                },
+                "tags": [
+                    "configurations"
+                ]
+            }
+        },
         "/configurations/cleanup": {
             "get": {
                 "description": "Reads the `cleanup` configuration section: its current values (or code\ndefaults if never saved) plus the `lastSavedBy` audit field. Fails fast with\n500 if the stored record fails schema validation (unlike `GetConfigurations`,\nwhich skips invalid sections). Accessible by Admin, Manager, and User roles.",
@@ -1997,6 +2343,9 @@
                                         "leaseSharingEnabled": false,
                                         "enablePrincipalSearch": true,
                                         "groupAssignmentMode": "NONE",
+                                        "allowPredictiveBudgetControls": false,
+                                        "serviceBreakdownEnabled": false,
+                                        "allowBedrockTokenMonitoring": false,
                                         "meta": {
                                             "lastEditTime": "2026-04-04T12:30:00.000Z"
                                         }
@@ -2018,6 +2367,9 @@
                                         "leaseSharingEnabled": false,
                                         "enablePrincipalSearch": true,
                                         "groupAssignmentMode": "ALL",
+                                        "allowPredictiveBudgetControls": false,
+                                        "serviceBreakdownEnabled": false,
+                                        "allowBedrockTokenMonitoring": false,
                                         "meta": {
                                             "lastEditTime": "2026-04-04T12:30:00.000Z"
                                         }
@@ -2055,6 +2407,9 @@
                                                 "leaseSharingEnabled": false,
                                                 "enablePrincipalSearch": true,
                                                 "groupAssignmentMode": "NONE",
+                                                "allowPredictiveBudgetControls": false,
+                                                "serviceBreakdownEnabled": false,
+                                                "allowBedrockTokenMonitoring": false,
                                                 "lastSavedBy": "admin@example.com",
                                                 "meta": {
                                                     "createdTime": "2026-04-04T12:30:00.000Z",
@@ -2716,7 +3071,10 @@
                                         ],
                                         "costReportGroup": "Engineering",
                                         "blueprintId": "12345678-90ab-4cde-8f12-34567890abcd",
-                                        "allowOwnerToShareLease": false
+                                        "allowOwnerToShareLease": false,
+                                        "predictiveBudgetEnabled": false,
+                                        "bedrockTokenMonitoringEnabled": false,
+                                        "sandboxSpacesEnabled": false
                                     }
                                 }
                             }
@@ -2763,6 +3121,9 @@
                                                 "blueprintId": "12345678-90ab-4cde-8f12-34567890abcd",
                                                 "blueprintName": "Web-Application-Blueprint",
                                                 "allowOwnerToShareLease": false,
+                                                "predictiveBudgetEnabled": false,
+                                                "bedrockTokenMonitoringEnabled": false,
+                                                "sandboxSpacesEnabled": false,
                                                 "meta": {
                                                     "createdTime": "2023-05-01T12:00:00Z",
                                                     "lastEditTime": "2023-05-01T12:00:00Z",
@@ -2995,7 +3356,7 @@
                 ]
             },
             "put": {
-                "description": "Replaces a lease template.\n\nThe body carries the full template, not a patch. `uuid`, `createdBy` and\n`blueprintName` are server-owned and are not part of the writable input;\nsupplying them is rejected as an unknown member. `createdBy` is preserved\nfrom the existing template on write.",
+                "description": "Replaces a lease template.\n\nThe body carries the full template, not a patch. `uuid`, `createdBy` and\n`blueprintName` are server-owned and are not part of the writable input;\nsupplying them is rejected as an unknown member. `createdBy` is preserved\nfrom the existing template on write.\n\nOmitting `predictiveBudgetEnabled` keeps the stored value. A sent\n`rateLimits` list replaces the stored list; a non-empty list requires\n`predictiveBudgetEnabled`, and an empty list is always accepted. Omitting\n`rateLimits` keeps the stored list while `predictiveBudgetEnabled` is true\nand clears it otherwise. A `PREDICTED` budget threshold likewise requires\n`predictiveBudgetEnabled`.\n\nThe write is conditioned on the template as read for validation; if it\nchanged in between, the update fails with ConflictError and is not applied.",
                 "operationId": "UpdateLeaseTemplate",
                 "requestBody": {
                     "content": {
@@ -3029,6 +3390,9 @@
                                         "costReportGroup": "Engineering",
                                         "blueprintId": "12345678-90ab-4cde-8f12-34567890abcd",
                                         "allowOwnerToShareLease": false,
+                                        "predictiveBudgetEnabled": false,
+                                        "bedrockTokenMonitoringEnabled": false,
+                                        "sandboxSpacesEnabled": false,
                                         "meta": {
                                             "createdTime": "2023-05-01T12:00:00Z",
                                             "lastEditTime": "2023-05-01T12:00:00Z",
@@ -3099,6 +3463,9 @@
                                                 "blueprintId": "12345678-90ab-4cde-8f12-34567890abcd",
                                                 "blueprintName": "Web-Application-Blueprint",
                                                 "allowOwnerToShareLease": false,
+                                                "predictiveBudgetEnabled": false,
+                                                "bedrockTokenMonitoringEnabled": false,
+                                                "sandboxSpacesEnabled": false,
                                                 "meta": {
                                                     "createdTime": "2023-05-01T12:00:00Z",
                                                     "lastEditTime": "2023-05-01T12:00:00Z",
@@ -3147,6 +3514,16 @@
                             "application/json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/NotFoundErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "ConflictError 409 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ConflictErrorResponseContent"
                                 }
                             }
                         }
@@ -3269,7 +3646,7 @@
                 ]
             },
             "post": {
-                "description": "Request a new lease from a template. Returns the created lease (201) WITHOUT a\n`leaseId`. A cross-user (on-behalf) request is Admin/Manager only. `assignments`\nis capped at 19. New group-to-lease associations are rejected when\n`leases.groupAssignmentMode` is `NONE`; user assignments remain allowed.\n\nRetry: NOT `@idempotent`. Requesting a lease allocates an account and publishes\nevents; a retried request creates a second lease.",
+                "description": "Request a new lease from a template. Returns the created lease (201) WITHOUT a\n`leaseId`. A cross-user (on-behalf) request is Admin/Manager only. `assignments`\naccepts up to 20 principals with one permission set each, but the final\ndesired state is capped at 20 total including the required owner. New\ngroup-to-lease associations are rejected when `leases.groupAssignmentMode`\nis `NONE`; user assignments remain allowed.\n\nRetry: NOT `@idempotent`. Requesting a lease allocates an account and publishes\nevents; a retried request creates a second lease.",
                 "operationId": "RequestLease",
                 "requestBody": {
                     "content": {
@@ -3576,7 +3953,7 @@
                 ]
             },
             "patch": {
-                "description": "Update a monitored (active) lease. PATCH semantics: every body member is\noptional. Returns the updated lease (200) WITHOUT a `leaseId`. The nullable\nmembers (`maxSpend`, `expirationDate`, `costReportGroup`) accept an explicit\n`null` to CLEAR the value. Non-monitored leases are rejected 400\n(`ValidationError`); a missing lease is 404.",
+                "description": "Update a monitored (active) lease. PATCH semantics: every body member is\noptional. Returns the updated lease (200) WITHOUT a `leaseId`. The nullable\nmembers (`maxSpend`, `expirationDate`, `costReportGroup`, and `rateLimits`)\naccept an explicit `null` to CLEAR the value. Non-monitored leases are\nrejected 400 (`ValidationError`); a missing lease is 404.",
                 "operationId": "UpdateLease",
                 "requestBody": {
                     "content": {
@@ -3700,6 +4077,16 @@
                             }
                         }
                     },
+                    "409": {
+                        "description": "ConflictError 409 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ConflictErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
                     "500": {
                         "description": "InternalServerError 500 response",
                         "content": {
@@ -3800,7 +4187,7 @@
                 ]
             },
             "put": {
-                "description": "Replace a lease's desired principal assignments (declarative). Accepted\nasynchronously: success is 202 with `{ desiredCount }` — the assignment worker\nreconciles out of band. `@idempotent`: PUT sets the desired set, so a retry\nconverges to the same state. `assignments` is capped at 19. Owner callers require\nlease sharing enabled globally and on the lease (else 403). When group assignment\nmode is `NONE`, existing group-to-lease associations may remain or be removed,\nbut new associations are rejected. 404 when missing; 409 when the lease is not\nactive or another operation holds the lock.",
+                "description": "Replace a lease's desired principal assignments (declarative). Each\nprincipal selects exactly one permission set. Accepted\nasynchronously: success is 202 with `{ desiredCount }` — the assignment worker\nreconciles out of band. `@idempotent`: PUT sets the desired set, so a retry\nconverges to the same state. `assignments` is capped at 20 principals, including\nthe lease owner. Owner callers require\nlease sharing enabled globally and on the lease (else 403). When group assignment\nmode is `NONE`, existing group-to-lease associations may remain or be removed,\nbut new associations are rejected. 404 when missing; 409 when the lease is not\nactive or another operation holds the lock.",
                 "operationId": "UpdateLeaseAssignments",
                 "requestBody": {
                     "content": {
@@ -3915,6 +4302,453 @@
                             "application/json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/ConflictErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "InternalServerError 500 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/InternalServerErrorResponseContent"
+                                }
+                            }
+                        }
+                    }
+                },
+                "tags": [
+                    "leases"
+                ]
+            }
+        },
+        "/leases/{leaseId}/bedrockTokenHistory": {
+            "get": {
+                "description": "Get a lease's Bedrock token series, newest-first: one entry per reading per\nregion and model, with `maxResults` counting readings.\nAuthorization is the same as `GetLease` — Admin/Manager may read any lease, any\nother caller only one they own or are assigned to, 403 even when the lease does\nnot exist so existence is not leaked. 404 for an authorized caller.\n\nA range's first change is measured from the reading before it: read it with\n`beforeTimestamp` set to the range start and `maxResults` 1, as a single request,\nnot through a paginator (with the AWS CLI, `--no-paginate`). An empty page with a\n`nextPageIdentifier` means that reading could not be read.\n\nA page can return fewer than `maxResults` readings, or none, and still include a\n`nextPageIdentifier`; it also ends early at a size limit. Keep requesting pages\nuntil `nextPageIdentifier` is absent.",
+                "operationId": "GetLeaseBedrockTokenHistory",
+                "parameters": [
+                    {
+                        "name": "leaseId",
+                        "in": "path",
+                        "description": "A lease's public identifier: the base64url-encoded `{userEmail, uuid}` composite\nkey (URL-safe alphabet, no padding). Present on read/unfreeze outputs and list\nitems; absent from the `Lease` returned by `RequestLease`/`UpdateLease`.",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9_-]+$",
+                            "description": "A lease's public identifier: the base64url-encoded `{userEmail, uuid}` composite\nkey (URL-safe alphabet, no padding). Present on read/unfreeze outputs and list\nitems; absent from the `Lease` returned by `RequestLease`/`UpdateLease`."
+                        },
+                        "required": true
+                    },
+                    {
+                        "name": "pageIdentifier",
+                        "in": "query",
+                        "description": "Opaque pagination token.",
+                        "schema": {
+                            "type": "string",
+                            "description": "Opaque pagination token.",
+                            "format": "password"
+                        }
+                    },
+                    {
+                        "name": "maxResults",
+                        "in": "query",
+                        "schema": {
+                            "type": "number",
+                            "maximum": 100,
+                            "minimum": 1
+                        }
+                    },
+                    {
+                        "name": "afterTimestamp",
+                        "in": "query",
+                        "description": "Inclusive lower bound on row timestamps, as an ISO 8601 instant.\nAny offset is accepted and normalized to UTC.",
+                        "schema": {
+                            "type": "string",
+                            "description": "Inclusive lower bound on row timestamps, as an ISO 8601 instant.\nAny offset is accepted and normalized to UTC."
+                        }
+                    },
+                    {
+                        "name": "beforeTimestamp",
+                        "in": "query",
+                        "description": "Exclusive upper bound, same spelling as `afterTimestamp`. Must be later\nthan it.",
+                        "schema": {
+                            "type": "string",
+                            "description": "Exclusive upper bound, same spelling as `afterTimestamp`. Must be later\nthan it."
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "GetLeaseBedrockTokenHistory 200 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GetLeaseBedrockTokenHistoryResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "ValidationError 400 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "UnauthenticatedError 401 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/UnauthenticatedErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "AccessDeniedError 403 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AccessDeniedErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "NotFoundError 404 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/NotFoundErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "InternalServerError 500 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/InternalServerErrorResponseContent"
+                                }
+                            }
+                        }
+                    }
+                },
+                "tags": [
+                    "leases"
+                ]
+            }
+        },
+        "/leases/{leaseId}/breachHistory": {
+            "get": {
+                "description": "Get a lease's breach history: the thresholds that fired, newest-first.\nAuthorization is the same as `GetLease` — Admin/Manager may read any lease, any\nother caller only one they own or are assigned to, 403 even when the lease does\nnot exist so existence is not leaked. 404 for an authorized caller.\n\nA page can return fewer than `maxResults` breaches, or none, and still include a\n`nextPageIdentifier`. Keep requesting pages until `nextPageIdentifier` is absent.",
+                "operationId": "GetLeaseBreachHistory",
+                "parameters": [
+                    {
+                        "name": "leaseId",
+                        "in": "path",
+                        "description": "A lease's public identifier: the base64url-encoded `{userEmail, uuid}` composite\nkey (URL-safe alphabet, no padding). Present on read/unfreeze outputs and list\nitems; absent from the `Lease` returned by `RequestLease`/`UpdateLease`.",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9_-]+$",
+                            "description": "A lease's public identifier: the base64url-encoded `{userEmail, uuid}` composite\nkey (URL-safe alphabet, no padding). Present on read/unfreeze outputs and list\nitems; absent from the `Lease` returned by `RequestLease`/`UpdateLease`."
+                        },
+                        "required": true
+                    },
+                    {
+                        "name": "pageIdentifier",
+                        "in": "query",
+                        "description": "Opaque pagination token.",
+                        "schema": {
+                            "type": "string",
+                            "description": "Opaque pagination token.",
+                            "format": "password"
+                        }
+                    },
+                    {
+                        "name": "maxResults",
+                        "in": "query",
+                        "schema": {
+                            "type": "number",
+                            "maximum": 100,
+                            "minimum": 1
+                        }
+                    },
+                    {
+                        "name": "afterTimestamp",
+                        "in": "query",
+                        "description": "Inclusive lower bound on row timestamps, as an ISO 8601 instant.\nAny offset is accepted and normalized to UTC.",
+                        "schema": {
+                            "type": "string",
+                            "description": "Inclusive lower bound on row timestamps, as an ISO 8601 instant.\nAny offset is accepted and normalized to UTC."
+                        }
+                    },
+                    {
+                        "name": "beforeTimestamp",
+                        "in": "query",
+                        "description": "Exclusive upper bound, same spelling as `afterTimestamp`. Must be later\nthan it.",
+                        "schema": {
+                            "type": "string",
+                            "description": "Exclusive upper bound, same spelling as `afterTimestamp`. Must be later\nthan it."
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "GetLeaseBreachHistory 200 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GetLeaseBreachHistoryResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "ValidationError 400 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "UnauthenticatedError 401 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/UnauthenticatedErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "AccessDeniedError 403 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AccessDeniedErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "NotFoundError 404 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/NotFoundErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "InternalServerError 500 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/InternalServerErrorResponseContent"
+                                }
+                            }
+                        }
+                    }
+                },
+                "tags": [
+                    "leases"
+                ]
+            }
+        },
+        "/leases/{leaseId}/costHistory": {
+            "get": {
+                "description": "Get a lease's reported cost series, newest-first.\nAuthorization is the same as `GetLease` — Admin/Manager may read any lease, any\nother caller only one they own or are assigned to, 403 even when the lease does\nnot exist so existence is not leaked. 404 for an authorized caller.\n\nA page can return fewer than `maxResults` readings, or none, and still include a\n`nextPageIdentifier`. Keep requesting pages until `nextPageIdentifier` is absent.",
+                "operationId": "GetLeaseCostHistory",
+                "parameters": [
+                    {
+                        "name": "leaseId",
+                        "in": "path",
+                        "description": "A lease's public identifier: the base64url-encoded `{userEmail, uuid}` composite\nkey (URL-safe alphabet, no padding). Present on read/unfreeze outputs and list\nitems; absent from the `Lease` returned by `RequestLease`/`UpdateLease`.",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9_-]+$",
+                            "description": "A lease's public identifier: the base64url-encoded `{userEmail, uuid}` composite\nkey (URL-safe alphabet, no padding). Present on read/unfreeze outputs and list\nitems; absent from the `Lease` returned by `RequestLease`/`UpdateLease`."
+                        },
+                        "required": true
+                    },
+                    {
+                        "name": "pageIdentifier",
+                        "in": "query",
+                        "description": "Opaque pagination token.",
+                        "schema": {
+                            "type": "string",
+                            "description": "Opaque pagination token.",
+                            "format": "password"
+                        }
+                    },
+                    {
+                        "name": "maxResults",
+                        "in": "query",
+                        "schema": {
+                            "type": "number",
+                            "maximum": 100,
+                            "minimum": 1
+                        }
+                    },
+                    {
+                        "name": "afterTimestamp",
+                        "in": "query",
+                        "description": "Inclusive lower bound on row timestamps, as an ISO 8601 instant.\nAny offset is accepted and normalized to UTC.",
+                        "schema": {
+                            "type": "string",
+                            "description": "Inclusive lower bound on row timestamps, as an ISO 8601 instant.\nAny offset is accepted and normalized to UTC."
+                        }
+                    },
+                    {
+                        "name": "beforeTimestamp",
+                        "in": "query",
+                        "description": "Exclusive upper bound, same spelling as `afterTimestamp`. Must be later\nthan it.",
+                        "schema": {
+                            "type": "string",
+                            "description": "Exclusive upper bound, same spelling as `afterTimestamp`. Must be later\nthan it."
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "GetLeaseCostHistory 200 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GetLeaseCostHistoryResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "ValidationError 400 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "UnauthenticatedError 401 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/UnauthenticatedErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "AccessDeniedError 403 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AccessDeniedErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "NotFoundError 404 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/NotFoundErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "InternalServerError 500 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/InternalServerErrorResponseContent"
+                                }
+                            }
+                        }
+                    }
+                },
+                "tags": [
+                    "leases"
+                ]
+            }
+        },
+        "/leases/{leaseId}/costSummary": {
+            "get": {
+                "description": "Get a lease's headline cost figures from its newest reading. `current` is absent\nwhen no reading is available.\nAuthorization is the same as `GetLease` — Admin/Manager may read any lease, any\nother caller only one they own or are assigned to, 403 even when the lease does\nnot exist so existence is not leaked. 404 for an authorized caller.",
+                "operationId": "GetLeaseCostSummary",
+                "parameters": [
+                    {
+                        "name": "leaseId",
+                        "in": "path",
+                        "description": "A lease's public identifier: the base64url-encoded `{userEmail, uuid}` composite\nkey (URL-safe alphabet, no padding). Present on read/unfreeze outputs and list\nitems; absent from the `Lease` returned by `RequestLease`/`UpdateLease`.",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9_-]+$",
+                            "description": "A lease's public identifier: the base64url-encoded `{userEmail, uuid}` composite\nkey (URL-safe alphabet, no padding). Present on read/unfreeze outputs and list\nitems; absent from the `Lease` returned by `RequestLease`/`UpdateLease`."
+                        },
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "GetLeaseCostSummary 200 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GetLeaseCostSummaryResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "ValidationError 400 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "UnauthenticatedError 401 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/UnauthenticatedErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "AccessDeniedError 403 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AccessDeniedErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "NotFoundError 404 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/NotFoundErrorResponseContent"
                                 }
                             }
                         }
@@ -4346,6 +5180,134 @@
                 ]
             }
         },
+        "/permissionSets": {
+            "get": {
+                "description": "Lists permission sets available for sandbox lease permission profiles.\n\nAccessible only to Admin and Manager roles.\n\nResults are ordered by normalized name and permission set identifier. The\noptional search query performs a case-insensitive substring match against\nname and description. Callers must treat pagination tokens as opaque.",
+                "operationId": "ListPermissionSets",
+                "parameters": [
+                    {
+                        "name": "pageIdentifier",
+                        "in": "query",
+                        "description": "Opaque continuation token returned by a previous response.",
+                        "schema": {
+                            "type": "string",
+                            "description": "Opaque continuation token returned by a previous response.",
+                            "format": "password"
+                        }
+                    },
+                    {
+                        "name": "maxResults",
+                        "in": "query",
+                        "description": "Maximum number of permission sets to return. Defaults to 50 when\nomitted and must be between 1 and 100 when supplied.",
+                        "schema": {
+                            "type": "number",
+                            "maximum": 100,
+                            "minimum": 1,
+                            "description": "Maximum number of permission sets to return. Defaults to 50 when\nomitted and must be between 1 and 100 when supplied."
+                        },
+                        "examples": {
+                            "ListPermissionSets_example1": {
+                                "summary": "List permission sets",
+                                "description": "",
+                                "value": 50
+                            }
+                        }
+                    },
+                    {
+                        "name": "q",
+                        "in": "query",
+                        "description": "Case-insensitive substring matched against name and description.\nAn omitted or empty value returns all available permission sets.",
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 200,
+                            "description": "Case-insensitive substring matched against name and description.\nAn omitted or empty value returns all available permission sets."
+                        },
+                        "examples": {
+                            "ListPermissionSets_example1": {
+                                "summary": "List permission sets",
+                                "description": "",
+                                "value": "hackathon"
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "ListPermissionSets 200 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ListPermissionSetsResponseContent"
+                                },
+                                "examples": {
+                                    "ListPermissionSets_example1": {
+                                        "summary": "List permission sets",
+                                        "description": "",
+                                        "value": {
+                                            "status": "success",
+                                            "data": {
+                                                "result": [
+                                                    {
+                                                        "permissionSetArn": "arn:aws:sso:::permissionSet/ins-1234567890abcdef/ps-7a8b9c0d1e2f0003",
+                                                        "permissionSetId": "ps-7a8b9c0d1e2f0003",
+                                                        "name": "HackathonDev",
+                                                        "description": "Denies GPU and high-core-count instances",
+                                                        "sessionDuration": "PT4H"
+                                                    }
+                                                ]
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "ValidationError 400 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "UnauthenticatedError 401 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/UnauthenticatedErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "AccessDeniedError 403 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AccessDeniedErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "InternalServerError 500 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/InternalServerErrorResponseContent"
+                                }
+                            }
+                        }
+                    }
+                },
+                "tags": [
+                    "permissionSets"
+                ]
+            }
+        },
         "/principals/search": {
             "get": {
                 "description": "Searches IDC principals for the assignment UI.\n\nTwo modes on one route, selected by `exact`:\n  - fuzzy (`exact=false`, the default): case-insensitive substring match over\n    the cached principals, capped at `limit`; requires\n    `leases.enablePrincipalSearch` (else 403 `AccessDeniedError`);\n  - exact (`exact=true`): resolves one principal by exact attribute through IDC;\n    requires a non-empty `q` and a specific `type`\n    (`users` or `groups`, not `all`) — otherwise 400 — and returns 404 when no\n    principal resolves. Exact lookups bypass `leases.enablePrincipalSearch`,\n    but group lookups still require `leases.groupAssignmentMode` to be `ALL`.\n\nWhen `leases.groupAssignmentMode` is `NONE`, explicit fuzzy or exact group\nsearches return 403, and unfiltered fuzzy searches return users only. Existing\ngroup associations remain visible through lease assignment reads.\n\nApplies these defaults when a parameter is absent: `q=\"\"`, `type=all`,\n`limit=20`, `exact=false`.\n\nThis operation is not paginated: it is a typeahead search, not a\nlist/describe. The caller shows the top `limit` matches (≤ 100) and never\npages; `totalMatches` exists only so the UI can show \"N of M\".",
@@ -4473,6 +5435,230 @@
                     "principals"
                 ]
             }
+        },
+        "/sandboxAgent/history": {
+            "get": {
+                "description": "Lists the caller's persisted turn-by-turn agent history for a lease,\npaginated by nextToken.",
+                "operationId": "ListAgentHistory",
+                "parameters": [
+                    {
+                        "name": "leaseId",
+                        "in": "query",
+                        "description": "A lease's public identifier: the base64url-encoded `{userEmail, uuid}` composite\nkey (URL-safe alphabet, no padding). Present on read/unfreeze outputs and list\nitems; absent from the `Lease` returned by `RequestLease`/`UpdateLease`.",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9_-]+$",
+                            "description": "A lease's public identifier: the base64url-encoded `{userEmail, uuid}` composite\nkey (URL-safe alphabet, no padding). Present on read/unfreeze outputs and list\nitems; absent from the `Lease` returned by `RequestLease`/`UpdateLease`."
+                        }
+                    },
+                    {
+                        "name": "nextToken",
+                        "in": "query",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "maxResults",
+                        "in": "query",
+                        "schema": {
+                            "type": "number",
+                            "maximum": 100,
+                            "minimum": 1
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "ListAgentHistory 200 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ListAgentHistoryResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "ValidationError 400 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "UnauthenticatedError 401 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/UnauthenticatedErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "AccessDeniedError 403 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AccessDeniedErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "InternalServerError 500 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/InternalServerErrorResponseContent"
+                                }
+                            }
+                        }
+                    }
+                },
+                "tags": [
+                    "sandboxAgent"
+                ]
+            }
+        },
+        "/sandboxAgent/models": {
+            "get": {
+                "description": "Returns eligible Bedrock models, listed from `ListFoundationModels` and\n`ListInferenceProfiles`, with their pricing data. Admin only.\nThe response includes all four token-type rates. A model whose rates are not\npublished by any pricing API is listed without any pricing members.",
+                "operationId": "ListAgentModels",
+                "responses": {
+                    "200": {
+                        "description": "ListAgentModels 200 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ListAgentModelsResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "ValidationError 400 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "UnauthenticatedError 401 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/UnauthenticatedErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "AccessDeniedError 403 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AccessDeniedErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "InternalServerError 500 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/InternalServerErrorResponseContent"
+                                }
+                            }
+                        }
+                    }
+                },
+                "tags": [
+                    "sandboxAgent"
+                ]
+            }
+        },
+        "/sandboxAgent/usage": {
+            "get": {
+                "description": "Retrieve estimated Sandbox Spaces token cost attributed to users on a\nlease. Users see only their own entry in `spendByUsers`; Admins and\nManagers see every user with recorded usage on the lease.",
+                "operationId": "GetSandboxSpacesUsage",
+                "parameters": [
+                    {
+                        "name": "leaseId",
+                        "in": "query",
+                        "description": "A lease's public identifier: the base64url-encoded `{userEmail, uuid}` composite\nkey (URL-safe alphabet, no padding). Present on read/unfreeze outputs and list\nitems; absent from the `Lease` returned by `RequestLease`/`UpdateLease`.",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9_-]+$",
+                            "description": "A lease's public identifier: the base64url-encoded `{userEmail, uuid}` composite\nkey (URL-safe alphabet, no padding). Present on read/unfreeze outputs and list\nitems; absent from the `Lease` returned by `RequestLease`/`UpdateLease`."
+                        },
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "GetSandboxSpacesUsage 200 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GetSandboxSpacesUsageResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "ValidationError 400 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "UnauthenticatedError 401 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/UnauthenticatedErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "AccessDeniedError 403 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AccessDeniedErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "InternalServerError 500 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/InternalServerErrorResponseContent"
+                                }
+                            }
+                        }
+                    }
+                },
+                "tags": [
+                    "sandboxAgent"
+                ]
+            }
         }
     },
     "components": {
@@ -4552,6 +5738,9 @@
                     "costReporting": {
                         "$ref": "#/components/schemas/CostReportingConfiguration"
                     },
+                    "agent": {
+                        "$ref": "#/components/schemas/AgentConfiguration"
+                    },
                     "isbManagedRegions": {
                         "type": "array",
                         "items": {
@@ -4566,10 +5755,19 @@
                     },
                     "awsAccessPortalUrl": {
                         "type": "string"
+                    },
+                    "bedrockInferenceProfilePatterns": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "description": "Bedrock inference profile patterns from the Account Pool deploy parameter; empty when unset."
                     }
                 },
                 "required": [
+                    "agent",
                     "awsAccessPortalUrl",
+                    "bedrockInferenceProfilePatterns",
                     "cleanup",
                     "costReporting",
                     "isbManagedRegions",
@@ -4577,6 +5775,274 @@
                     "maintenance",
                     "notification",
                     "termsOfService"
+                ]
+            },
+            "AgentConfiguration": {
+                "type": "object",
+                "description": "Server-owned audit envelope echoed on each section. A never-saved section has\nno `lastSavedBy`: the member is simply absent on the wire.\n`meta` is absent until the section has been saved at least once — but when\npresent it always carries both timestamps.",
+                "properties": {
+                    "sandboxSpacesEnabled": {
+                        "type": "boolean",
+                        "description": "Global Sandbox Spaces capability. `true` turns the feature on for\nevery role with an active lease (still subject to the enabled-model\ncatalog gate); `false` turns it off entirely."
+                    },
+                    "lastSavedBy": {
+                        "type": "string",
+                        "description": "Email of the last administrator to save the section, or a `system:` sentinel.",
+                        "format": "password"
+                    },
+                    "meta": {
+                        "$ref": "#/components/schemas/ConfigurationResponseMetadata"
+                    }
+                },
+                "required": [
+                    "sandboxSpacesEnabled"
+                ]
+            },
+            "AgentHistoryMessage": {
+                "type": "object",
+                "description": "One message in the conversation history.",
+                "properties": {
+                    "role": {
+                        "$ref": "#/components/schemas/ConversationRole"
+                    },
+                    "content": {
+                        "type": "string"
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "messageId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "Stable opaque identity that remains unchanged across pagination and refreshes."
+                    }
+                },
+                "required": [
+                    "content",
+                    "createdAt",
+                    "messageId",
+                    "role"
+                ]
+            },
+            "AgentHistoryResponse": {
+                "type": "object",
+                "description": "`leaseUuid` presence is handler-determined, not client-requested.",
+                "properties": {
+                    "leaseUuid": {
+                        "type": "string",
+                        "description": "The lease uuid."
+                    },
+                    "messages": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/AgentHistoryMessage"
+                        }
+                    },
+                    "nextToken": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "messages"
+                ]
+            },
+            "AgentModelCatalogData": {
+                "type": "object",
+                "description": "The `data` payload of `GET /configurations/agent/models`.",
+                "properties": {
+                    "models": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/AgentModelCatalogEntry"
+                        }
+                    },
+                    "nextToken": {
+                        "type": "string",
+                        "description": "Present only when additional pages exist."
+                    }
+                },
+                "required": [
+                    "models"
+                ]
+            },
+            "AgentModelCatalogEntry": {
+                "type": "object",
+                "description": "A single catalog row as returned by the configurations API.",
+                "properties": {
+                    "modelId": {
+                        "type": "string"
+                    },
+                    "displayName": {
+                        "type": "string"
+                    },
+                    "provider": {
+                        "type": "string"
+                    },
+                    "availability": {
+                        "type": "string",
+                        "description": "Geographic availability prefix: `\"global\"`, `\"us\"`, `\"eu\"`, etc.\nKept as String — derived from Bedrock's inferenceProfileId prefix; open-ended\nas AWS adds new profile regions over time."
+                    },
+                    "description": {
+                        "type": "string"
+                    },
+                    "modelType": {
+                        "$ref": "#/components/schemas/AgentModelType"
+                    },
+                    "foundationModelId": {
+                        "type": "string",
+                        "description": "ID of the foundation model this entry invokes; a foundation model's own ID."
+                    },
+                    "foundationModelName": {
+                        "type": "string",
+                        "description": "Name of the foundation model this entry invokes."
+                    },
+                    "pricingSource": {
+                        "$ref": "#/components/schemas/AgentModelPricingSource"
+                    },
+                    "pricingRefreshedAt": {
+                        "type": "string",
+                        "description": "ISO 8601 instant of the last pricing refresh."
+                    },
+                    "inputPricePer1KTokens": {
+                        "type": "number",
+                        "format": "double"
+                    },
+                    "outputPricePer1KTokens": {
+                        "type": "number",
+                        "format": "double"
+                    },
+                    "cacheReadPricePer1KTokens": {
+                        "type": "number",
+                        "format": "double"
+                    },
+                    "cacheWritePricePer1KTokens": {
+                        "type": "number",
+                        "format": "double"
+                    },
+                    "enabled": {
+                        "type": "boolean",
+                        "description": "Whether this model is available for selection in the chat UI."
+                    },
+                    "addedAt": {
+                        "type": "string",
+                        "description": "ISO 8601 instant when this model was first added to the catalog."
+                    },
+                    "lastSavedBy": {
+                        "type": "string",
+                        "description": "Email of the admin who last toggled this entry.",
+                        "format": "password"
+                    },
+                    "meta": {
+                        "$ref": "#/components/schemas/ConfigurationResponseMetadata"
+                    }
+                },
+                "required": [
+                    "addedAt",
+                    "availability",
+                    "displayName",
+                    "enabled",
+                    "lastSavedBy",
+                    "meta",
+                    "modelId",
+                    "provider"
+                ]
+            },
+            "AgentModelInfo": {
+                "type": "object",
+                "description": "One eligible Bedrock model with live pricing data.",
+                "properties": {
+                    "modelId": {
+                        "type": "string"
+                    },
+                    "displayName": {
+                        "type": "string"
+                    },
+                    "provider": {
+                        "type": "string"
+                    },
+                    "availability": {
+                        "type": "string",
+                        "description": "Geographic availability prefix: `\"global\"`, `\"us\"`, `\"eu\"`, etc."
+                    },
+                    "description": {
+                        "type": "string"
+                    },
+                    "modelType": {
+                        "$ref": "#/components/schemas/AgentModelType"
+                    },
+                    "foundationModelId": {
+                        "type": "string",
+                        "description": "ID of the foundation model this entry invokes; a foundation model's own ID."
+                    },
+                    "foundationModelName": {
+                        "type": "string",
+                        "description": "Name of the foundation model this entry invokes."
+                    },
+                    "pricingSource": {
+                        "$ref": "#/components/schemas/AgentModelPricingSource"
+                    },
+                    "pricingRefreshedAt": {
+                        "type": "string",
+                        "description": "ISO 8601 instant of this pricing fetch.",
+                        "format": "date-time"
+                    },
+                    "inputPricePer1KTokens": {
+                        "type": "number",
+                        "format": "double"
+                    },
+                    "outputPricePer1KTokens": {
+                        "type": "number",
+                        "format": "double"
+                    },
+                    "cacheReadPricePer1KTokens": {
+                        "type": "number",
+                        "format": "double"
+                    },
+                    "cacheWritePricePer1KTokens": {
+                        "type": "number",
+                        "format": "double"
+                    }
+                },
+                "required": [
+                    "availability",
+                    "displayName",
+                    "foundationModelId",
+                    "foundationModelName",
+                    "modelId",
+                    "modelType",
+                    "provider"
+                ]
+            },
+            "AgentModelPricingSource": {
+                "type": "string",
+                "description": "How a model's rates were sourced.",
+                "enum": [
+                    "agreement-offers",
+                    "price-list"
+                ]
+            },
+            "AgentModelType": {
+                "type": "string",
+                "description": "Whether a catalog entry originated from `ListFoundationModels` or\n`ListInferenceProfiles`. This is the authoritative discriminator\nfor displaying model type in the UI.",
+                "enum": [
+                    "foundation-model",
+                    "inference-profile"
+                ]
+            },
+            "AgentModelsData": {
+                "type": "object",
+                "description": "The `data` payload of `GET /sandboxAgent/models`.",
+                "properties": {
+                    "models": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/AgentModelInfo"
+                        }
+                    }
+                },
+                "required": [
+                    "models"
                 ]
             },
             "AssignmentSyncStatus": {
@@ -4630,15 +6096,40 @@
                     },
                     "syncStatus": {
                         "$ref": "#/components/schemas/AssignmentSyncStatus"
+                    },
+                    "permissionSet": {
+                        "$ref": "#/components/schemas/PermissionSetReference"
                     }
                 },
                 "required": [
                     "displayName",
                     "isDesired",
                     "isOwner",
+                    "permissionSet",
                     "principalId",
                     "principalType",
                     "syncStatus"
+                ]
+            },
+            "BedrockTokenHistoryData": {
+                "type": "object",
+                "description": "The Bedrock token-history payload, newest-first, so a client differencing it\nwalks backwards.",
+                "properties": {
+                    "result": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/TokenSeriesRow"
+                        },
+                        "description": "The paginated token series, one entry per reading per region and model."
+                    },
+                    "nextPageIdentifier": {
+                        "type": "string",
+                        "description": "Opaque pagination token.",
+                        "format": "password"
+                    }
+                },
+                "required": [
+                    "result"
                 ]
             },
             "Blueprint": {
@@ -4776,21 +6267,185 @@
                     "stackSets"
                 ]
             },
+            "BreachAction": {
+                "type": "string",
+                "description": "What a breach did. `TERMINATE` is recorded only on a `MAX_SPEND` or `EXPIRY` breach.",
+                "enum": [
+                    "ALERT",
+                    "FREEZE_ACCOUNT",
+                    "TERMINATE"
+                ]
+            },
+            "BreachEntry": {
+                "type": "object",
+                "description": "A threshold that fired, from the stored breach records.",
+                "properties": {
+                    "timestamp": {
+                        "type": "string"
+                    },
+                    "triggeredBy": {
+                        "$ref": "#/components/schemas/BreachTriggeredBy"
+                    },
+                    "action": {
+                        "$ref": "#/components/schemas/BreachAction"
+                    },
+                    "thresholdDollars": {
+                        "type": "number",
+                        "description": "The dollar threshold crossed. Absent on a `RATE`, `DURATION` or `EXPIRY` breach.",
+                        "format": "double"
+                    },
+                    "thresholdRate": {
+                        "type": "number",
+                        "description": "The cap exceeded and its basis, on a `RATE` breach.",
+                        "format": "double"
+                    },
+                    "thresholdRateBasis": {
+                        "$ref": "#/components/schemas/RateBasis"
+                    },
+                    "thresholdHoursRemaining": {
+                        "type": "number",
+                        "description": "The hours before the lease's end, on a `DURATION` breach.",
+                        "format": "double"
+                    },
+                    "billedCostAtFire": {
+                        "type": "number",
+                        "format": "double"
+                    },
+                    "predictedCostAtFire": {
+                        "type": "number",
+                        "format": "double"
+                    },
+                    "rateAtFire": {
+                        "type": "number",
+                        "description": "The rate in force when the threshold fired, and its basis. Absent on a `MAX_SPEND`,\n`DURATION` or `EXPIRY` breach, and where no rate was in force.",
+                        "format": "double"
+                    },
+                    "rateSourceAtFire": {
+                        "$ref": "#/components/schemas/RateBasis"
+                    },
+                    "evaluatedBy": {
+                        "$ref": "#/components/schemas/BreachEvaluatedBy"
+                    },
+                    "evaluatedSpendAtFire": {
+                        "type": "number",
+                        "description": "Spend at the time of the breach where the evaluator compared a figure\nother than the bill alone. Null on a `LEASE_MONITORING` breach. On a\n`TOKEN_POLL` breach, the spend with the monitored Bedrock token\ncost substituted for the billed Bedrock slice, never below the billed\ntotal.",
+                        "format": "double"
+                    },
+                    "monitoredBedrockTokenCostAtFire": {
+                        "type": "number",
+                        "description": "The monitored Bedrock term substituted into `evaluatedSpendAtFire`,\nbefore its floor at the billed total. Absent on a `LEASE_MONITORING`\nbreach, and on a `TOKEN_POLL` breach where none was substituted: no\npriced token row yet, or no billed Bedrock slice to replace.",
+                        "format": "double"
+                    },
+                    "insight": {
+                        "$ref": "#/components/schemas/BreachInsight"
+                    }
+                },
+                "required": [
+                    "action",
+                    "billedCostAtFire",
+                    "evaluatedBy",
+                    "timestamp",
+                    "triggeredBy"
+                ]
+            },
+            "BreachEvaluatedBy": {
+                "type": "string",
+                "description": "Which schedule evaluated a breach: `LEASE_MONITORING` or `TOKEN_POLL`.\nOnly the token poll records the monitored Bedrock token cost.",
+                "enum": [
+                    "LEASE_MONITORING",
+                    "TOKEN_POLL"
+                ]
+            },
+            "BreachHistoryData": {
+                "type": "object",
+                "description": "The breach-history payload, newest-first.",
+                "properties": {
+                    "result": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/BreachEntry"
+                        },
+                        "description": "The paginated thresholds that fired."
+                    },
+                    "nextPageIdentifier": {
+                        "type": "string",
+                        "description": "Opaque pagination token.",
+                        "format": "password"
+                    }
+                },
+                "required": [
+                    "result"
+                ]
+            },
+            "BreachInsight": {
+                "type": "object",
+                "description": "The insight sent in a breach's notification, stored verbatim.",
+                "properties": {
+                    "kind": {
+                        "$ref": "#/components/schemas/InsightKind"
+                    },
+                    "service": {
+                        "type": "string"
+                    },
+                    "amount": {
+                        "type": "number",
+                        "format": "double"
+                    },
+                    "shareOfComparedSpend": {
+                        "type": "number",
+                        "description": "`COMPOSITION` only: the service's share of the spend figure used for\nthe threshold comparison.",
+                        "format": "double"
+                    },
+                    "changePercent": {
+                        "type": "number",
+                        "description": "`CHANGE` only; signed, so a fall is negative.",
+                        "format": "double"
+                    }
+                },
+                "required": [
+                    "amount",
+                    "kind",
+                    "service"
+                ]
+            },
+            "BreachTriggeredBy": {
+                "type": "string",
+                "description": "What crossed a threshold: reported spend, projected spend, a spend rate, or time\nremaining. `MAX_SPEND` is the lease's maximum spend and `EXPIRY` its end, which\nboth terminate the lease.",
+                "enum": [
+                    "REPORTED",
+                    "PREDICTED",
+                    "RATE",
+                    "MAX_SPEND",
+                    "DURATION",
+                    "EXPIRY"
+                ]
+            },
             "BudgetThreshold": {
                 "type": "object",
                 "properties": {
                     "dollarsSpent": {
                         "type": "number",
+                        "description": "Must be less than maxSpend when maxSpend is set (on a lease, its value\nafter the update).",
                         "format": "double",
                         "example": 80
                     },
                     "action": {
                         "$ref": "#/components/schemas/ThresholdAction"
+                    },
+                    "triggerOn": {
+                        "$ref": "#/components/schemas/BudgetTriggerSource"
                     }
                 },
                 "required": [
                     "action",
                     "dollarsSpent"
+                ]
+            },
+            "BudgetTriggerSource": {
+                "type": "string",
+                "enum": [
+                    "REPORTED",
+                    "PREDICTED"
                 ]
             },
             "CleanupConfiguration": {
@@ -5049,6 +6704,123 @@
                     "status"
                 ]
             },
+            "ConversationRole": {
+                "type": "string",
+                "enum": [
+                    "user",
+                    "assistant"
+                ]
+            },
+            "CostHistoryCurrent": {
+                "type": "object",
+                "description": "Lease-level headline figures, computed from the newest data. Everything here\ndescribes the instant given by `lastCheckedAt`, so it can be up to an hour old.",
+                "properties": {
+                    "billedCostAccrued": {
+                        "type": "number",
+                        "format": "double"
+                    },
+                    "predictedCost": {
+                        "type": "number",
+                        "description": "Never absent: with no rate it falls back to the figure the projection is\nanchored on, the lease's `lastEvaluatedSpend` where Bedrock token monitoring\nis on and that is present, and the reported total otherwise.",
+                        "format": "double"
+                    },
+                    "hourlyRate": {
+                        "type": "number",
+                        "format": "double"
+                    },
+                    "dailyRate": {
+                        "type": "number",
+                        "format": "double"
+                    },
+                    "hourlyRateWindowHours": {
+                        "type": "number",
+                        "description": "The measurement window behind each rate, in hours — the only thing that\nstops a rate extrapolated from a short window being read as established.\nAbsent exactly when the matching rate is.",
+                        "format": "double"
+                    },
+                    "dailyRateWindowHours": {
+                        "type": "number",
+                        "format": "double"
+                    },
+                    "rateSource": {
+                        "$ref": "#/components/schemas/RateBasis"
+                    },
+                    "hoursToBudgetExhaustion": {
+                        "type": "number",
+                        "description": "Absent when the lease has no `maxSpend`, or the rate is zero or unavailable.",
+                        "format": "double"
+                    },
+                    "latestPeriodStart": {
+                        "type": "string"
+                    },
+                    "lastReportedAt": {
+                        "type": "string"
+                    },
+                    "lastCheckedAt": {
+                        "type": "string"
+                    },
+                    "services": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/CurrentServiceEntry"
+                        },
+                        "description": "Newest per-service figures. Empty means no share can be expressed (no\nbreakdown collected, a fallback-served lease, a breakdown covering only part\nof the reported total, or a non-positive `billedCostAccrued`), NOT that nothing was\nspent. Where non-empty, shares sum to 1.00 because the smallest is a residual."
+                    }
+                },
+                "required": [
+                    "billedCostAccrued",
+                    "lastCheckedAt",
+                    "lastReportedAt",
+                    "latestPeriodStart",
+                    "predictedCost",
+                    "services"
+                ]
+            },
+            "CostHistoryData": {
+                "type": "object",
+                "description": "The cost-history payload, newest-first, so a client differencing it walks\nbackwards.",
+                "properties": {
+                    "result": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/CostHistoryResultRow"
+                        },
+                        "description": "The paginated reported series."
+                    },
+                    "nextPageIdentifier": {
+                        "type": "string",
+                        "description": "Opaque pagination token.",
+                        "format": "password"
+                    }
+                },
+                "required": [
+                    "result"
+                ]
+            },
+            "CostHistoryResultRow": {
+                "type": "object",
+                "description": "One row of the paginated reported series.",
+                "properties": {
+                    "timestamp": {
+                        "type": "string"
+                    },
+                    "billedCostAccrued": {
+                        "type": "number",
+                        "format": "double"
+                    },
+                    "predictedCostAtRefresh": {
+                        "type": "number",
+                        "description": "The projection standing when this row re-based it. Absent where no rate\nexisted then.",
+                        "format": "double"
+                    },
+                    "serviceBreakdown": {
+                        "$ref": "#/components/schemas/ServiceBreakdown"
+                    }
+                },
+                "required": [
+                    "billedCostAccrued",
+                    "timestamp"
+                ]
+            },
             "CostReportingConfiguration": {
                 "type": "object",
                 "description": "Cost-report grouping policy.",
@@ -5081,9 +6853,18 @@
                     "requireCostReportGroup"
                 ]
             },
+            "CostSummaryData": {
+                "type": "object",
+                "description": "The cost-summary payload.",
+                "properties": {
+                    "current": {
+                        "$ref": "#/components/schemas/CostHistoryCurrent"
+                    }
+                }
+            },
             "CreateLeaseTemplateRequestContent": {
                 "type": "object",
-                "description": "The client-writable members of a lease template, shared by the create and\nupdate inputs. Both accept the same set — requiredness and constraints are\nidentical and neither operation is a patch.\n\n`uuid`, `createdBy` and `blueprintName` are deliberately absent — they are\nserver-owned.",
+                "description": "Client-writable lease-template fields, including optional permission-profile\nARN configuration.",
                 "properties": {
                     "maxSpend": {
                         "type": "number",
@@ -5130,6 +6911,57 @@
                     },
                     "allowOwnerToShareLease": {
                         "type": "boolean"
+                    },
+                    "predictiveBudgetEnabled": {
+                        "type": "boolean",
+                        "description": "Opt-in: spend rates, cost projection, predicted-cost thresholds and caps."
+                    },
+                    "bedrockTokenMonitoringEnabled": {
+                        "type": "boolean",
+                        "description": "Opt-in: monitored Bedrock token cost tracking. Must be true when\n`sandboxSpacesEnabled` is true."
+                    },
+                    "sandboxSpacesEnabled": {
+                        "type": "boolean",
+                        "description": "Whether leases created from this template have Sandbox Spaces turned on.\n`true` requires `bedrockTokenMonitoringEnabled`; otherwise the request\nis rejected with 400."
+                    },
+                    "allowedModelIds": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "maxItems": 100,
+                        "description": "Sandbox Spaces: subset of the globally enabled model IDs this template\npermits. Unset inherits the global enabled set."
+                    },
+                    "defaultModelId": {
+                        "type": "string",
+                        "description": "Sandbox Spaces: model preselected for new chats on leases from this\ntemplate. Must be enabled and, when a subset is set, one of allowedModelIds."
+                    },
+                    "defaultPermissionSetArn": {
+                        "type": "string",
+                        "maxLength": 1224,
+                        "minLength": 10,
+                        "pattern": "^arn:aws(?:-[a-z]{1,5}){0,3}:sso:::permissionSet/(?:sso)?ins-[a-zA-Z0-9.-]{16}/ps-[a-zA-Z0-9./-]{16}$",
+                        "description": "Permission set assigned when an assignment does not specify an override."
+                    },
+                    "allowedPermissionSetArns": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "maxLength": 1224,
+                            "minLength": 10,
+                            "pattern": "^arn:aws(?:-[a-z]{1,5}){0,3}:sso:::permissionSet/(?:sso)?ins-[a-zA-Z0-9.-]{16}/ps-[a-zA-Z0-9./-]{16}$",
+                            "description": "IAM Identity Center permission set ARN."
+                        },
+                        "maxItems": 20,
+                        "description": "Permission sets available for assignment overrides. The default is\nimplicitly allowed and this list is capped at 20 entries."
+                    },
+                    "rateLimits": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/RateLimitEntry"
+                        },
+                        "maxItems": 10,
+                        "description": "Spend-rate limits, each with its own action. A non-empty list\nrequires `predictiveBudgetEnabled`."
                     }
                 },
                 "required": [
@@ -5168,6 +7000,34 @@
                 "required": [
                     "leaseId",
                     "ownerEmail"
+                ]
+            },
+            "CurrentServiceEntry": {
+                "type": "object",
+                "description": "One newest-observation per-service figure with its change since the prior\nobservation.",
+                "properties": {
+                    "service": {
+                        "type": "string"
+                    },
+                    "amount": {
+                        "type": "number",
+                        "format": "double"
+                    },
+                    "shareOfBilledCost": {
+                        "type": "number",
+                        "description": "The service's share of `billedCostAccrued`.",
+                        "format": "double"
+                    },
+                    "changePercent": {
+                        "type": "number",
+                        "description": "Absent until a second observation exists to difference against.",
+                        "format": "double"
+                    }
+                },
+                "required": [
+                    "amount",
+                    "service",
+                    "shareOfBilledCost"
                 ]
             },
             "DeleteBlueprintData": {
@@ -5280,6 +7140,13 @@
                     },
                     "principalType": {
                         "$ref": "#/components/schemas/PrincipalType"
+                    },
+                    "permissionSetArn": {
+                        "type": "string",
+                        "maxLength": 1224,
+                        "minLength": 10,
+                        "pattern": "^arn:aws(?:-[a-z]{1,5}){0,3}:sso:::permissionSet/(?:sso)?ins-[a-zA-Z0-9.-]{16}/ps-[a-zA-Z0-9./-]{16}$",
+                        "description": "Permission set selected for this principal. Absent callers use the lease default."
                     }
                 },
                 "required": [
@@ -5304,6 +7171,13 @@
                         "type": "string",
                         "description": "An email address.",
                         "format": "password"
+                    },
+                    "permissionSetArn": {
+                        "type": "string",
+                        "maxLength": 1224,
+                        "minLength": 10,
+                        "pattern": "^arn:aws(?:-[a-z]{1,5}){0,3}:sso:::permissionSet/(?:sso)?ins-[a-zA-Z0-9.-]{16}/ps-[a-zA-Z0-9./-]{16}$",
+                        "description": "IAM Identity Center permission set ARN."
                     }
                 },
                 "required": [
@@ -5370,6 +7244,21 @@
                     },
                     "data": {
                         "$ref": "#/components/schemas/SandboxAccount"
+                    }
+                },
+                "required": [
+                    "data",
+                    "status"
+                ]
+            },
+            "GetAgentConfigurationResponseContent": {
+                "type": "object",
+                "properties": {
+                    "status": {
+                        "$ref": "#/components/schemas/JSendStatus"
+                    },
+                    "data": {
+                        "$ref": "#/components/schemas/AgentConfiguration"
                     }
                 },
                 "required": [
@@ -5452,6 +7341,66 @@
                     "status"
                 ]
             },
+            "GetLeaseBedrockTokenHistoryResponseContent": {
+                "type": "object",
+                "properties": {
+                    "status": {
+                        "$ref": "#/components/schemas/JSendStatus"
+                    },
+                    "data": {
+                        "$ref": "#/components/schemas/BedrockTokenHistoryData"
+                    }
+                },
+                "required": [
+                    "data",
+                    "status"
+                ]
+            },
+            "GetLeaseBreachHistoryResponseContent": {
+                "type": "object",
+                "properties": {
+                    "status": {
+                        "$ref": "#/components/schemas/JSendStatus"
+                    },
+                    "data": {
+                        "$ref": "#/components/schemas/BreachHistoryData"
+                    }
+                },
+                "required": [
+                    "data",
+                    "status"
+                ]
+            },
+            "GetLeaseCostHistoryResponseContent": {
+                "type": "object",
+                "properties": {
+                    "status": {
+                        "$ref": "#/components/schemas/JSendStatus"
+                    },
+                    "data": {
+                        "$ref": "#/components/schemas/CostHistoryData"
+                    }
+                },
+                "required": [
+                    "data",
+                    "status"
+                ]
+            },
+            "GetLeaseCostSummaryResponseContent": {
+                "type": "object",
+                "properties": {
+                    "status": {
+                        "$ref": "#/components/schemas/JSendStatus"
+                    },
+                    "data": {
+                        "$ref": "#/components/schemas/CostSummaryData"
+                    }
+                },
+                "required": [
+                    "data",
+                    "status"
+                ]
+            },
             "GetLeaseResponseContent": {
                 "type": "object",
                 "properties": {
@@ -5527,6 +7476,21 @@
                     "status"
                 ]
             },
+            "GetSandboxSpacesUsageResponseContent": {
+                "type": "object",
+                "properties": {
+                    "status": {
+                        "$ref": "#/components/schemas/JSendStatus"
+                    },
+                    "data": {
+                        "$ref": "#/components/schemas/SandboxSpacesUsageData"
+                    }
+                },
+                "required": [
+                    "data",
+                    "status"
+                ]
+            },
             "GetTermsOfServiceConfigurationResponseContent": {
                 "type": "object",
                 "properties": {
@@ -5547,6 +7511,15 @@
                 "enum": [
                     "ALL",
                     "NONE"
+                ]
+            },
+            "InsightKind": {
+                "type": "string",
+                "description": "The kind of insight computed for a breach's notification.",
+                "enum": [
+                    "COMPOSITION",
+                    "CHANGE",
+                    "NEW_ENTRANT"
                 ]
             },
             "InternalServerErrorResponseContent": {
@@ -5638,6 +7611,50 @@
                         "type": "boolean",
                         "example": false
                     },
+                    "predictiveBudgetEnabled": {
+                        "type": "boolean",
+                        "description": "Predictive budget controls opt-in. Copied from the template at creation\nand replaceable through `UpdateLease`."
+                    },
+                    "bedrockTokenMonitoringEnabled": {
+                        "type": "boolean",
+                        "description": "Bedrock token monitoring opt-in. Saved at creation as the template's\npreference, or true when the template enables Sandbox Spaces, and\nreplaceable through `UpdateLease`."
+                    },
+                    "sandboxSpacesEnabled": {
+                        "type": "boolean",
+                        "description": "Snapshot of the source template's Sandbox Spaces on/off setting."
+                    },
+                    "allowedModelIds": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "maxItems": 100,
+                        "description": "Snapshot of the template's Sandbox Spaces model subset — the lease's own\ncopy, so a later template edit never changes enforcement under a running\nlease."
+                    },
+                    "defaultModelId": {
+                        "type": "string",
+                        "description": "Snapshot of the template's Sandbox Spaces default model, preselected first\nwhen a chat opens under this lease."
+                    },
+                    "lastPredictedSpend": {
+                        "type": "number",
+                        "description": "Predicted spend now, in USD, as of the last threshold check. The next\ncheck compares against it. Lease Monitoring and Token Poll exclude\nSandbox Spaces estimated token cost.",
+                        "format": "double"
+                    },
+                    "lastEvaluatedSpend": {
+                        "type": "number",
+                        "description": "Spend so far, in USD, as of the last threshold check, with the\nmonitored Bedrock token cost in place of the billed Bedrock part\nwhere token monitoring is on, never below the billed total. The next\ncheck compares against it. Lease Monitoring and Token Poll exclude\nSandbox Spaces estimated token cost.",
+                        "format": "double"
+                    },
+                    "lastEvaluatedHourlySpendRate": {
+                        "type": "number",
+                        "description": "Most recently evaluated hourly spend rate.",
+                        "format": "double"
+                    },
+                    "lastEvaluatedDailySpendRate": {
+                        "type": "number",
+                        "description": "Most recently evaluated daily spend rate.",
+                        "format": "double"
+                    },
                     "desiredAssignments": {
                         "type": "array",
                         "items": {
@@ -5714,6 +7731,24 @@
                     "ttl": {
                         "type": "number",
                         "description": "TTL as a Unix-epoch-seconds timestamp. Present on terminal/denied leases."
+                    },
+                    "defaultPermissionSet": {
+                        "$ref": "#/components/schemas/PermissionSetReference"
+                    },
+                    "allowedPermissionSets": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/PermissionSetReference"
+                        },
+                        "description": "Backend-hydrated metadata for the effective allowed set, including the\ndefault. Missing cache entries remain represented as UNAVAILABLE."
+                    },
+                    "rateLimits": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/RateLimitEntry"
+                        },
+                        "maxItems": 10,
+                        "description": "Spend-rate limits stored on this lease, each with its own action. Copied\nfrom the template at creation and replaceable through `UpdateLease`.\nEvaluated only while `predictiveBudgetEnabled` is true."
                     }
                 },
                 "required": [
@@ -5897,14 +7932,56 @@
                         "type": "boolean",
                         "example": false
                     },
+                    "predictiveBudgetEnabled": {
+                        "type": "boolean"
+                    },
+                    "bedrockTokenMonitoringEnabled": {
+                        "type": "boolean"
+                    },
+                    "sandboxSpacesEnabled": {
+                        "type": "boolean",
+                        "description": "Snapshot used to determine Sandbox Spaces availability."
+                    },
+                    "allowedModelIds": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "maxItems": 100,
+                        "description": "Sandbox Spaces: subset of globally enabled model IDs this template permits."
+                    },
+                    "defaultModelId": {
+                        "type": "string",
+                        "description": "Sandbox Spaces default model preselected for new chats."
+                    },
                     "meta": {
                         "$ref": "#/components/schemas/Metadata"
+                    },
+                    "defaultPermissionSet": {
+                        "$ref": "#/components/schemas/PermissionSetReference"
+                    },
+                    "allowedPermissionSets": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/PermissionSetReference"
+                        },
+                        "description": "Backend-hydrated metadata for the effective allowed set, including the\ndefault. Missing cache entries remain represented as UNAVAILABLE."
+                    },
+                    "rateLimits": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/RateLimitEntry"
+                        },
+                        "maxItems": 10,
+                        "description": "Spend-rate limits, each with its own action."
                     }
                 },
                 "required": [
                     "allowOwnerToShareLease",
+                    "bedrockTokenMonitoringEnabled",
                     "createdBy",
                     "name",
+                    "predictiveBudgetEnabled",
                     "requiresApproval",
                     "uuid",
                     "visibility"
@@ -5932,7 +8009,7 @@
             },
             "LeaseWithId": {
                 "type": "object",
-                "description": "A `Lease` that carries the `leaseId` (base64url composite key). Returned by\n`GetLease` and `UnfreezeLease` and as the `ListLeases` result items.",
+                "description": "A `Lease` that carries the `leaseId` (base64url composite key). Returned by\n`GetLease`, `UnfreezeLease`, and as the `ListLeases` result items.",
                 "properties": {
                     "userEmail": {
                         "type": "string",
@@ -5974,6 +8051,50 @@
                     },
                     "allowOwnerToShareLease": {
                         "type": "boolean"
+                    },
+                    "predictiveBudgetEnabled": {
+                        "type": "boolean",
+                        "description": "Predictive budget controls opt-in. Copied from the template at creation\nand replaceable through `UpdateLease`."
+                    },
+                    "bedrockTokenMonitoringEnabled": {
+                        "type": "boolean",
+                        "description": "Bedrock token monitoring opt-in. Saved at creation as the template's\npreference, or true when the template enables Sandbox Spaces, and\nreplaceable through `UpdateLease`."
+                    },
+                    "sandboxSpacesEnabled": {
+                        "type": "boolean",
+                        "description": "Snapshot of the source template's Sandbox Spaces on/off setting."
+                    },
+                    "allowedModelIds": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "maxItems": 100,
+                        "description": "Snapshot of the template's Sandbox Spaces model subset — the lease's own\ncopy, so a later template edit never changes enforcement under a running\nlease."
+                    },
+                    "defaultModelId": {
+                        "type": "string",
+                        "description": "Snapshot of the template's Sandbox Spaces default model, preselected first\nwhen a chat opens under this lease."
+                    },
+                    "lastPredictedSpend": {
+                        "type": "number",
+                        "description": "Predicted spend now, in USD, as of the last threshold check. The next\ncheck compares against it. Lease Monitoring and Token Poll exclude\nSandbox Spaces estimated token cost.",
+                        "format": "double"
+                    },
+                    "lastEvaluatedSpend": {
+                        "type": "number",
+                        "description": "Spend so far, in USD, as of the last threshold check, with the\nmonitored Bedrock token cost in place of the billed Bedrock part\nwhere token monitoring is on, never below the billed total. The next\ncheck compares against it. Lease Monitoring and Token Poll exclude\nSandbox Spaces estimated token cost.",
+                        "format": "double"
+                    },
+                    "lastEvaluatedHourlySpendRate": {
+                        "type": "number",
+                        "description": "Most recently evaluated hourly spend rate.",
+                        "format": "double"
+                    },
+                    "lastEvaluatedDailySpendRate": {
+                        "type": "number",
+                        "description": "Most recently evaluated daily spend rate.",
+                        "format": "double"
                     },
                     "desiredAssignments": {
                         "type": "array",
@@ -6048,6 +8169,31 @@
                         "pattern": "^[A-Za-z0-9_-]+$",
                         "description": "A lease's public identifier: the base64url-encoded `{userEmail, uuid}` composite\nkey (URL-safe alphabet, no padding). Present on read/unfreeze outputs and list\nitems; absent from the `Lease` returned by `RequestLease`/`UpdateLease`.",
                         "example": "BASE64STRING"
+                    },
+                    "defaultPermissionSet": {
+                        "$ref": "#/components/schemas/PermissionSetReference"
+                    },
+                    "allowedPermissionSets": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/PermissionSetReference"
+                        },
+                        "description": "Backend-hydrated metadata for the effective allowed set, including the\ndefault. Missing cache entries remain represented as UNAVAILABLE."
+                    },
+                    "selectableModels": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/SelectableModel"
+                        },
+                        "description": "Enabled catalog narrowed to this lease's allowed models. Set by\n`GetLease` and `UnfreezeLease` when Sandbox Spaces is enabled globally\nand on the lease, resolved on each read so disabling a model takes\neffect on the next fetch. Unset otherwise and on list responses."
+                    },
+                    "rateLimits": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/RateLimitEntry"
+                        },
+                        "maxItems": 10,
+                        "description": "Spend-rate limits stored on this lease, each with its own action. Copied\nfrom the template at creation and replaceable through `UpdateLease`.\nEvaluated only while `predictiveBudgetEnabled` is true."
                     }
                 },
                 "required": [
@@ -6085,6 +8231,7 @@
                     },
                     "ttl": {
                         "type": "number",
+                        "maximum": 3650,
                         "minimum": 1,
                         "description": "Number of days the solution stores expired lease records before purging\nthem."
                     },
@@ -6113,6 +8260,18 @@
                     "groupAssignmentMode": {
                         "$ref": "#/components/schemas/GroupAssignmentMode"
                     },
+                    "allowPredictiveBudgetControls": {
+                        "type": "boolean",
+                        "description": "Predictive Budget Controls feature gate: allows templates and leases to\nopt into spend-rate limits, cost projection and predicted-cost thresholds."
+                    },
+                    "serviceBreakdownEnabled": {
+                        "type": "boolean",
+                        "description": "Whether per-service cost breakdown is collected."
+                    },
+                    "allowBedrockTokenMonitoring": {
+                        "type": "boolean",
+                        "description": "Feature gate for monitored Bedrock token cost tracking."
+                    },
                     "lastSavedBy": {
                         "type": "string",
                         "description": "Email of the last administrator to save the section, or a `system:` sentinel.",
@@ -6123,6 +8282,8 @@
                     }
                 },
                 "required": [
+                    "allowBedrockTokenMonitoring",
+                    "allowPredictiveBudgetControls",
                     "allowUserLeaseTermination",
                     "enablePrincipalSearch",
                     "groupAssignmentMode",
@@ -6134,6 +8295,7 @@
                     "maxLeasesPerUser",
                     "requireMaxBudget",
                     "requireMaxDuration",
+                    "serviceBreakdownEnabled",
                     "ttl"
                 ]
             },
@@ -6173,6 +8335,51 @@
                 },
                 "required": [
                     "result"
+                ]
+            },
+            "ListAgentHistoryResponseContent": {
+                "type": "object",
+                "properties": {
+                    "status": {
+                        "$ref": "#/components/schemas/JSendStatus"
+                    },
+                    "data": {
+                        "$ref": "#/components/schemas/AgentHistoryResponse"
+                    }
+                },
+                "required": [
+                    "data",
+                    "status"
+                ]
+            },
+            "ListAgentModelCatalogResponseContent": {
+                "type": "object",
+                "properties": {
+                    "status": {
+                        "$ref": "#/components/schemas/JSendStatus"
+                    },
+                    "data": {
+                        "$ref": "#/components/schemas/AgentModelCatalogData"
+                    }
+                },
+                "required": [
+                    "data",
+                    "status"
+                ]
+            },
+            "ListAgentModelsResponseContent": {
+                "type": "object",
+                "properties": {
+                    "status": {
+                        "$ref": "#/components/schemas/JSendStatus"
+                    },
+                    "data": {
+                        "$ref": "#/components/schemas/AgentModelsData"
+                    }
+                },
+                "required": [
+                    "data",
+                    "status"
                 ]
             },
             "ListBlueprintsResponseContent": {
@@ -6294,6 +8501,21 @@
                 },
                 "required": [
                     "result"
+                ]
+            },
+            "ListPermissionSetsResponseContent": {
+                "type": "object",
+                "properties": {
+                    "status": {
+                        "$ref": "#/components/schemas/JSendStatus"
+                    },
+                    "data": {
+                        "$ref": "#/components/schemas/PermissionSetPage"
+                    }
+                },
+                "required": [
+                    "data",
+                    "status"
                 ]
             },
             "ListSharedLeasesResponseContent": {
@@ -6471,14 +8693,22 @@
             },
             "NotificationConfiguration": {
                 "type": "object",
-                "description": "Notification sender configuration.",
+                "description": "Notification delivery: which channels are active and the SES sender.",
                 "properties": {
                     "emailFrom": {
                         "type": "string",
                         "maxLength": 254,
-                        "description": "From address used for notification emails; an empty string disables\nnotifications.",
+                        "description": "From address used for SES notification emails; an empty string leaves\nSES unable to deliver even when `sesEnabled` is true.",
                         "format": "password",
                         "example": "isb-noreply@example.com"
+                    },
+                    "sesEnabled": {
+                        "type": "boolean",
+                        "description": "Whether SES email delivery is enabled. Defaults to true when not configured."
+                    },
+                    "snsIntegrationTopicEnabled": {
+                        "type": "boolean",
+                        "description": "Whether publishing to the shared SNS integration topic is enabled.\nDefaults to false when not configured."
                     },
                     "lastSavedBy": {
                         "type": "string",
@@ -6490,7 +8720,120 @@
                     }
                 },
                 "required": [
-                    "emailFrom"
+                    "emailFrom",
+                    "sesEnabled",
+                    "snsIntegrationTopicEnabled"
+                ]
+            },
+            "PermissionSetAvailability": {
+                "type": "string",
+                "enum": [
+                    "AVAILABLE",
+                    "UNAVAILABLE"
+                ]
+            },
+            "PermissionSetPage": {
+                "type": "object",
+                "description": "Paginated permission-set catalog payload.",
+                "properties": {
+                    "result": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/PermissionSetSummary"
+                        }
+                    },
+                    "nextPageIdentifier": {
+                        "type": "string",
+                        "description": "Opaque continuation token. Omitted on the final page.",
+                        "format": "password"
+                    }
+                },
+                "required": [
+                    "result"
+                ]
+            },
+            "PermissionSetReference": {
+                "type": "object",
+                "properties": {
+                    "permissionSetArn": {
+                        "type": "string",
+                        "maxLength": 1224,
+                        "minLength": 10,
+                        "pattern": "^arn:aws(?:-[a-z]{1,5}){0,3}:sso:::permissionSet/(?:sso)?ins-[a-zA-Z0-9.-]{16}/ps-[a-zA-Z0-9./-]{16}$",
+                        "description": "IAM Identity Center permission set ARN."
+                    },
+                    "permissionSetId": {
+                        "type": "string",
+                        "pattern": "^ps-[a-zA-Z0-9./-]{16}$",
+                        "description": "Stable permission set identifier parsed from the ARN."
+                    },
+                    "name": {
+                        "type": "string",
+                        "maxLength": 32,
+                        "minLength": 1,
+                        "pattern": "^[a-zA-Z0-9_+=,.@-]+$"
+                    },
+                    "description": {
+                        "type": "string",
+                        "maxLength": 700,
+                        "minLength": 1,
+                        "pattern": "^[\\u0009\\u000a\\u000d\\u0020-\\u007e\\u00a1-\\u00ff]*$"
+                    },
+                    "sessionDuration": {
+                        "type": "string",
+                        "maxLength": 100,
+                        "minLength": 1,
+                        "pattern": "^-?P(?=\\d|T\\d)(?:(\\d+)Y)?(?:(\\d+)M)?(?:(\\d+)([DW]))?(?:T(?:(\\d+)H)?(?:(\\d+)M)?(?:(\\d+(?:\\.\\d+)?)S)?)?$"
+                    },
+                    "availability": {
+                        "$ref": "#/components/schemas/PermissionSetAvailability"
+                    }
+                },
+                "required": [
+                    "availability",
+                    "permissionSetArn",
+                    "permissionSetId"
+                ]
+            },
+            "PermissionSetSummary": {
+                "type": "object",
+                "description": "Public catalog summary for one available permission set.",
+                "properties": {
+                    "permissionSetArn": {
+                        "type": "string",
+                        "maxLength": 1224,
+                        "minLength": 10,
+                        "pattern": "^arn:aws(?:-[a-z]{1,5}){0,3}:sso:::permissionSet/(?:sso)?ins-[a-zA-Z0-9.-]{16}/ps-[a-zA-Z0-9./-]{16}$",
+                        "description": "IAM Identity Center permission set ARN."
+                    },
+                    "permissionSetId": {
+                        "type": "string",
+                        "pattern": "^ps-[a-zA-Z0-9./-]{16}$",
+                        "description": "Stable permission set identifier parsed from the ARN."
+                    },
+                    "name": {
+                        "type": "string",
+                        "maxLength": 32,
+                        "minLength": 1,
+                        "pattern": "^[a-zA-Z0-9_+=,.@-]+$"
+                    },
+                    "description": {
+                        "type": "string",
+                        "maxLength": 700,
+                        "minLength": 1,
+                        "pattern": "^[\\u0009\\u000a\\u000d\\u0020-\\u007e\\u00a1-\\u00ff]*$"
+                    },
+                    "sessionDuration": {
+                        "type": "string",
+                        "maxLength": 100,
+                        "minLength": 1,
+                        "pattern": "^-?P(?=\\d|T\\d)(?:(\\d+)Y)?(?:(\\d+)M)?(?:(\\d+)([DW]))?(?:T(?:(\\d+)H)?(?:(\\d+)M)?(?:(\\d+(?:\\.\\d+)?)S)?)?$"
+                    }
+                },
+                "required": [
+                    "name",
+                    "permissionSetArn",
+                    "permissionSetId"
                 ]
             },
             "Principal": {
@@ -6560,6 +8903,40 @@
                     "GROUP"
                 ]
             },
+            "PutAgentModelCatalogEntryRequestContent": {
+                "type": "object",
+                "properties": {
+                    "enabled": {
+                        "type": "boolean",
+                        "description": "Whether this model is available in the chat UI."
+                    },
+                    "expectedLastEditTime": {
+                        "type": "string",
+                        "description": "OCC token from the prior read's `meta.lastEditTime`.\nOmit on the first call; required on subsequent calls."
+                    },
+                    "modelType": {
+                        "$ref": "#/components/schemas/AgentModelType"
+                    }
+                },
+                "required": [
+                    "enabled"
+                ]
+            },
+            "PutAgentModelCatalogEntryResponseContent": {
+                "type": "object",
+                "properties": {
+                    "status": {
+                        "$ref": "#/components/schemas/JSendStatus"
+                    },
+                    "data": {
+                        "$ref": "#/components/schemas/AgentModelCatalogEntry"
+                    }
+                },
+                "required": [
+                    "data",
+                    "status"
+                ]
+            },
             "QuarantineAccountResponseContent": {
                 "type": "object",
                 "properties": {
@@ -6569,6 +8946,36 @@
                 },
                 "required": [
                     "status"
+                ]
+            },
+            "RateBasis": {
+                "type": "string",
+                "description": "The window a rate is measured over.",
+                "enum": [
+                    "HOURLY",
+                    "DAILY"
+                ]
+            },
+            "RateLimitEntry": {
+                "type": "object",
+                "description": "One spend-rate limit: the measured rate of `basis` reaching `rate` (USD per\nhour or per day) takes `action`. The rate must be greater than zero, and a\nlist may not repeat a (basis, rate) pair; both rules are enforced by the\nservice rather than by a schema constraint.",
+                "properties": {
+                    "basis": {
+                        "$ref": "#/components/schemas/RateBasis"
+                    },
+                    "rate": {
+                        "type": "number",
+                        "description": "Spend-rate threshold in USD per the period selected by basis.",
+                        "format": "double"
+                    },
+                    "action": {
+                        "$ref": "#/components/schemas/ThresholdAction"
+                    }
+                },
+                "required": [
+                    "action",
+                    "basis",
+                    "rate"
                 ]
             },
             "RegionConcurrencyType": {
@@ -6702,7 +9109,7 @@
                         "items": {
                             "$ref": "#/components/schemas/DesiredAssignment"
                         },
-                        "maxItems": 19
+                        "maxItems": 20
                     }
                 },
                 "required": [
@@ -6947,6 +9354,41 @@
                 ],
                 "example": "Available"
             },
+            "SandboxSpacesUsageData": {
+                "type": "object",
+                "description": "The `data` payload of `GET /sandboxAgent/usage`.",
+                "properties": {
+                    "spendByUsers": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/SandboxSpacesUserSpend"
+                        },
+                        "description": "Admins and Managers: every user with recorded usage. Users: only the\ncaller, with a zero entry when they have no recorded usage."
+                    }
+                },
+                "required": [
+                    "spendByUsers"
+                ]
+            },
+            "SandboxSpacesUserSpend": {
+                "type": "object",
+                "description": "One user's Sandbox Spaces estimated token cost on the lease.",
+                "properties": {
+                    "userId": {
+                        "type": "string",
+                        "description": "The Identity Center user id."
+                    },
+                    "sandboxSpacesEstimatedTokenCostAccrued": {
+                        "type": "number",
+                        "description": "This user's accumulated Sandbox Spaces estimated token cost in US dollars.",
+                        "format": "double"
+                    }
+                },
+                "required": [
+                    "sandboxSpacesEstimatedTokenCostAccrued",
+                    "userId"
+                ]
+            },
             "SearchPrincipalsResponseContent": {
                 "type": "object",
                 "properties": {
@@ -6961,6 +9403,34 @@
                     "data",
                     "status"
                 ]
+            },
+            "SelectableModel": {
+                "type": "object",
+                "description": "One model a lease user may select for a Sandbox Space turn.",
+                "properties": {
+                    "modelId": {
+                        "type": "string"
+                    },
+                    "displayName": {
+                        "type": "string"
+                    },
+                    "provider": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "displayName",
+                    "modelId",
+                    "provider"
+                ]
+            },
+            "ServiceBreakdown": {
+                "type": "object",
+                "additionalProperties": {
+                    "type": "number",
+                    "format": "double"
+                },
+                "description": "Cumulative cost keyed by Cost Explorer service name."
             },
             "SharedLease": {
                 "type": "object",
@@ -7006,6 +9476,50 @@
                     },
                     "allowOwnerToShareLease": {
                         "type": "boolean"
+                    },
+                    "predictiveBudgetEnabled": {
+                        "type": "boolean",
+                        "description": "Predictive budget controls opt-in. Copied from the template at creation\nand replaceable through `UpdateLease`."
+                    },
+                    "bedrockTokenMonitoringEnabled": {
+                        "type": "boolean",
+                        "description": "Bedrock token monitoring opt-in. Saved at creation as the template's\npreference, or true when the template enables Sandbox Spaces, and\nreplaceable through `UpdateLease`."
+                    },
+                    "sandboxSpacesEnabled": {
+                        "type": "boolean",
+                        "description": "Snapshot of the source template's Sandbox Spaces on/off setting."
+                    },
+                    "allowedModelIds": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "maxItems": 100,
+                        "description": "Snapshot of the template's Sandbox Spaces model subset — the lease's own\ncopy, so a later template edit never changes enforcement under a running\nlease."
+                    },
+                    "defaultModelId": {
+                        "type": "string",
+                        "description": "Snapshot of the template's Sandbox Spaces default model, preselected first\nwhen a chat opens under this lease."
+                    },
+                    "lastPredictedSpend": {
+                        "type": "number",
+                        "description": "Predicted spend now, in USD, as of the last threshold check. The next\ncheck compares against it. Lease Monitoring and Token Poll exclude\nSandbox Spaces estimated token cost.",
+                        "format": "double"
+                    },
+                    "lastEvaluatedSpend": {
+                        "type": "number",
+                        "description": "Spend so far, in USD, as of the last threshold check, with the\nmonitored Bedrock token cost in place of the billed Bedrock part\nwhere token monitoring is on, never below the billed total. The next\ncheck compares against it. Lease Monitoring and Token Poll exclude\nSandbox Spaces estimated token cost.",
+                        "format": "double"
+                    },
+                    "lastEvaluatedHourlySpendRate": {
+                        "type": "number",
+                        "description": "Most recently evaluated hourly spend rate.",
+                        "format": "double"
+                    },
+                    "lastEvaluatedDailySpendRate": {
+                        "type": "number",
+                        "description": "Most recently evaluated daily spend rate.",
+                        "format": "double"
                     },
                     "desiredAssignments": {
                         "type": "array",
@@ -7087,6 +9601,31 @@
                     "sourceGroupName": {
                         "type": "string",
                         "description": "The IDC group display name that granted access, present only for\n`group` access."
+                    },
+                    "defaultPermissionSet": {
+                        "$ref": "#/components/schemas/PermissionSetReference"
+                    },
+                    "allowedPermissionSets": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/PermissionSetReference"
+                        },
+                        "description": "Backend-hydrated metadata for the effective allowed set, including the\ndefault. Missing cache entries remain represented as UNAVAILABLE."
+                    },
+                    "selectableModels": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/SelectableModel"
+                        },
+                        "description": "Enabled catalog narrowed to this lease's allowed models. Set by\n`GetLease` and `UnfreezeLease` when Sandbox Spaces is enabled globally\nand on the lease, resolved on each read so disabling a model takes\neffect on the next fetch. Unset otherwise and on list responses."
+                    },
+                    "rateLimits": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/RateLimitEntry"
+                        },
+                        "maxItems": 10,
+                        "description": "Spend-rate limits stored on this lease, each with its own action. Copied\nfrom the template at creation and replaceable through `UpdateLease`.\nEvaluated only while `predictiveBudgetEnabled` is true."
                     }
                 },
                 "required": [
@@ -7298,6 +9837,51 @@
                 ],
                 "example": "ALERT"
             },
+            "TokenSeriesRow": {
+                "type": "object",
+                "description": "One Bedrock token reading, flattened per region per model. `monitoredBedrockTokenCost` is\nlease-wide as of `timestamp`, so it repeats across the rows sharing one and\nsumming it across rows double-counts. It prices only the tokens attributed to\na model, each at the rate when it was counted; a token with no rate adds\nnothing. It is absent only on older rows saved unpriced.",
+                "properties": {
+                    "timestamp": {
+                        "type": "string"
+                    },
+                    "region": {
+                        "type": "string"
+                    },
+                    "modelId": {
+                        "type": "string",
+                        "description": "The Bedrock ModelId, or \"unattributed\" for counts that could not be matched\nto a model; those counts are never priced into `monitoredBedrockTokenCost`."
+                    },
+                    "input": {
+                        "type": "number",
+                        "format": "double"
+                    },
+                    "output": {
+                        "type": "number",
+                        "format": "double"
+                    },
+                    "cacheRead": {
+                        "type": "number",
+                        "format": "double"
+                    },
+                    "cacheWrite": {
+                        "type": "number",
+                        "format": "double"
+                    },
+                    "monitoredBedrockTokenCost": {
+                        "type": "number",
+                        "format": "double"
+                    }
+                },
+                "required": [
+                    "cacheRead",
+                    "cacheWrite",
+                    "input",
+                    "modelId",
+                    "output",
+                    "region",
+                    "timestamp"
+                ]
+            },
             "UnauthenticatedErrorResponseContent": {
                 "type": "object",
                 "description": "Identity token missing, expired, invalid, or lacking required claims.",
@@ -7366,6 +9950,37 @@
                     }
                 },
                 "required": [
+                    "status"
+                ]
+            },
+            "UpdateAgentConfigurationRequestContent": {
+                "type": "object",
+                "description": "Optimistic-concurrency envelope accepted on a section write. Only\n`meta.lastEditTime` is read (the concurrency token); the server derives the rest.\n`createdTime` is server-owned and is deliberately NOT part of the write contract;\n`lastSavedBy` is server-owned and stripped if supplied.",
+                "properties": {
+                    "sandboxSpacesEnabled": {
+                        "type": "boolean",
+                        "description": "Global Sandbox Spaces capability. `true` turns the feature on for\nevery role with an active lease (still subject to the enabled-model\ncatalog gate); `false` turns it off entirely."
+                    },
+                    "meta": {
+                        "$ref": "#/components/schemas/ConfigurationWriteMetadata"
+                    }
+                },
+                "required": [
+                    "sandboxSpacesEnabled"
+                ]
+            },
+            "UpdateAgentConfigurationResponseContent": {
+                "type": "object",
+                "properties": {
+                    "status": {
+                        "$ref": "#/components/schemas/JSendStatus"
+                    },
+                    "data": {
+                        "$ref": "#/components/schemas/AgentConfiguration"
+                    }
+                },
+                "required": [
+                    "data",
                     "status"
                 ]
             },
@@ -7536,7 +10151,7 @@
                         "items": {
                             "$ref": "#/components/schemas/DesiredAssignment"
                         },
-                        "maxItems": 19
+                        "maxItems": 20
                     }
                 },
                 "required": [
@@ -7599,6 +10214,57 @@
                     },
                     "allowOwnerToShareLease": {
                         "type": "boolean"
+                    },
+                    "defaultPermissionSetArn": {
+                        "type": "string",
+                        "maxLength": 1224,
+                        "minLength": 10,
+                        "pattern": "^arn:aws(?:-[a-z]{1,5}){0,3}:sso:::permissionSet/(?:sso)?ins-[a-zA-Z0-9.-]{16}/ps-[a-zA-Z0-9./-]{16}$",
+                        "description": "Replace the lease's default permission set."
+                    },
+                    "allowedPermissionSetArns": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "maxLength": 1224,
+                            "minLength": 10,
+                            "pattern": "^arn:aws(?:-[a-z]{1,5}){0,3}:sso:::permissionSet/(?:sso)?ins-[a-zA-Z0-9.-]{16}/ps-[a-zA-Z0-9./-]{16}$",
+                            "description": "IAM Identity Center permission set ARN."
+                        },
+                        "maxItems": 20,
+                        "description": "Replace the permission sets available for assignment overrides."
+                    },
+                    "sandboxSpacesEnabled": {
+                        "type": "boolean",
+                        "description": "Turn Sandbox Spaces on or off for this lease."
+                    },
+                    "allowedModelIds": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "maxItems": 100,
+                        "description": "Replace the lease's Sandbox Spaces model subset. Clearable: an explicit\nnull inherits every enabled catalog model."
+                    },
+                    "defaultModelId": {
+                        "type": "string",
+                        "description": "Replace the model preselected when a chat opens. Clearable with null."
+                    },
+                    "rateLimits": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/RateLimitEntry"
+                        },
+                        "maxItems": 10,
+                        "description": "Replace the spend-rate limits. Clearable: the edit forms send an\nexplicit null, which the client re-injects into the body (the\nserializer omits nulls). An empty list also clears. A non-empty list\nrequires predictive budget controls on. Omitting it in a request\nthat sets `predictiveBudgetEnabled` to false clears the stored limits."
+                    },
+                    "predictiveBudgetEnabled": {
+                        "type": "boolean",
+                        "description": "Turn predictive budget controls on or off. Turning them on requires\n`allowPredictiveBudgetControls`. While they are off, a `PREDICTED`\nbudget threshold or a non-empty `rateLimits` list is rejected."
+                    },
+                    "bedrockTokenMonitoringEnabled": {
+                        "type": "boolean",
+                        "description": "Turn Bedrock token monitoring on or off. Turning it on requires\n`allowBedrockTokenMonitoring` or `sandboxSpacesEnabled` true. Must be\ntrue while `sandboxSpacesEnabled` is true. Send false in a request that\nturns `sandboxSpacesEnabled` off while `allowBedrockTokenMonitoring` is off."
                     }
                 }
             },
@@ -7667,8 +10333,59 @@
                     "allowOwnerToShareLease": {
                         "type": "boolean"
                     },
+                    "predictiveBudgetEnabled": {
+                        "type": "boolean",
+                        "description": "Opt-in: spend rates, cost projection, predicted-cost thresholds and caps."
+                    },
+                    "bedrockTokenMonitoringEnabled": {
+                        "type": "boolean",
+                        "description": "Opt-in: monitored Bedrock token cost tracking. Must be true when\n`sandboxSpacesEnabled` is true."
+                    },
+                    "sandboxSpacesEnabled": {
+                        "type": "boolean",
+                        "description": "Whether leases created from this template have Sandbox Spaces turned on.\n`true` requires `bedrockTokenMonitoringEnabled`; otherwise the request\nis rejected with 400."
+                    },
+                    "allowedModelIds": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "maxItems": 100,
+                        "description": "Sandbox Spaces: subset of the globally enabled model IDs this template\npermits. Unset inherits the global enabled set."
+                    },
+                    "defaultModelId": {
+                        "type": "string",
+                        "description": "Sandbox Spaces: model preselected for new chats on leases from this\ntemplate. Must be enabled and, when a subset is set, one of allowedModelIds."
+                    },
                     "meta": {
                         "$ref": "#/components/schemas/Metadata"
+                    },
+                    "defaultPermissionSetArn": {
+                        "type": "string",
+                        "maxLength": 1224,
+                        "minLength": 10,
+                        "pattern": "^arn:aws(?:-[a-z]{1,5}){0,3}:sso:::permissionSet/(?:sso)?ins-[a-zA-Z0-9.-]{16}/ps-[a-zA-Z0-9./-]{16}$",
+                        "description": "Permission set assigned when an assignment does not specify an override."
+                    },
+                    "allowedPermissionSetArns": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "maxLength": 1224,
+                            "minLength": 10,
+                            "pattern": "^arn:aws(?:-[a-z]{1,5}){0,3}:sso:::permissionSet/(?:sso)?ins-[a-zA-Z0-9.-]{16}/ps-[a-zA-Z0-9./-]{16}$",
+                            "description": "IAM Identity Center permission set ARN."
+                        },
+                        "maxItems": 20,
+                        "description": "Permission sets available for assignment overrides. The default is\nimplicitly allowed and this list is capped at 20 entries."
+                    },
+                    "rateLimits": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/RateLimitEntry"
+                        },
+                        "maxItems": 10,
+                        "description": "Spend-rate limits, each with its own action. A non-empty list\nrequires `predictiveBudgetEnabled`. When sent, it replaces the stored\nlist. See the operation for omission rules."
                     }
                 },
                 "required": [
@@ -7717,6 +10434,7 @@
                     },
                     "ttl": {
                         "type": "number",
+                        "maximum": 3650,
                         "minimum": 1,
                         "description": "Number of days the solution stores expired lease records before purging\nthem."
                     },
@@ -7745,11 +10463,25 @@
                     "groupAssignmentMode": {
                         "$ref": "#/components/schemas/GroupAssignmentMode"
                     },
+                    "allowPredictiveBudgetControls": {
+                        "type": "boolean",
+                        "description": "Predictive Budget Controls feature gate: allows templates and leases to\nopt into spend-rate limits, cost projection and predicted-cost thresholds."
+                    },
+                    "serviceBreakdownEnabled": {
+                        "type": "boolean",
+                        "description": "Whether per-service cost breakdown is collected."
+                    },
+                    "allowBedrockTokenMonitoring": {
+                        "type": "boolean",
+                        "description": "Feature gate for monitored Bedrock token cost tracking."
+                    },
                     "meta": {
                         "$ref": "#/components/schemas/ConfigurationWriteMetadata"
                     }
                 },
                 "required": [
+                    "allowBedrockTokenMonitoring",
+                    "allowPredictiveBudgetControls",
                     "allowUserLeaseTermination",
                     "enablePrincipalSearch",
                     "groupAssignmentMode",
@@ -7761,6 +10493,7 @@
                     "maxLeasesPerUser",
                     "requireMaxBudget",
                     "requireMaxDuration",
+                    "serviceBreakdownEnabled",
                     "ttl"
                 ]
             },
@@ -7812,20 +10545,30 @@
             },
             "UpdateNotificationConfigurationRequestContent": {
                 "type": "object",
-                "description": "Notification sender configuration.",
+                "description": "Notification delivery: which channels are active and the SES sender.",
                 "properties": {
                     "emailFrom": {
                         "type": "string",
                         "maxLength": 254,
-                        "description": "From address used for notification emails; an empty string disables\nnotifications.",
+                        "description": "From address used for SES notification emails; an empty string leaves\nSES unable to deliver even when `sesEnabled` is true.",
                         "format": "password"
+                    },
+                    "sesEnabled": {
+                        "type": "boolean",
+                        "description": "Whether SES email delivery is enabled. Defaults to true when not configured."
+                    },
+                    "snsIntegrationTopicEnabled": {
+                        "type": "boolean",
+                        "description": "Whether publishing to the shared SNS integration topic is enabled.\nDefaults to false when not configured."
                     },
                     "meta": {
                         "$ref": "#/components/schemas/ConfigurationWriteMetadata"
                     }
                 },
                 "required": [
-                    "emailFrom"
+                    "emailFrom",
+                    "sesEnabled",
+                    "snsIntegrationTopicEnabled"
                 ]
             },
             "UpdateNotificationConfigurationResponseContent": {
@@ -7952,6 +10695,14 @@
         {
             "name": "principals",
             "description": "IAM Identity Center principal discovery for lease assignment"
+        },
+        {
+            "name": "permissionSets",
+            "description": "IAM Identity Center permission sets available for sandbox lease permission profiles"
+        },
+        {
+            "name": "sandboxAgent",
+            "description": "AI agent that lets users interact with their sandbox account via natural language"
         }
     ],
     "servers": [

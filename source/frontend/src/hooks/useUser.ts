@@ -5,6 +5,8 @@ import { useQuery } from "@tanstack/react-query";
 
 import { CognitoAuthService } from "@amzn/innovation-sandbox-frontend/helpers/CognitoAuthService";
 
+export type { IdcIdentity } from "@amzn/innovation-sandbox-shared/utils/auth-utils.js";
+
 /**
  * Hook to get current user information and role-based flags.
  */

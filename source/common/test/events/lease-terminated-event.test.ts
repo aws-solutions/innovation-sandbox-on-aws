@@ -18,4 +18,27 @@ describe("getLeaseTerminatedReason", () => {
       comment: "Terminated by user",
     });
   });
+
+  test.each([
+    ["the bill when no budget check total is given", undefined, 30],
+    ["the budget check total when it is above the bill", 120, 120],
+    ["the bill when it is above the budget check total", 10, 30],
+  ])(
+    "reports totalSpend as %s for BudgetExceeded status",
+    (_case, budgetTotalSpend, expectedTotalSpend) => {
+      const lease = generateSchemaData(PersistedMonitoredLeaseSchema, {
+        status: "Active",
+        maxSpend: 100,
+        totalCostAccrued: 30,
+      });
+
+      expect(
+        getLeaseTerminatedReason("BudgetExceeded", lease, budgetTotalSpend),
+      ).toEqual({
+        type: "BudgetExceeded",
+        budget: 100,
+        totalSpend: expectedTotalSpend,
+      });
+    },
+  );
 });

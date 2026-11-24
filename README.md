@@ -17,9 +17,13 @@
   - [Deploy from Source](#deploy-from-source)
   - [Post Deployment Tasks](#post-deployment-tasks)
 - [Scripts](#scripts)
+  - [Machine-to-machine (M2M) authentication](#machine-to-machine-m2m-authentication)
+  - [AWS CLI](#aws-cli)
+  - [MCP clients](#mcp-clients)
+- [Run the Web UI Locally](#run-the-web-ui-locally)
 - [Running Tests](#running-tests)
   - [Unit Tests](#unit-tests)
-- [Using Private ECR Repository](#using-private-ecr-repository)
+- [Using Private ECR Repositories](#using-private-ecr-repositories)
 - [Uninstalling the Solution](#uninstalling-the-solution)
 - [Cost Scaling](#cost-scaling)
 - [File Structure](#file-structure)
@@ -32,10 +36,14 @@
 
 Innovation Sandbox on AWS enables cloud administrators to provision and recycle temporary AWS sandbox environments with automated security, governance, and cost management. Teams can experiment, learn, and innovate with AWS services in production-isolated accounts that are automatically cleaned up and returned to the pool after use.
 
-The solution provides a self-service web UI and API for requesting time-bound sandbox leases, configuring lease templates with budget and duration controls, sharing accounts across teams, deploying pre-configured infrastructure via blueprints, and monitoring costs through native AWS billing integration. Administrators manage all settings, including Service Control Policies, cleanup behavior, and notifications, directly from the application.
+Users choose a lease template when requesting a sandbox account through the web UI or API. The template can set a lease duration and budget and enable predictive budget controls. It defines which IAM Identity Center permission sets are available and whether the lease owner can share access. A template can include a blueprint to provision infrastructure in the account. It can also enable Sandbox Spaces, where users chat with an AI agent in the web UI to work in their leased account.
+
+Administrators use global settings to choose which features lease templates can use and whether templates must specify a budget or duration. They also configure account cleanup and notification delivery through Amazon SES, Amazon SNS, or both.
 
 To find out more about Innovation Sandbox on AWS visit our [AWS Solutions](https://aws.amazon.com/solutions/implementations/innovation-sandbox-on-aws)
 page.
+
+See the [changelog](./CHANGELOG.md) for release details.
 
 ## Architecture
 
@@ -45,40 +53,60 @@ For more details, please refer to the [Architecture Overview](https://docs.aws.a
 
 ## Prerequisites
 
-In order to test, build, and deploy the solution from source the following prerequisites will be required for your development environment:
+To build and run the unit tests on macOS or Amazon Linux 2023, install these tools.
 
-- MacOS or Amazon Linux 2023 Operating System
-- Cloned Repository
-- Node 24
+- Node 24 and npm 10 or later
 - Java 21 (Amazon Corretto 21 recommended)
-- Python (Optional)
-- Pre-Commit (Optional)
-- Docker (Optional)
 
-Once your development environment meets the minimum requirements install the necessary dependencies, navigate to the root of the repository and run:
+The repository’s bootstrap and deployment scripts also require the AWS CLI. Installing the repository dependencies provides the CDK CLI.
+
+**Optional development tools**
+
+- Python 3 for the `aws isb` CLI installer. The MCP helper requires Python 3.10 or later.
+- pre-commit to run the repository’s [Git hooks](#pre-commit).
+- Docker to build the account cleaner or Sandbox Spaces agent runtime [container images](#using-private-ecr-repositories).
+
+Install dependencies and build from the repository root.
 
 ```shell
 npm install
 ```
 
-The source distribution intentionally includes the bootstrap manifests
-`source/api-client/package.json` and `source/api-server/package.json` without
-their generated sources. npm reads these manifests during installation so
-`npm run build` can generate and compile both packages with their locked
-TypeScript, Node, and Smithy dependencies. The model in `source/api-model`
-remains the source of truth.
+```shell
+npm run build
+```
 
-> **Note:** Many of the commands in this file expect you to have appropriate AWS CLI access to the target accounts configured. If you have a multi-account deployment you will need to switch between account credentials to perform the commands on the appropriate accounts.
+The source distribution intentionally includes the bootstrap manifests for `source/api-client` and `source/api-server`. The build generates and compiles both packages from the [Smithy API model](./source/api-model/README.md).
 
 ## Environment Variables
 
-Before you start working from the Innovation Sandbox on AWS repository you must first configure your environment. Use the following command to generate a `.env` file to begin:
+For deployment or local frontend development, configure an environment file from the repository root. The [example file](./.env.example) lists the settings for each stack.
+
+For a standalone configuration, create `.env` from `.env.example`.
 
 ```shell
 npm run env:init
 ```
 
-In the `.env` file configure the required values. The file provides comments as to what each environment variable does. The optional ones are not required to deploy the solution.
+For a named configuration, choose a name such as `dev` and create `dev.env` from the same example.
+
+```shell
+npm run env:init -- dev
+```
+
+Activate it by linking `.env` to `dev.env`. If `.env` is already a regular file, move it to an unused name ending in `.env` first.
+
+```shell
+npm run env:use -- dev
+```
+
+Check which named environment is active or whether `.env` is unmanaged.
+
+```shell
+npm run env:current
+```
+
+Edit the active `.env` with your deployment values. All `*.env` files are gitignored.
 
 ## Deploy the Solution
 
@@ -97,24 +125,35 @@ The solution requires several prerequisite steps before attempting to deploy the
 
 ### Deploy from Source
 
-Deploying the solution from source uses AWS CDK to do so. If you have not already you will need to bootstrap the target accounts with the following command:
+Configure the AWS CLI with credentials for the target accounts. For a multi-account deployment, set `ORG_MANAGEMENT_ACCOUNT_PROFILE` (Account Pool), `IDC_ACCOUNT_PROFILE` (IDC), and `HUB_ACCOUNT_PROFILE` (Data and Compute) in `.env`. An unset profile uses the current credentials.
+
+Bootstrap the target accounts in `DEPLOY_REGION` before the first CDK deployment.
 
 ```shell
 npm run bootstrap
 ```
 
-To deploy the solution into a single account, run the following command from the repository root:
+Deploy all four stacks in order using the configured profiles.
 
 ```shell
 npm run deploy:all
 ```
 
-To deploy the individual cloudformation stacks for a multi-account deployment, use the following commands for each of the stacks:
+To deploy an individual stack, choose its command.
 
 ```shell
 npm run deploy:account-pool
+```
+
+```shell
 npm run deploy:idc
+```
+
+```shell
 npm run deploy:data
+```
+
+```shell
 npm run deploy:compute
 ```
 
@@ -124,59 +163,108 @@ Before the solution is fully functional the post deployment tasks must be comple
 
 ## Scripts
 
-- [M2M Authentication Scripts](./scripts/m2m/README.md) — CLI tools for deploying per-client M2M roles, assuming them, and signing API requests with SigV4.
+### Machine-to-machine (M2M) authentication
+
+Use M2M authentication for scripts, CI jobs, and integrations with your own services. Each client assumes its own IAM role and uses the temporary credentials to sign API requests with SigV4. See the [M2M authentication scripts](./scripts/m2m/README.md).
+
+### AWS CLI
+
+To call the API from the terminal, use AWS CLI v2.13.0 or later, install the `aws isb` commands, and configure your deployment endpoint. Run the commands with credentials from your client's M2M role. The M2M scripts can save those credentials to a named profile. See the [AWS CLI setup guide](./scripts/m2m/aws-cli/README.md).
+
+### MCP clients
+
+To use Innovation Sandbox tools from an MCP client, sign in with your usual Innovation Sandbox account. The helper requires Python 3.10 or later and `uv`. See the [MCP setup guide](./scripts/mcp/README.md).
+
+## Run the Web UI Locally
+
+Use a development deployment created with `DEPLOYMENT_MODE=dev` so Cognito accepts the localhost sign-in callback. After building, start the dev server from the repository root.
+
+```shell
+npm run dev --workspace source/frontend
+```
+
+Open `http://localhost:5173`. The dev server proxies API calls to your deployment. See the [frontend setup](./source/frontend/README.md) for proxy settings.
 
 ## Running Tests
 
 ### Unit Tests
 
-To run unit tests for all packages in the solution, run the following command from the repository root:
+From the repository root, run the Vitest suite with coverage. This also prepares the generated API packages.
 
 ```shell
 npm test
 ```
 
-To also update snapshot tests run the following command from the repository root:
+If a change intentionally alters the expected output, update the Vitest snapshots after building.
 
 ```shell
 npm run test:update-snapshots
 ```
 
-## Using Private ECR Repository
+## Using Private ECR Repositories
 
-For development purposes it may be useful to use a custom ECR image to test updates to AWS Nuke or just host the image in your account.
+Source deployments use public images by default. To test changes to the account cleaner or Sandbox Spaces agent runtime, start Docker with BuildKit enabled and use private ECR repositories in your Hub account.
 
-> **Note:** Make sure you have the docker engine installed and running on your machine to perform the steps in this section.
+1. In `.env`, set `PRIVATE_ACCOUNT_CLEANER_ECR_REPO` or `PRIVATE_SANDBOX_AGENT_RUNTIME_ECR_REPO` for the image you want to build. To build both, use separate repository names. The Docker commands use `HUB_ACCOUNT_PROFILE` when set and the AWS CLI default credential chain otherwise.
+1. From the repository root, run the command for the image you configured.
 
-Follow these steps to configure deployment to use a private ECR image:
+   **Account cleaner**
 
-1. In the account and region the compute stack is deployed into, create a new private ecr repository. You can name it whatever you like but we suggest something like `innovation-sandbox`.
-1. Configure your `.env` file with the `PRIVATE_ECR_REPO` and `PRIVATE_ECR_REPO_REGION` environment variables. This should be the region and name for the private repo you just created.
-1. From the root of the innovation sandbox repo run the following command:
+   ```shell
+   npm run docker:build-and-push -- account-cleaner
+   ```
+
+   **Sandbox Spaces agent runtime**
+
+   ```shell
+   npm run docker:build-and-push -- sandbox-agent-runtime
+   ```
+
+   If you configured both repositories, you can build and push both images together.
+
    ```shell
    npm run docker:build-and-push
    ```
-   This will build the dockerfile located at `source/infrastructure/lib/components/account-cleaner/image/Dockerfile` and push it to the ECR repo configured in your .env file.
-1. If you have already deployed the solution you will need to deploy the compute stack again to have the solution use the private ecr repo. To do that run the following command:
+
+   The `docker:build` and `docker:push` scripts accept the same targets and default to both images.
+   Before pushing an image, the push command creates its private ECR repository in the Hub account and `DEPLOY_REGION` if it does not already exist. Automatic creation requires `ecr:DescribeRepositories` and `ecr:CreateRepository`; credentials with push-only access can still push to an existing repository.
+
+1. If you have already deployed the solution, deploy the compute stack again to use the private ECR images:
+
    ```shell
    npm run deploy:compute
    ```
 
+   The deploy script pins the private runtime image by digest. If ECR lacks an image tagged for the current source, the script builds and pushes it first. To fail if the image is missing, use this command.
+
+   ```shell
+   npm run deploy:compute -- --skip-image-build
+   ```
+
 ## Uninstalling the Solution
 
-To uninstall the solution, run the following command from the repository root:
+Before deleting stacks, end leases, eject accounts, and complete the other steps in the [uninstall guide](https://docs.aws.amazon.com/solutions/latest/innovation-sandbox-on-aws/uninstall-the-solution.html). For a source deployment, this command deletes the four solution stacks in reverse deployment order.
 
 ```shell
 npm run destroy:all
 ```
 
-If you had used a multi-account deployment or only want to destroy certain stacks you can use the following commands:
+To remove individual stacks, choose the corresponding commands in this order.
+
+```shell
+npm run destroy:compute
+```
+
+```shell
+npm run destroy:data
+```
+
+```shell
+npm run destroy:idc
+```
 
 ```shell
 npm run destroy:account-pool
-npm run destroy:idc
-npm run destroy:data
-npm run destroy:compute
 ```
 
 ## Cost Scaling
@@ -193,12 +281,13 @@ root
 │   ├── global-s3-assets                # generated dist files for cdk synthesized cloudformation templates
 │   ├── regional-s3-assets              # generated dist files for zipped runtime assets such as lambda functions
 │   └── build-s3-dist.sh                # builds solution into distributable assets that can be deployed with cloudformation
-├── docs/                           # architecture diagrams and API specifications
-├── scripts/                        # utility and deployment scripts
-│   ├── cdk/                            # CDK bootstrap, deploy, and destroy wrappers
-│   └── m2m/                            # M2M authentication helper scripts
+├── docs/                           # architecture diagrams, OpenAPI specification, and AWS CLI model
+├── scripts/                        # CDK, Docker, environment, M2M, and MCP tools
 ├── source/                         # source code separated into multiple stand alone packages
-│   ├── common                          # common libraries used across the solution
+│   ├── agent-runtime                   # Sandbox Spaces agent
+│   ├── api-model                       # Smithy model for the API client and server bindings
+│   ├── common                          # shared backend libraries
+│   ├── shared                          # types and utilities shared with the frontend
 │   ├── frontend                        # frontend vite application
 │   ├── infrastructure                  # cdk application consisting of solution infrastructure
 │   ├── lambdas                         # lambda function runtime code, contains multiple lambdas each of which is its own package

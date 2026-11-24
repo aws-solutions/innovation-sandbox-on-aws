@@ -307,7 +307,7 @@ function generateCSV(
 //this allows user to manually invoke lambda with custom month on the AWS console
 function getReportPeriod(eventDetail: unknown) {
   const event = eventDetail as CostReportEvent;
-  if (event && event.reportMonth) {
+  if (event?.reportMonth) {
     const targetDate = DateTime.fromFormat(event.reportMonth, "yyyy-MM");
     if (targetDate.isValid) {
       return {

@@ -2,12 +2,21 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import createWrapper from "@cloudscape-design/components/test-utils/dom";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
+import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { AssignmentsTab } from "@amzn/innovation-sandbox-frontend/domains/leases/components/AssignmentsTab";
+import { showErrorToast } from "@amzn/innovation-sandbox-frontend/components/Toast";
+import { AssignmentsTab } from "@amzn/innovation-sandbox-frontend/domains/leases/assignments/components/AssignmentsTab";
 import {
   LeaseAssignmentView,
   LeaseView,
@@ -17,6 +26,7 @@ import { createActiveLease } from "@amzn/innovation-sandbox-frontend/mocks/facto
 import { server } from "@amzn/innovation-sandbox-frontend/mocks/server";
 import { createQueryClientWrapper } from "@amzn/innovation-sandbox-frontend/setupTests";
 import { GroupAssignmentMode } from "@amzn/innovation-sandbox-shared/types/configuration.js";
+import type { PermissionSetReference } from "@amzn/innovation-sandbox-shared/types/permission-set.js";
 
 vi.mock("@amzn/innovation-sandbox-frontend/components/Toast", () => ({
   showSuccessToast: vi.fn(),
@@ -70,11 +80,40 @@ vi.mock(
   },
 );
 
+const developerPermissionSet: PermissionSetReference = {
+  permissionSetArn:
+    "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-0123456789abcdef",
+  permissionSetId: "ps-0123456789abcdef",
+  name: "DeveloperAccess",
+  availability: "AVAILABLE",
+};
+const auditorPermissionSet: PermissionSetReference = {
+  permissionSetArn:
+    "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-1123456789abcdef",
+  permissionSetId: "ps-1123456789abcdef",
+  name: "AuditorAccess",
+  availability: "AVAILABLE",
+};
+const builtInPermissionSet: PermissionSetReference = {
+  permissionSetArn:
+    "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-2123456789abcdef",
+  permissionSetId: "ps-2123456789abcdef",
+  name: "BuiltInUserAccess",
+  availability: "AVAILABLE",
+};
+
 const lease: LeaseView = createActiveLease({
   uuid: "11111111-1111-4111-8111-111111111111",
   userEmail: "owner@example.com",
   allowOwnerToShareLease: true,
+  defaultPermissionSet: builtInPermissionSet,
+  allowedPermissionSets: [builtInPermissionSet],
 });
+const profiledLease: LeaseView = {
+  ...lease,
+  defaultPermissionSet: developerPermissionSet,
+  allowedPermissionSets: [developerPermissionSet, auditorPermissionSet],
+};
 
 // The API returns the reconciled view: each row already carries its
 // syncStatus and isOwner, so tests set the status they want directly instead of
@@ -89,6 +128,7 @@ const userAssignment: LeaseAssignmentView = {
   isOwner: false,
   isDesired: true,
   syncStatus: "active",
+  permissionSet: builtInPermissionSet,
 };
 
 const groupAssignment: LeaseAssignmentView = {
@@ -100,6 +140,7 @@ const groupAssignment: LeaseAssignmentView = {
   isOwner: false,
   isDesired: true,
   syncStatus: "active",
+  permissionSet: builtInPermissionSet,
 };
 
 const ownerAssignment: LeaseAssignmentView = {
@@ -112,35 +153,62 @@ const ownerAssignment: LeaseAssignmentView = {
   isOwner: true,
   isDesired: true,
   syncStatus: "active",
+  permissionSet: builtInPermissionSet,
 };
+
+const assignmentsAtCapacity = (): LeaseAssignmentView[] =>
+  Array.from({ length: 20 }, (_, index) => ({
+    ...userAssignment,
+    principalId: `user-${index + 1}`,
+    displayName: `User ${index + 1}`,
+    assigneeEmail: `user-${index + 1}@example.com`,
+    addedBy: `admin-${index + 1}@example.com`,
+    permissionSet: developerPermissionSet,
+  }));
 
 /** A row for a principal that is desired but has no access record yet. */
 const desiredOnly = (
   overrides: Partial<LeaseAssignmentView> & { principalId: string },
-): LeaseAssignmentView => ({
-  principalType: "USER",
-  displayName: "Carol Davis",
-  assigneeEmail: "carol@example.com",
-  isOwner: false,
-  isDesired: true,
-  syncStatus: "grantFailed",
-  ...overrides,
-});
+): LeaseAssignmentView => {
+  const {
+    permissionSet = builtInPermissionSet,
+    syncStatus = "grantFailed",
+    ...rest
+  } = overrides;
+  return {
+    principalType: "USER",
+    displayName: "Carol Davis",
+    assigneeEmail: "carol@example.com",
+    isOwner: false,
+    isDesired: true,
+    syncStatus,
+    ...rest,
+    permissionSet,
+  };
+};
 
 /** A record that lingers after a failed revoke: present, but no longer desired. */
 const lingeringRecord = (
   overrides: Partial<LeaseAssignmentView> & { principalId: string },
-): LeaseAssignmentView => ({
-  principalType: "USER",
-  displayName: "Dave Lingering",
-  assigneeEmail: "dave@example.com",
-  addedBy: "admin@example.com",
-  addedDate: "2026-01-01T00:00:00.000Z",
-  isOwner: false,
-  isDesired: false,
-  syncStatus: "revokeFailed",
-  ...overrides,
-});
+): LeaseAssignmentView => {
+  const {
+    permissionSet = builtInPermissionSet,
+    syncStatus = "revokeFailed",
+    ...rest
+  } = overrides;
+  return {
+    principalType: "USER",
+    displayName: "Dave Lingering",
+    assigneeEmail: "dave@example.com",
+    addedBy: "admin@example.com",
+    addedDate: "2026-01-01T00:00:00.000Z",
+    isOwner: false,
+    isDesired: false,
+    syncStatus,
+    ...rest,
+    permissionSet,
+  };
+};
 
 const LEASE_ROUTE_ID = "lease-route-id-base64";
 
@@ -222,18 +290,40 @@ function renderTab(
 ) {
   const Wrapper = createQueryClientWrapper();
   return render(
-    <Wrapper>
-      <AssignmentsTab
-        lease={lease}
-        leaseRouteId={LEASE_ROUTE_ID}
-        leaseSharingEnabled={true}
-        enablePrincipalSearch={true}
-        isElevated={false}
-        isOwner={true}
-        {...props}
-      />
-    </Wrapper>,
+    <MemoryRouter>
+      <Wrapper>
+        <AssignmentsTab
+          lease={lease}
+          leaseRouteId={LEASE_ROUTE_ID}
+          leaseSharingEnabled={true}
+          enablePrincipalSearch={true}
+          isElevated={false}
+          isOwner={true}
+          {...props}
+        />
+      </Wrapper>
+    </MemoryRouter>,
   );
+}
+
+async function togglePermissionSet(
+  displayName: string,
+  permissionSetArn: string,
+) {
+  const labels = await screen.findAllByText(displayName);
+  const principalRow = labels
+    .map((label) => label.closest("tr"))
+    .find((row) => row && createWrapper(row).findSelect());
+  expect(principalRow).toBeTruthy();
+  const select = createWrapper(principalRow!).findSelect()!;
+  if (
+    select.findTrigger().getElement().getAttribute("aria-expanded") !== "true"
+  ) {
+    select.openDropdown();
+  }
+  select.selectOptionByValue(permissionSetArn, {
+    expandToViewport: true,
+  });
 }
 
 describe("AssignmentsTab", () => {
@@ -251,6 +341,178 @@ describe("AssignmentsTab", () => {
     expect(screen.getByText("Engineering")).toBeInTheDocument();
   });
 
+  it("replaces the permission set selected for a principal", async () => {
+    stubGetAssignments([
+      { ...userAssignment, permissionSet: developerPermissionSet },
+    ]);
+    let putBody: unknown;
+    server.use(
+      http.put(
+        `${getConfig().ApiUrl}/leases/${LEASE_ROUTE_ID}/assignments`,
+        async ({ request }) => {
+          putBody = await request.json();
+          return HttpResponse.json(
+            { status: "success", data: { desiredCount: 1 } },
+            { status: 202 },
+          );
+        },
+      ),
+    );
+    renderTab({ lease: profiledLease });
+    const user = userEvent.setup();
+
+    await togglePermissionSet(
+      "Alice Smith",
+      auditorPermissionSet.permissionSetArn,
+    );
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => expect(putBody).toBeDefined());
+    expect(putBody).toEqual({
+      assignments: [
+        {
+          principalId: "user-1",
+          principalType: "USER",
+          permissionSetArn: auditorPermissionSet.permissionSetArn,
+        },
+      ],
+    });
+  });
+
+  it("selects one permission set for a newly added principal", async () => {
+    stubGetAssignments([
+      { ...ownerAssignment, permissionSet: developerPermissionSet },
+    ]);
+    let putBody: unknown;
+    server.use(
+      http.put(
+        `${getConfig().ApiUrl}/leases/${LEASE_ROUTE_ID}/assignments`,
+        async ({ request }) => {
+          putBody = await request.json();
+          return HttpResponse.json(
+            { status: "success", data: { desiredCount: 2 } },
+            { status: 202 },
+          );
+        },
+      ),
+    );
+    renderTab({ lease: profiledLease });
+    const user = userEvent.setup();
+
+    expect((await screen.findAllByText("Owner")).length).toBeGreaterThan(0);
+    await user.click(screen.getByRole("button", { name: "Add carol-id" }));
+    expect(
+      screen.queryByRole("button", { name: "Add carol-id" }),
+    ).not.toBeInTheDocument();
+    await togglePermissionSet(
+      "Carol Davis",
+      auditorPermissionSet.permissionSetArn,
+    );
+
+    expect(screen.getAllByText("Carol Davis")).toHaveLength(1);
+    expect(
+      screen.getByRole("button", {
+        name: /Permission set for Carol Davis/,
+      }),
+    ).toHaveTextContent("AuditorAccess");
+    expect(
+      screen.queryByRole("button", { name: "Add carol-id" }),
+    ).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => expect(putBody).toBeDefined());
+    expect(putBody).toEqual({
+      assignments: [
+        {
+          principalId: "owner-principal-id",
+          principalType: "USER",
+          permissionSetArn: developerPermissionSet.permissionSetArn,
+        },
+        {
+          principalId: "carol-id",
+          principalType: "USER",
+          permissionSetArn: auditorPermissionSet.permissionSetArn,
+        },
+      ],
+    });
+  });
+
+  it("removes all access for a principal", async () => {
+    stubGetAssignments([
+      { ...ownerAssignment, permissionSet: developerPermissionSet },
+      { ...userAssignment, permissionSet: developerPermissionSet },
+    ]);
+    let putBody: unknown;
+    server.use(
+      http.put(
+        `${getConfig().ApiUrl}/leases/${LEASE_ROUTE_ID}/assignments`,
+        async ({ request }) => {
+          putBody = await request.json();
+          return HttpResponse.json(
+            { status: "success", data: { desiredCount: 1 } },
+            { status: 202 },
+          );
+        },
+      ),
+    );
+    renderTab({ lease: profiledLease });
+    const user = userEvent.setup();
+
+    const aliceRow = (await screen.findByText("Alice Smith")).closest("tr")!;
+    await user.click(
+      within(aliceRow).getByRole("button", {
+        name: "Remove access for Alice Smith",
+      }),
+    );
+
+    expect(within(aliceRow).getByText("Pending remove")).toBeInTheDocument();
+    expect(
+      within(aliceRow).queryByRole("button", {
+        name: "Remove access for Alice Smith",
+      }),
+    ).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => expect(putBody).toBeDefined());
+    expect(putBody).toEqual({
+      assignments: [
+        {
+          principalId: "owner-principal-id",
+          principalType: "USER",
+          permissionSetArn: developerPermissionSet.permissionSetArn,
+        },
+      ],
+    });
+  });
+
+  it("keeps USER and GROUP rows distinct when their principal IDs collide", async () => {
+    stubGetAssignments([
+      {
+        ...userAssignment,
+        principalId: "shared-id",
+        displayName: "Shared User",
+        permissionSet: developerPermissionSet,
+      },
+      {
+        ...groupAssignment,
+        principalId: "shared-id",
+        displayName: "Shared Group",
+        permissionSet: developerPermissionSet,
+      },
+    ]);
+    renderTab({ lease: profiledLease, isOwner: false });
+
+    expect(await screen.findByText("Shared User")).toBeInTheDocument();
+    expect(screen.getByText("Shared Group")).toBeInTheDocument();
+  });
+
+  it("renders the hydrated built-in permission set", async () => {
+    stubGetAssignments([userAssignment]);
+    renderTab({ lease: profiledLease, isOwner: false });
+
+    expect(await screen.findByText("BuiltInUserAccess")).toBeInTheDocument();
+  });
+
   it("keeps existing groups visible but searches only users when groups are disabled", async () => {
     stubGetAssignments([ownerAssignment, groupAssignment]);
     renderTab({ groupAssignmentMode: GroupAssignmentMode.NONE });
@@ -263,7 +525,63 @@ describe("AssignmentsTab", () => {
     expect(
       screen.queryByRole("button", { name: "Add platform-id" }),
     ).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Remove" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Remove access for Engineering" }),
+    ).toBeInTheDocument();
+  });
+
+  it("changes an existing group's permission set when group search is disabled", async () => {
+    stubGetAssignments([
+      { ...ownerAssignment, permissionSet: developerPermissionSet },
+      { ...groupAssignment, permissionSet: developerPermissionSet },
+    ]);
+    let putBody: unknown;
+    server.use(
+      http.put(
+        `${getConfig().ApiUrl}/leases/${LEASE_ROUTE_ID}/assignments`,
+        async ({ request }) => {
+          putBody = await request.json();
+          return HttpResponse.json(
+            { status: "success", data: { desiredCount: 2 } },
+            { status: 202 },
+          );
+        },
+      ),
+    );
+    renderTab({
+      lease: profiledLease,
+      groupAssignmentMode: GroupAssignmentMode.NONE,
+    });
+    const user = userEvent.setup();
+
+    await togglePermissionSet(
+      "Engineering",
+      auditorPermissionSet.permissionSetArn,
+    );
+
+    expect(screen.getAllByText("Engineering")).toHaveLength(1);
+    expect(
+      screen.getByRole("button", {
+        name: /Permission set for Engineering/,
+      }),
+    ).toHaveTextContent("AuditorAccess");
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => expect(putBody).toBeDefined());
+    expect(putBody).toEqual({
+      assignments: [
+        {
+          principalId: "owner-principal-id",
+          principalType: "USER",
+          permissionSetArn: developerPermissionSet.permissionSetArn,
+        },
+        {
+          principalId: "group-1",
+          principalType: "GROUP",
+          permissionSetArn: auditorPermissionSet.permissionSetArn,
+        },
+      ],
+    });
   });
 
   it("always shows the owner row even when no other assignments exist", async () => {
@@ -284,14 +602,14 @@ describe("AssignmentsTab", () => {
     expect(
       (await screen.findAllByText("alice@example.com")).length,
     ).toBeGreaterThan(0);
-    // The "Share access" Container holds the always-visible typeahead and
+    // The "Configure access" Container holds the always-visible typeahead and
     // is rendered only when the viewer can manage assignments.
-    expect(screen.queryByText("Share access")).not.toBeInTheDocument();
+    expect(screen.queryByText("Configure access")).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Save changes" }),
     ).not.toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: "Remove" }),
+      screen.queryByRole("button", { name: /Remove access for/ }),
     ).not.toBeInTheDocument();
   });
 
@@ -306,9 +624,9 @@ describe("AssignmentsTab", () => {
     expect(
       (await screen.findAllByText("alice@example.com")).length,
     ).toBeGreaterThan(0);
-    // The "Share access" Container holds the always-visible typeahead and
+    // The "Configure access" Container holds the always-visible typeahead and
     // is rendered only when the viewer can manage assignments.
-    expect(screen.queryByText("Share access")).not.toBeInTheDocument();
+    expect(screen.queryByText("Configure access")).not.toBeInTheDocument();
   });
 
   it("shows the global-flag-off banner only for elevated viewers", async () => {
@@ -349,7 +667,11 @@ describe("AssignmentsTab", () => {
     // Scope to alice's row via the unique addedBy cell to avoid the
     // duplicate-email match in the Name + Email columns.
     const aliceRow = screen.getByText("owner-test@example.com").closest("tr")!;
-    await user.click(within(aliceRow).getByRole("button", { name: "Remove" }));
+    await user.click(
+      within(aliceRow).getByRole("button", {
+        name: "Remove access for Alice Smith",
+      }),
+    );
 
     // The "Pending remove" badge should appear and Save should be enabled.
     expect(screen.getByText("Pending remove")).toBeInTheDocument();
@@ -359,11 +681,359 @@ describe("AssignmentsTab", () => {
     await user.click(save);
 
     await waitFor(() => expect(putBody).toBeDefined());
-    // Only the group should remain in the desired list — alice was removed.
-    // Owner is implicit (auto-injected server-side) and excluded from the PUT body.
+    // The owner and group remain in the desired list — alice was removed.
     expect(putBody).toEqual({
-      assignments: [{ principalId: "group-1", principalType: "GROUP" }],
+      assignments: [
+        {
+          principalId: "owner-principal-id",
+          principalType: "USER",
+          permissionSetArn: builtInPermissionSet.permissionSetArn,
+        },
+        {
+          principalId: "group-1",
+          principalType: "GROUP",
+          permissionSetArn: builtInPermissionSet.permissionSetArn,
+        },
+      ],
     });
+  });
+
+  it("locks editing and prevents duplicate saves during the preflight refresh", async () => {
+    let getCalls = 0;
+    let putCalls = 0;
+    let releasePreflight!: () => void;
+    let markPreflightStarted!: () => void;
+    const preflightGate = new Promise<void>((resolve) => {
+      releasePreflight = resolve;
+    });
+    const preflightStarted = new Promise<void>((resolve) => {
+      markPreflightStarted = resolve;
+    });
+    server.use(
+      http.get(
+        `${getConfig().ApiUrl}/leases/${LEASE_ROUTE_ID}/assignments`,
+        async () => {
+          getCalls += 1;
+          if (getCalls === 2) {
+            markPreflightStarted();
+            await preflightGate;
+          }
+          return HttpResponse.json({
+            status: "success",
+            data: { assignments: [ownerAssignment, userAssignment] },
+          });
+        },
+      ),
+      http.put(
+        `${getConfig().ApiUrl}/leases/${LEASE_ROUTE_ID}/assignments`,
+        () => {
+          putCalls += 1;
+          return HttpResponse.json(
+            { status: "success", data: { desiredCount: 1 } },
+            { status: 202 },
+          );
+        },
+      ),
+    );
+    renderTab();
+    const user = userEvent.setup();
+
+    const aliceRow = (
+      await screen.findByText("owner-test@example.com")
+    ).closest("tr")!;
+    await user.click(
+      within(aliceRow).getByRole("button", {
+        name: "Remove access for Alice Smith",
+      }),
+    );
+    const save = screen.getByRole("button", { name: "Save changes" });
+
+    fireEvent.click(save);
+    fireEvent.click(save);
+    await preflightStarted;
+
+    await waitFor(() => {
+      expect(save).toBeDisabled();
+      expect(
+        screen.getByRole("button", { name: "Add carol-id" }),
+      ).toBeDisabled();
+      expect(
+        within(aliceRow).getByRole("button", {
+          name: "Undo access removal for Alice Smith",
+        }),
+      ).toBeDisabled();
+    });
+    expect(getCalls).toBe(2);
+
+    releasePreflight();
+    await waitFor(() => expect(putCalls).toBe(1));
+  });
+
+  it("performs one authoritative refresh after saving", async () => {
+    let getCalls = 0;
+    let assignmentsSaved = false;
+    server.use(
+      http.get(
+        `${getConfig().ApiUrl}/leases/${LEASE_ROUTE_ID}/assignments`,
+        () => {
+          getCalls += 1;
+          return HttpResponse.json({
+            status: "success",
+            data: {
+              assignments: assignmentsSaved
+                ? [ownerAssignment]
+                : [ownerAssignment, userAssignment],
+            },
+          });
+        },
+      ),
+      http.put(
+        `${getConfig().ApiUrl}/leases/${LEASE_ROUTE_ID}/assignments`,
+        () => {
+          assignmentsSaved = true;
+          return HttpResponse.json(
+            { status: "success", data: { desiredCount: 1 } },
+            { status: 202 },
+          );
+        },
+      ),
+    );
+    renderTab();
+    const user = userEvent.setup();
+
+    const aliceRow = (
+      await screen.findByText("owner-test@example.com")
+    ).closest("tr")!;
+    const initialGetCalls = getCalls;
+    await user.click(
+      within(aliceRow).getByRole("button", {
+        name: "Remove access for Alice Smith",
+      }),
+    );
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() =>
+      expect(screen.queryByText("Alice Smith")).not.toBeInTheDocument(),
+    );
+    expect(getCalls).toBe(initialGetCalls + 2);
+    expect(
+      screen.queryByText("Assignments changed elsewhere"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not save when the preflight refresh discovers an active update", async () => {
+    let getCalls = 0;
+    let putCalls = 0;
+    server.use(
+      http.get(
+        `${getConfig().ApiUrl}/leases/${LEASE_ROUTE_ID}/assignments`,
+        () => {
+          getCalls += 1;
+          return HttpResponse.json({
+            status: "success",
+            data: {
+              assignments: [ownerAssignment, userAssignment],
+              operationInProgress: getCalls > 1 ? "UPDATE" : undefined,
+            },
+          });
+        },
+      ),
+      http.put(
+        `${getConfig().ApiUrl}/leases/${LEASE_ROUTE_ID}/assignments`,
+        () => {
+          putCalls += 1;
+          return HttpResponse.json(
+            { status: "success", data: { desiredCount: 1 } },
+            { status: 202 },
+          );
+        },
+      ),
+    );
+    renderTab();
+    const user = userEvent.setup();
+
+    const aliceRow = (
+      await screen.findByText("owner-test@example.com")
+    ).closest("tr")!;
+    await user.click(
+      within(aliceRow).getByRole("button", {
+        name: "Remove access for Alice Smith",
+      }),
+    );
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    expect(
+      await screen.findByText(
+        "An update is being processed. Saving more changes is paused until it completes.",
+      ),
+    ).toBeInTheDocument();
+    expect(putCalls).toBe(0);
+    expect(screen.getByText("Pending remove")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save changes" })).toBeDisabled();
+  });
+
+  it("refreshes into the active operation when the update loses the lock race", async () => {
+    let lockActive = false;
+    let putCalls = 0;
+    server.use(
+      http.get(
+        `${getConfig().ApiUrl}/leases/${LEASE_ROUTE_ID}/assignments`,
+        () =>
+          HttpResponse.json({
+            status: "success",
+            data: {
+              assignments: [ownerAssignment, userAssignment],
+              operationInProgress: lockActive ? "UPDATE" : undefined,
+            },
+          }),
+      ),
+      http.put(
+        `${getConfig().ApiUrl}/leases/${LEASE_ROUTE_ID}/assignments`,
+        () => {
+          putCalls += 1;
+          lockActive = true;
+          return HttpResponse.json(
+            { status: "error", message: "lock held" },
+            { status: 409 },
+          );
+        },
+      ),
+    );
+    renderTab();
+    const user = userEvent.setup();
+
+    const aliceRow = (
+      await screen.findByText("owner-test@example.com")
+    ).closest("tr")!;
+    await user.click(
+      within(aliceRow).getByRole("button", {
+        name: "Remove access for Alice Smith",
+      }),
+    );
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    expect(
+      await screen.findByText(
+        "An update is being processed. Saving more changes is paused until it completes.",
+      ),
+    ).toBeInTheDocument();
+    expect(putCalls).toBe(1);
+    expect(screen.getByText("Pending remove")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save changes" })).toBeDisabled();
+  });
+
+  it("preserves the owner's explicit permission set when saving another change", async () => {
+    stubGetAssignments([
+      { ...ownerAssignment, permissionSet: auditorPermissionSet },
+      { ...userAssignment, permissionSet: developerPermissionSet },
+    ]);
+    let putBody: unknown;
+    server.use(
+      http.put(
+        `${getConfig().ApiUrl}/leases/${LEASE_ROUTE_ID}/assignments`,
+        async ({ request }) => {
+          putBody = await request.json();
+          return HttpResponse.json(
+            { status: "success", data: { desiredCount: 1 } },
+            { status: 202 },
+          );
+        },
+      ),
+    );
+    renderTab({ lease: profiledLease });
+    const user = userEvent.setup();
+
+    const aliceRow = (await screen.findByText("Alice Smith")).closest("tr")!;
+    await user.click(
+      within(aliceRow).getByRole("button", {
+        name: "Remove access for Alice Smith",
+      }),
+    );
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => expect(putBody).toBeDefined());
+    expect(putBody).toEqual({
+      assignments: [
+        {
+          principalId: "owner-principal-id",
+          principalType: "USER",
+          permissionSetArn: auditorPermissionSet.permissionSetArn,
+        },
+      ],
+    });
+  });
+
+  it("allows the owner permission set to be changed without allowing removal", async () => {
+    stubGetAssignments([
+      { ...ownerAssignment, permissionSet: developerPermissionSet },
+    ]);
+    let putBody: unknown;
+    server.use(
+      http.put(
+        `${getConfig().ApiUrl}/leases/${LEASE_ROUTE_ID}/assignments`,
+        async ({ request }) => {
+          putBody = await request.json();
+          return HttpResponse.json(
+            { status: "success", data: { desiredCount: 1 } },
+            { status: 202 },
+          );
+        },
+      ),
+    );
+    renderTab({ lease: profiledLease });
+    const user = userEvent.setup();
+
+    const ownerPermissionSets = await screen.findByRole("button", {
+      name: /Permission set for Owner/,
+    });
+    const ownerRow = ownerPermissionSets.closest("tr")!;
+    expect(
+      within(ownerRow).queryByRole("button", {
+        name: "Remove access for Owner",
+      }),
+    ).not.toBeInTheDocument();
+
+    await togglePermissionSet("Owner", auditorPermissionSet.permissionSetArn);
+
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(putBody).toBeDefined());
+    expect(putBody).toEqual({
+      assignments: [
+        {
+          principalId: "owner-principal-id",
+          principalType: "USER",
+          permissionSetArn: auditorPermissionSet.permissionSetArn,
+        },
+      ],
+    });
+  });
+
+  it("allows an owner permission-set change to be undone", async () => {
+    stubGetAssignments([
+      { ...ownerAssignment, permissionSet: developerPermissionSet },
+    ]);
+    renderTab({ lease: profiledLease });
+    const user = userEvent.setup();
+
+    await togglePermissionSet("Owner", auditorPermissionSet.permissionSetArn);
+
+    const ownerRow = screen
+      .getByRole("button", { name: /Permission set for Owner/ })
+      .closest("tr")!;
+    expect(
+      within(ownerRow).queryByRole("button", {
+        name: "Remove access for Owner",
+      }),
+    ).not.toBeInTheDocument();
+
+    await user.click(
+      within(ownerRow).getByRole("button", {
+        name: "Undo permission set change for Owner",
+      }),
+    );
+
+    expect(screen.queryByText("Pending change")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save changes" })).toBeDisabled();
   });
 
   it("disables Save when there are no staged changes", async () => {
@@ -388,7 +1058,11 @@ describe("AssignmentsTab", () => {
     // Scope to alice's row via the unique addedBy cell to avoid the
     // duplicate-email match in the Name + Email columns.
     const aliceRow = screen.getByText("owner-test@example.com").closest("tr")!;
-    await user.click(within(aliceRow).getByRole("button", { name: "Remove" }));
+    await user.click(
+      within(aliceRow).getByRole("button", {
+        name: "Remove access for Alice Smith",
+      }),
+    );
     expect(screen.getByText("Pending remove")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Cancel" }));
@@ -412,6 +1086,7 @@ describe("AssignmentsTab", () => {
       isOwner: true,
       isDesired: true,
       syncStatus: "active",
+      permissionSet: builtInPermissionSet,
     };
     stubGetAssignments([ownerAssignment, userAssignment]);
     renderTab();
@@ -425,14 +1100,18 @@ describe("AssignmentsTab", () => {
     const ownerRow = screen.getByText("admin@example.com").closest("tr")!;
     expect(within(ownerRow).getByText("Owner")).toBeInTheDocument();
     expect(
-      within(ownerRow).queryByRole("button", { name: "Remove" }),
+      within(ownerRow).queryByRole("button", {
+        name: "Remove access for Lease Owner",
+      }),
     ).not.toBeInTheDocument();
 
     // Non-owner row still has Remove (sanity check that the suppression is
     // owner-specific, not blanket).
     const aliceRow = screen.getByText("owner-test@example.com").closest("tr")!;
     expect(
-      within(aliceRow).getByRole("button", { name: "Remove" }),
+      within(aliceRow).getByRole("button", {
+        name: "Remove access for Alice Smith",
+      }),
     ).toBeInTheDocument();
   });
 
@@ -483,37 +1162,253 @@ describe("AssignmentsTab", () => {
     await user.click(screen.getByRole("button", { name: "Save changes" }));
 
     await waitFor(() => expect(putBody).toBeDefined());
-    // Owner is implicit (auto-injected server-side) and excluded from the PUT body.
     expect(putBody).toEqual({
       assignments: [
-        { principalId: "user-1", principalType: "USER" },
-        { principalId: "carol-id", principalType: "USER" },
+        {
+          principalId: "owner-principal-id",
+          principalType: "USER",
+          permissionSetArn: builtInPermissionSet.permissionSetArn,
+        },
+        {
+          principalId: "user-1",
+          principalType: "USER",
+          permissionSetArn: builtInPermissionSet.permissionSetArn,
+        },
+        {
+          principalId: "carol-id",
+          principalType: "USER",
+          permissionSetArn: builtInPermissionSet.permissionSetArn,
+        },
       ],
     });
   });
 
-  it("cancels a staged removal when the same principal is re-added", async () => {
-    stubGetAssignments([userAssignment]);
-    renderTab();
+  it("undoes a staged removal without re-adding the principal", async () => {
+    stubGetAssignments([
+      {
+        ...userAssignment,
+        permissionSet: developerPermissionSet,
+      },
+    ]);
+    renderTab({ lease: profiledLease });
     const user = userEvent.setup();
 
     expect(
       (await screen.findAllByText("alice@example.com")).length,
     ).toBeGreaterThan(0);
 
-    // Stage alice for removal — `excludePrincipalIds` drops her from the
-    // typeahead while in "current" state but lets her back in once she's
-    // staged for removal, so the typeahead button reappears.
     const aliceRow = screen.getByText("owner-test@example.com").closest("tr")!;
-    await user.click(within(aliceRow).getByRole("button", { name: "Remove" }));
+    await user.click(
+      within(aliceRow).getByRole("button", {
+        name: "Remove access for Alice Smith",
+      }),
+    );
     expect(screen.getByText("Pending remove")).toBeInTheDocument();
 
-    // Re-add alice through the typeahead — should clear the staged removal,
-    // not create a duplicate row.
-    await user.click(screen.getByRole("button", { name: "Add user-1" }));
+    expect(
+      screen.queryByRole("button", { name: "Add user-1" }),
+    ).not.toBeInTheDocument();
+    await user.click(
+      within(aliceRow).getByRole("button", {
+        name: "Undo access removal for Alice Smith",
+      }),
+    );
     expect(screen.queryByText("Pending remove")).not.toBeInTheDocument();
     expect(screen.queryByText("Pending add")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Save changes" })).toBeDisabled();
+  });
+
+  it("clears a staged replacement when the original permission set is restored", async () => {
+    stubGetAssignments([
+      {
+        ...userAssignment,
+        permissionSet: developerPermissionSet,
+      },
+    ]);
+    renderTab({ lease: profiledLease });
+    await togglePermissionSet(
+      "Alice Smith",
+      auditorPermissionSet.permissionSetArn,
+    );
+    await togglePermissionSet(
+      "Alice Smith",
+      developerPermissionSet.permissionSetArn,
+    );
+
+    expect(screen.queryByText("Pending change")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Changing from DeveloperAccess"),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save changes" })).toBeDisabled();
+  });
+
+  it("offers an explicit undo for a staged permission-set replacement", async () => {
+    stubGetAssignments([
+      {
+        ...userAssignment,
+        permissionSet: developerPermissionSet,
+      },
+    ]);
+    renderTab({ lease: profiledLease });
+    const user = userEvent.setup();
+
+    await togglePermissionSet(
+      "Alice Smith",
+      auditorPermissionSet.permissionSetArn,
+    );
+
+    const aliceRow = screen.getByText("owner-test@example.com").closest("tr")!;
+    await user.click(
+      screen.getByRole("button", {
+        name: "Show permission set operations for Alice Smith",
+      }),
+    );
+    expect(screen.getByText("Grant access")).toBeInTheDocument();
+    expect(screen.getByText("Revoke access")).toBeInTheDocument();
+    expect(screen.getAllByText("Pending save")).toHaveLength(2);
+
+    await user.click(
+      within(aliceRow).getByRole("button", {
+        name: "Undo permission set change for Alice Smith",
+      }),
+    );
+
+    expect(screen.queryByText("Pending change")).not.toBeInTheDocument();
+    expect(screen.queryByText("Grant access")).not.toBeInTheDocument();
+    expect(screen.queryByText("Revoke access")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save changes" })).toBeDisabled();
+  });
+
+  it("allows a count-neutral permission-set replacement at capacity", async () => {
+    stubGetAssignments(assignmentsAtCapacity());
+    renderTab({ lease: profiledLease });
+
+    await togglePermissionSet("User 1", auditorPermissionSet.permissionSetArn);
+    expect(screen.getByRole("button", { name: "Save changes" })).toBeEnabled();
+    await togglePermissionSet(
+      "User 1",
+      developerPermissionSet.permissionSetArn,
+    );
+    expect(screen.getByRole("button", { name: "Save changes" })).toBeDisabled();
+  });
+
+  it("preserves staged edits across background query refreshes", async () => {
+    stubGetAssignments([ownerAssignment, userAssignment]);
+    renderTab();
+    const user = userEvent.setup();
+
+    const aliceRow = (
+      await screen.findByText("owner-test@example.com")
+    ).closest("tr")!;
+    await user.click(
+      within(aliceRow).getByRole("button", {
+        name: "Remove access for Alice Smith",
+      }),
+    );
+    expect(screen.getByText("Pending remove")).toBeInTheDocument();
+
+    stubGetAssignments([
+      ownerAssignment,
+      desiredOnly({
+        principalId: "server-only-user",
+        displayName: "Server-only user",
+      }),
+    ]);
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() =>
+      expect(screen.getByText("Pending remove")).toBeInTheDocument(),
+    );
+    expect(screen.queryByText("Server-only user")).not.toBeInTheDocument();
+    expect(
+      screen.getByText("Assignments changed elsewhere"),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save changes" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Add carol-id" })).toBeDisabled();
+    expect(
+      within(aliceRow).getByRole("button", {
+        name: "Undo access removal for Alice Smith",
+      }),
+    ).toBeDisabled();
+  });
+
+  it("reports a refresh failure separately after assignments are saved", async () => {
+    let assignmentsSaved = false;
+    let refreshShouldFail = true;
+    server.use(
+      http.get(
+        `${getConfig().ApiUrl}/leases/${LEASE_ROUTE_ID}/assignments`,
+        () => {
+          if (!assignmentsSaved) {
+            return HttpResponse.json({
+              status: "success",
+              data: { assignments: [ownerAssignment, userAssignment] },
+            });
+          }
+          return refreshShouldFail
+            ? HttpResponse.json(
+                { status: "error", message: "Refresh failed" },
+                { status: 500 },
+              )
+            : HttpResponse.json({
+                status: "success",
+                data: { assignments: [ownerAssignment] },
+              });
+        },
+      ),
+      http.put(
+        `${getConfig().ApiUrl}/leases/${LEASE_ROUTE_ID}/assignments`,
+        () => {
+          assignmentsSaved = true;
+          return HttpResponse.json(
+            { status: "success", data: { desiredCount: 1 } },
+            { status: 202 },
+          );
+        },
+      ),
+    );
+    renderTab();
+    const user = userEvent.setup();
+
+    const aliceRow = (await screen.findByText("alice@example.com")).closest(
+      "tr",
+    )!;
+    await user.click(
+      within(aliceRow).getByRole("button", {
+        name: "Remove access for Alice Smith",
+      }),
+    );
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() =>
+      expect(showErrorToast).toHaveBeenCalledWith(
+        "Assignments were saved, but the latest status could not be loaded. Refresh the page to see the current state.",
+        "Status refresh failed",
+      ),
+    );
+    expect(
+      await screen.findByText("Assignments may be out of date"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Alice Smith")).toBeInTheDocument();
+    expect(screen.getByText("Pending remove")).toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        /There was a problem loading assignments for this lease/i,
+      ),
+    ).not.toBeInTheDocument();
+
+    refreshShouldFail = false;
+    await user.click(screen.getByRole("button", { name: "Retry refresh" }));
+
+    await waitFor(() => {
+      expect(
+        screen.queryByText("Assignments may be out of date"),
+      ).not.toBeInTheDocument();
+      expect(screen.queryByText("Alice Smith")).not.toBeInTheDocument();
+    });
+    expect(
+      screen.queryByText("Assignments changed elsewhere"),
+    ).not.toBeInTheDocument();
   });
 
   it("renders the transitional statuses reported by the API", async () => {
@@ -538,6 +1433,62 @@ describe("AssignmentsTab", () => {
     expect(await screen.findByText("Granting")).toBeInTheDocument();
   });
 
+  it("polls assignment status while an operation is in progress", async () => {
+    let getCalls = 0;
+    server.use(
+      http.get(
+        `${getConfig().ApiUrl}/leases/${LEASE_ROUTE_ID}/assignments`,
+        () => {
+          getCalls++;
+          return HttpResponse.json({
+            status: "success",
+            data: {
+              assignments: [userAssignment],
+              operationInProgress: getCalls === 1 ? "UPDATE" : undefined,
+            },
+          });
+        },
+      ),
+    );
+    let poll: (() => unknown) | undefined;
+    const originalSetInterval = globalThis.setInterval;
+    const setIntervalSpy = vi
+      .spyOn(globalThis, "setInterval")
+      .mockImplementation((callback, delay, ...args) => {
+        if (delay === 5_000) {
+          poll = callback as () => unknown;
+          return 1 as unknown as ReturnType<typeof setInterval>;
+        }
+        return originalSetInterval(callback, delay, ...args);
+      });
+
+    const view = renderTab();
+    try {
+      expect(
+        await screen.findByText(
+          "An update is being processed. Saving more changes is paused until it completes.",
+        ),
+      ).toBeInTheDocument();
+      expect(poll).toBeDefined();
+
+      await act(async () => {
+        await poll?.();
+      });
+
+      await waitFor(() => expect(getCalls).toBe(2));
+      await waitFor(() =>
+        expect(
+          screen.queryByText(
+            "An update is being processed. Saving more changes is paused until it completes.",
+          ),
+        ).not.toBeInTheDocument(),
+      );
+    } finally {
+      view.unmount();
+      setIntervalSpy.mockRestore();
+    }
+  });
+
   it("renders the failure statuses reported by the API", async () => {
     // The API decides these; the client only projects them. It no longer infers
     // failure from a divergence between two independently-fetched endpoints.
@@ -552,6 +1503,39 @@ describe("AssignmentsTab", () => {
     ).closest("tr")!;
     expect(within(aliceRow).getByText("Revoke failed")).toBeInTheDocument();
     expect(await screen.findByText("Grant failed")).toBeInTheDocument();
+  });
+
+  it("expands mixed grant and revoke outcomes for a permission-set replacement", async () => {
+    stubGetAssignments([
+      {
+        ...userAssignment,
+        syncStatus: "active",
+        permissionSet: auditorPermissionSet,
+      },
+      {
+        ...userAssignment,
+        isDesired: false,
+        syncStatus: "revokeFailed",
+        permissionSet: developerPermissionSet,
+      },
+    ]);
+    renderTab({ lease: profiledLease });
+    const user = userEvent.setup();
+
+    expect(screen.queryByText("Grant access")).not.toBeInTheDocument();
+    await user.click(await screen.findByRole("button", { name: "Expand all" }));
+
+    const grantRow = screen.getByText("Grant access").closest("tr")!;
+    expect(within(grantRow).getByText("AuditorAccess")).toBeInTheDocument();
+    expect(within(grantRow).getByText("Active")).toBeInTheDocument();
+
+    const revokeRow = screen.getByText("Revoke access").closest("tr")!;
+    expect(within(revokeRow).getByText("DeveloperAccess")).toBeInTheDocument();
+    expect(within(revokeRow).getByText("Revoke failed")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Collapse all" }));
+    expect(screen.queryByText("Grant access")).not.toBeInTheDocument();
+    expect(screen.queryByText("Revoke access")).not.toBeInTheDocument();
   });
 
   describe("frozen lease", () => {
@@ -582,7 +1566,7 @@ describe("AssignmentsTab", () => {
         screen.queryByRole("button", { name: "Save changes" }),
       ).not.toBeInTheDocument();
       expect(
-        screen.queryByRole("button", { name: "Remove" }),
+        screen.queryByRole("button", { name: /Remove access for/ }),
       ).not.toBeInTheDocument();
     });
 
@@ -599,7 +1583,7 @@ describe("AssignmentsTab", () => {
       expect(
         await screen.findByText(/Freezing this lease/),
       ).toBeInTheDocument();
-      expect(screen.getByText("Revoking")).toBeInTheDocument();
+      expect(await screen.findByText("Revoking")).toBeInTheDocument();
       expect(screen.queryByText("Granting")).not.toBeInTheDocument();
       expect(screen.queryByText("Grant failed")).not.toBeInTheDocument();
     });
@@ -637,9 +1621,9 @@ describe("AssignmentsTab", () => {
         screen.queryByRole("button", { name: "Save changes" }),
       ).not.toBeInTheDocument();
       expect(
-        screen.queryByRole("button", { name: "Remove" }),
+        screen.queryByRole("button", { name: /Remove access for/ }),
       ).not.toBeInTheDocument();
-      expect(screen.queryByText("Share access")).not.toBeInTheDocument();
+      expect(screen.queryByText("Configure access")).not.toBeInTheDocument();
     });
 
     it("says access ended rather than suspended", async () => {
@@ -743,18 +1727,41 @@ describe("AssignmentsTab", () => {
         "tr",
       )!;
       expect(
-        within(daveRow).getByRole("button", { name: "Undo" }),
+        within(daveRow).getByRole("button", {
+          name: "Undo access removal for Dave Lingering",
+        }),
       ).toBeInTheDocument();
       expect(
-        within(daveRow).queryByRole("button", { name: "Remove" }),
+        within(daveRow).queryByRole("button", {
+          name: "Remove access for Dave Lingering",
+        }),
       ).not.toBeInTheDocument();
 
       const aliceRow = screen
         .getByText("owner-test@example.com")
         .closest("tr")!;
       expect(
-        within(aliceRow).getByRole("button", { name: "Remove" }),
+        within(aliceRow).getByRole("button", {
+          name: "Remove access for Alice Smith",
+        }),
       ).not.toBeDisabled();
+    });
+
+    it("disables Undo when restoring access would exceed capacity", async () => {
+      stubGetAssignments([
+        ...assignmentsAtCapacity(),
+        lingeringRecord({ principalId: "dave-id" }),
+      ]);
+      renderTab();
+
+      const daveRow = (await screen.findByText("dave@example.com")).closest(
+        "tr",
+      )!;
+      expect(
+        within(daveRow).getByRole("button", {
+          name: "Undo access removal for Dave Lingering",
+        }),
+      ).toBeDisabled();
     });
 
     it("stages the undo and submits the principal as desired", async () => {
@@ -785,7 +1792,11 @@ describe("AssignmentsTab", () => {
       const daveRow = (await screen.findByText("dave@example.com")).closest(
         "tr",
       )!;
-      await user.click(within(daveRow).getByRole("button", { name: "Undo" }));
+      await user.click(
+        within(daveRow).getByRole("button", {
+          name: "Undo access removal for Dave Lingering",
+        }),
+      );
 
       // Reuses the add wording — the principal is going back into the desired set.
       expect(screen.getByText("Pending add")).toBeInTheDocument();
@@ -814,12 +1825,18 @@ describe("AssignmentsTab", () => {
       const daveRow = (await screen.findByText("dave@example.com")).closest(
         "tr",
       )!;
-      await user.click(within(daveRow).getByRole("button", { name: "Undo" }));
+      await user.click(
+        within(daveRow).getByRole("button", {
+          name: "Undo access removal for Dave Lingering",
+        }),
+      );
       expect(screen.getByText("Pending add")).toBeInTheDocument();
 
       const stagedRow = screen.getByText("dave@example.com").closest("tr")!;
       await user.click(
-        within(stagedRow).getByRole("button", { name: "Remove" }),
+        within(stagedRow).getByRole("button", {
+          name: "Remove access for Dave Lingering",
+        }),
       );
 
       await waitFor(() =>
@@ -848,7 +1865,11 @@ describe("AssignmentsTab", () => {
       ).toBeInTheDocument();
 
       const daveRow = screen.getByText("dave@example.com").closest("tr")!;
-      await user.click(within(daveRow).getByRole("button", { name: "Undo" }));
+      await user.click(
+        within(daveRow).getByRole("button", {
+          name: "Undo access removal for Dave Lingering",
+        }),
+      );
 
       await waitFor(() =>
         expect(
@@ -932,7 +1953,11 @@ describe("AssignmentsTab", () => {
 
     // Remove the unsaved add — it should disappear entirely (not stage as "removed").
     const carolRow = screen.getByText("Carol Davis").closest("tr")!;
-    await user.click(within(carolRow).getByRole("button", { name: "Remove" }));
+    await user.click(
+      within(carolRow).getByRole("button", {
+        name: "Remove access for Carol Davis",
+      }),
+    );
     expect(screen.queryByText("Carol Davis")).not.toBeInTheDocument();
     expect(screen.queryByText("Pending remove")).not.toBeInTheDocument();
   });
@@ -948,14 +1973,20 @@ describe("AssignmentsTab", () => {
 
     // Stage alice for removal.
     const aliceRow = screen.getByText("owner-test@example.com").closest("tr")!;
-    await user.click(within(aliceRow).getByRole("button", { name: "Remove" }));
+    await user.click(
+      within(aliceRow).getByRole("button", {
+        name: "Remove access for Alice Smith",
+      }),
+    );
     expect(screen.getByText("Pending remove")).toBeInTheDocument();
 
     // Undo button should appear.
     const updatedRow = screen
       .getByText("owner-test@example.com")
       .closest("tr")!;
-    const undoButton = within(updatedRow).getByRole("button", { name: "Undo" });
+    const undoButton = within(updatedRow).getByRole("button", {
+      name: "Undo access removal for Alice Smith",
+    });
     expect(undoButton).toBeInTheDocument();
 
     // Click Undo — row returns to current state.
@@ -985,7 +2016,11 @@ describe("AssignmentsTab", () => {
 
     // Stage a removal so Save is enabled.
     const aliceRow = screen.getByText("owner-test@example.com").closest("tr")!;
-    await user.click(within(aliceRow).getByRole("button", { name: "Remove" }));
+    await user.click(
+      within(aliceRow).getByRole("button", {
+        name: "Remove access for Alice Smith",
+      }),
+    );
     await user.click(screen.getByRole("button", { name: "Save changes" }));
 
     await waitFor(() => expect(mockErrorToast).toHaveBeenCalled());
@@ -1032,7 +2067,9 @@ describe("AssignmentsTab", () => {
     ).closest("tr")!;
 
     // Remove button should be disabled while lock is held.
-    const removeBtn = within(aliceRow).getByRole("button", { name: "Remove" });
+    const removeBtn = within(aliceRow).getByRole("button", {
+      name: "Remove access for Alice Smith",
+    });
     expect(removeBtn).toBeDisabled();
   });
 });

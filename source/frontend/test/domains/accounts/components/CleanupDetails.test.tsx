@@ -5,17 +5,17 @@ import { screen } from "@testing-library/react";
 import { DateTime } from "luxon";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
-import {
-  createMockCleanupReport,
-  createMockFailedReport,
-  createMockInProgressReport,
-} from "@amzn/innovation-sandbox-frontend-test/domains/accounts/factories/cleanupReportFactory";
 import { CleanupDetails } from "@amzn/innovation-sandbox-frontend/domains/accounts/components/CleanupDetails";
 import {
   CleanupReportView,
   CleanupResourceSummaryView,
 } from "@amzn/innovation-sandbox-frontend/domains/accounts/types";
 import { renderWithQueryClient } from "@amzn/innovation-sandbox-frontend/setupTests";
+import {
+  createMockCleanupReport,
+  createMockFailedReport,
+  createMockInProgressReport,
+} from "@amzn/innovation-sandbox-frontend-test/domains/accounts/factories/cleanupReportFactory";
 
 class ResizeObserver {
   observe() {}
@@ -664,5 +664,17 @@ describe("CleanupDetails", () => {
       // No warning icons should be present for nuke steps
       expect(screen.queryByLabelText("Warning")).not.toBeInTheDocument();
     });
+  });
+
+  test("shows the start and completion times as relative times", () => {
+    const report = createMockCleanupReport({
+      startedAt: "2024-06-15T07:00:00.000Z",
+      completedAt: "2024-06-15T08:00:00.000Z",
+    });
+
+    renderWithQueryClient(<CleanupDetails report={report} />);
+
+    expect(screen.getByText("5 hours ago")).toBeInTheDocument();
+    expect(screen.getByText("4 hours ago")).toBeInTheDocument();
   });
 });

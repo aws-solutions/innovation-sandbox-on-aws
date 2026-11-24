@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useEffect } from "react";
 import { FormProvider, useForm } from "react-hook-form";
@@ -25,12 +25,14 @@ function TestComponent({
   itemNoun,
   sorted,
   onItems,
+  readOnly = false,
 }: {
   defaultItems?: string[];
   maxItems?: number;
   maxItemLength?: number;
   itemNoun?: string;
   sorted?: boolean;
+  readOnly?: boolean;
   // Spy to observe the stored (RHF) value — used to assert dismiss removes the
   // right value even when the sorted display order differs from storage order.
   onItems?: (items: string[]) => void;
@@ -58,6 +60,7 @@ function TestComponent({
         }}
         inputProps={{
           placeholder: "Add an item and press Enter",
+          readOnly,
         }}
         maxItems={maxItems}
         maxItemLength={maxItemLength}
@@ -69,6 +72,46 @@ function TestComponent({
 }
 
 describe("TokenListField", () => {
+  test("shows read-only entry and tokens without allowing additions or removals", async () => {
+    const onItems = vi.fn();
+    renderWithQueryClient(
+      <TestComponent defaultItems={["alpha"]} readOnly onItems={onItems} />,
+    );
+
+    const input = screen.getByPlaceholderText("Add an item and press Enter");
+    expect(input).toHaveAttribute("readonly");
+    expect(screen.getByRole("button", { name: "Add" })).toBeDisabled();
+    const remove = screen.getByRole("button", { name: "Remove alpha" });
+    expect(remove).toHaveAttribute("aria-disabled", "true");
+    await userEvent.click(remove);
+    expect(screen.getByText("alpha")).toBeInTheDocument();
+    await userEvent.type(input, "beta{Enter}");
+    expect(input).toHaveValue("");
+    expect(screen.queryByText("beta")).not.toBeInTheDocument();
+    expect(onItems).toHaveBeenLastCalledWith(["alpha"]);
+  });
+
+  test("cannot add an existing draft after switching to read-only", async () => {
+    const onItems = vi.fn();
+    const { rerender } = render(
+      <TestComponent defaultItems={["alpha"]} onItems={onItems} />,
+    );
+    const input = screen.getByPlaceholderText("Add an item and press Enter");
+    await userEvent.type(input, "beta");
+    expect(screen.getByRole("button", { name: "Add" })).toBeEnabled();
+
+    rerender(
+      <TestComponent defaultItems={["alpha"]} readOnly onItems={onItems} />,
+    );
+    expect(input).toHaveAttribute("readonly");
+    expect(screen.getByRole("button", { name: "Add" })).toBeDisabled();
+    await userEvent.click(screen.getByRole("button", { name: "Add" }));
+    await userEvent.click(input);
+    await userEvent.keyboard("{Enter}");
+    expect(screen.queryByText("beta")).not.toBeInTheDocument();
+    expect(onItems).toHaveBeenLastCalledWith(["alpha"]);
+  });
+
   test("renders with label and description", () => {
     renderWithQueryClient(<TestComponent />);
 

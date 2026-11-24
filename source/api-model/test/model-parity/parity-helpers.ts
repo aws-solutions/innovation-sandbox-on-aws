@@ -13,6 +13,7 @@ export type SmithyMember = {
 };
 
 type SmithyShape = {
+  errors?: Array<{ target: string }>;
   input?: { target: string };
   member?: SmithyMember;
   members?: Record<string, SmithyMember>;
@@ -178,6 +179,14 @@ export function modelHttpOperation(name: string): {
   return http as { code: number; method: string; uri: string };
 }
 
+export function modelOperationErrors(name: string): string[] {
+  const operation = modelShape(name);
+  expect(operation.type, `${name} should be an operation`).toBe("operation");
+  return (operation.errors ?? [])
+    .map(({ target }) => target.split("#").at(-1) ?? target)
+    .sort();
+}
+
 export function modelQueryParameters(operationName: string): Array<{
   memberName: string;
   name: string;
@@ -237,7 +246,8 @@ function constraintValue(
   trait: string,
 ): Record<string, number> | undefined {
   const target = smithyModel.shapes[member.target]?.traits?.[trait] as
-    Record<string, number> | undefined;
+    | Record<string, number>
+    | undefined;
   const local = member.traits?.[trait] as Record<string, number> | undefined;
   if (!target) return local;
   if (!local) return target;

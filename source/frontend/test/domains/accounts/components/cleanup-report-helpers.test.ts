@@ -3,12 +3,12 @@
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
-import { createMockCleanupReport } from "@amzn/innovation-sandbox-frontend-test/domains/accounts/factories/cleanupReportFactory";
 import {
   formatDuration,
   formatReason,
 } from "@amzn/innovation-sandbox-frontend/domains/accounts/components/cleanup-report-helpers";
 import { CleanupReportView } from "@amzn/innovation-sandbox-frontend/domains/accounts/types";
+import { createMockCleanupReport } from "@amzn/innovation-sandbox-frontend-test/domains/accounts/factories/cleanupReportFactory";
 
 describe("cleanup-report-helpers", () => {
   describe("formatDuration", () => {

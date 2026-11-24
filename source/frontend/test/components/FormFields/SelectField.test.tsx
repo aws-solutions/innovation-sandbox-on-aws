@@ -5,13 +5,13 @@ import type { SelectProps } from "@cloudscape-design/components/select";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
 
 import SelectField from "@amzn/innovation-sandbox-frontend/components/FormFields/SelectField";
 import { renderWithQueryClient } from "@amzn/innovation-sandbox-frontend/setupTests";
-import { useEffect } from "react";
 
 type Status = "active" | "inactive" | "pending";
 
@@ -171,12 +171,12 @@ describe("SelectField", () => {
   });
 
   test("handles null option value", () => {
-    const NullableSchema = z.object({
-      status: z.enum(["active", "inactive", "pending"]).nullable(),
-    });
+    type NullableFormValues = {
+      status: Status | null;
+    };
 
     function TestNullable() {
-      const { control } = useForm<z.infer<typeof NullableSchema>>({
+      const { control } = useForm<NullableFormValues>({
         defaultValues: { status: null },
       });
 
@@ -274,6 +274,37 @@ describe("SelectField", () => {
 
     await waitFor(() => {
       expect(customOnChangeCalled).toBe(true);
+    });
+  });
+
+  test("can reject a converted value before updating form state", async () => {
+    function TestRejectedValue() {
+      const { control } = useForm<TestFormValues>({
+        defaultValues: { status: "active" },
+      });
+
+      return (
+        <SelectField
+          controllerProps={{ control, name: "status" }}
+          formFieldProps={{ label: "Status" }}
+          selectProps={{
+            options: STATUS_OPTIONS,
+            valueToOption,
+            optionToValue,
+            shouldUpdateValue: (value) => value !== "inactive",
+          }}
+        />
+      );
+    }
+
+    const user = userEvent.setup();
+    renderWithQueryClient(<TestRejectedValue />);
+
+    await user.click(screen.getByRole("button"));
+    await user.click(screen.getByText("Inactive"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Active")).toBeInTheDocument();
     });
   });
 });

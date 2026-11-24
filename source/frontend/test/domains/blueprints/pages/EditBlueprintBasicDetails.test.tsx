@@ -173,4 +173,80 @@ describe("EditBlueprintBasicDetails", () => {
       ).toBeInTheDocument();
     });
   });
+
+  describe("tag keys", () => {
+    const addTagWithKey = async (
+      user: ReturnType<typeof userEvent.setup>,
+      key: string,
+    ) => {
+      await user.click(screen.getByRole("button", { name: /add tag/i }));
+      const keyInputs = screen.getAllByPlaceholderText(
+        "e.g., Environment, Cost-Center, Project",
+      );
+      await user.type(keyInputs[keyInputs.length - 1], key);
+    };
+
+    test("shows an error and disables save when a tag key is only spaces", async () => {
+      renderComponent();
+      const user = userEvent.setup();
+
+      await waitFor(() => {
+        expect(screen.getByLabelText("Blueprint Name")).toBeInTheDocument();
+      });
+
+      await addTagWithKey(user, "   ");
+
+      await waitFor(() => {
+        expect(screen.getByText("Tag key is required")).toBeInTheDocument();
+      });
+      expect(
+        screen.getByRole("button", { name: /save changes/i }),
+      ).toBeDisabled();
+    });
+
+    test("saves tag keys without leading and trailing spaces", async () => {
+      const submitSpy = vi.fn();
+      server.use(
+        http.put(
+          `${getConfig().ApiUrl}/blueprints/${mockBlueprintId}`,
+          async ({ request }) => {
+            const data = (await request.json()) as UpdateBlueprintRequest;
+            submitSpy(data);
+            return HttpResponse.json({
+              status: "success",
+              data: createBlueprintWithStackSets({
+                blueprint: createBlueprint({
+                  ...mockBlueprint.blueprint,
+                  ...data,
+                }),
+              }),
+            });
+          },
+        ),
+      );
+
+      renderComponent();
+      const user = userEvent.setup();
+
+      await waitFor(() => {
+        expect(screen.getByLabelText("Blueprint Name")).toBeInTheDocument();
+      });
+
+      await addTagWithKey(user, " owner ");
+
+      const saveButton = screen.getByRole("button", { name: /save changes/i });
+      await waitFor(() => {
+        expect(saveButton).not.toBeDisabled();
+      });
+      await user.click(saveButton);
+
+      await waitFor(() => {
+        expect(submitSpy).toHaveBeenCalledWith(
+          expect.objectContaining({
+            tags: { ...mockBlueprint.blueprint.tags, owner: "" },
+          }),
+        );
+      });
+    });
+  });
 });

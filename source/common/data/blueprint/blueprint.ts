@@ -40,10 +40,15 @@ export const PersistedBlueprintItemTypeSchema = z.enum(
   },
 );
 
+export const PersistedBlueprintTableKeySchema = z.strictObject({
+  PK: z.string(),
+  SK: z.string(),
+});
+
 // Blueprint Item (Primary Blueprint Entity) - Sort Key Pattern: "blueprint"
 export const PersistedBlueprintItemSchema = z.strictObject({
   // Primary Keys (DynamoDB)
-  PK: z.string(), // "bp#{blueprintId}"
+  ...PersistedBlueprintTableKeySchema.shape,
   SK: z.literal("blueprint"), // Fixed value for blueprint-level data
 
   itemType: z.literal("BLUEPRINT"),
@@ -54,8 +59,7 @@ export const PersistedBlueprintItemSchema = z.strictObject({
 // StackSet Configuration Item - Sort Key Pattern: "stackset#{stackSetId}"
 export const PersistedStackSetItemSchema = z.strictObject({
   // Primary Keys (DynamoDB)
-  PK: z.string(), // "bp#{blueprintId}" - Same partition as blueprint item
-  SK: z.string(), // "stackset#{stackSetId}"
+  ...PersistedBlueprintTableKeySchema.shape,
 
   itemType: z.literal("STACKSET"),
   ...StackSetItemSchema.omit({ meta: true }).shape,
@@ -65,8 +69,7 @@ export const PersistedStackSetItemSchema = z.strictObject({
 // Deployment History Item - Sort Key Pattern: "deployment#{timestamp}#{operationId}"
 export const PersistedDeploymentHistoryItemSchema = z.strictObject({
   // Primary Keys (DynamoDB)
-  PK: z.string(), // "bp#{blueprintId}" - Same partition as blueprint item
-  SK: z.string(), // "deployment#{timestamp}#{operationId}"
+  ...PersistedBlueprintTableKeySchema.shape,
 
   itemType: z.literal("DEPLOYMENT"),
   ...DeploymentHistoryItemSchema.shape,
@@ -75,6 +78,14 @@ export const PersistedDeploymentHistoryItemSchema = z.strictObject({
 
   ...PersistedBlueprintItemWithMetadataSchema.shape,
 });
+
+export const PersistedBlueprintListCursorSchema =
+  PersistedBlueprintItemSchema.pick({
+    PK: true,
+    SK: true,
+    itemType: true,
+    blueprintId: true,
+  });
 
 // Composite types for API responses
 export const PersistedBlueprintWithStackSetsSchema = z.object({

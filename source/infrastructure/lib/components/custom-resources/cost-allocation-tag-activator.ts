@@ -6,7 +6,7 @@ import { IsbLambdaFunctionCustomResource } from "@amzn/innovation-sandbox-infras
 import { isbTagName } from "@amzn/innovation-sandbox-infrastructure/helpers/tagging-helper";
 import { PolicyStatement } from "aws-cdk-lib/aws-iam";
 import { Construct } from "constructs";
-import path from "path";
+import path from "node:path";
 
 export interface CostAllocationTagActivatorProps {
   namespace: string;

@@ -17,6 +17,7 @@ import { useFieldArray, useFormContext, useWatch } from "react-hook-form";
 import InputField from "@amzn/innovation-sandbox-frontend/components/FormFields/InputField";
 import SelectField from "@amzn/innovation-sandbox-frontend/components/FormFields/SelectField";
 import ToggleField from "@amzn/innovation-sandbox-frontend/components/FormFields/ToggleField";
+import { PredictiveDurationWarning } from "@amzn/innovation-sandbox-frontend/components/Forms/PredictiveDurationWarning";
 import { DurationThreshold } from "@amzn/innovation-sandbox-shared/types/lease-template";
 
 export const DURATION_ACTION_OPTIONS: readonly SelectProps.Option[] = [
@@ -35,6 +36,12 @@ export interface DurationSettingsFormProps {
   globalMaxDurationHours?: number;
   /** Whether maximum duration is required by organization policy */
   requireMaxDuration: boolean;
+  /**
+   * Whether predictive budget controls apply to leases with this duration,
+   * for the short-lease warning. Live form value on the wizard, the persisted
+   * template value on the edit page.
+   */
+  predictiveBudgetEnabled?: boolean;
 }
 
 /**
@@ -45,9 +52,11 @@ export interface DurationSettingsFormProps {
 export function DurationSettingsForm({
   globalMaxDurationHours,
   requireMaxDuration,
-}: DurationSettingsFormProps) {
+  predictiveBudgetEnabled,
+}: Readonly<DurationSettingsFormProps>) {
   // Get control and trigger from form context
-  const { control, trigger } = useFormContext<DurationSettingsFormValues>();
+  const { control, trigger, resetField } =
+    useFormContext<DurationSettingsFormValues>();
 
   // Watch form values for dynamic UI and cross-field validation
   const maxDurationEnabled = useWatch({ control, name: "maxDurationEnabled" });
@@ -66,6 +75,7 @@ export function DurationSettingsForm({
     <SpaceBetween size="l">
       <ToggleField
         controllerProps={{ control, name: "maxDurationEnabled" }}
+        valueToChecked={(value) => value || requireMaxDuration}
         formFieldProps={{
           label: "Enable Maximum Duration",
           description: requireMaxDuration
@@ -75,6 +85,18 @@ export function DurationSettingsForm({
         toggleProps={{
           children: `Duration limit ${maxDurationEnabled || requireMaxDuration ? "enabled" : "disabled"}`,
           disabled: requireMaxDuration,
+          // The duration and its thresholds are hidden while the toggle is off,
+          // so put back their starting values rather than leave an invalid
+          // value nobody can see or fix. That also clears the threshold
+          // errors, so check the thresholds again when it comes back on.
+          onChange: (event) => {
+            if (event.detail.checked) {
+              trigger("durationThresholds");
+            } else {
+              resetField("leaseDurationInHours");
+              resetField("durationThresholds");
+            }
+          },
         }}
       />
 
@@ -85,10 +107,22 @@ export function DurationSettingsForm({
         </Alert>
       )}
 
+      <PredictiveDurationWarning
+        predictiveBudgetEnabled={predictiveBudgetEnabled}
+        durationHours={
+          maxDurationEnabled || requireMaxDuration
+            ? leaseDurationInHours
+            : undefined
+        }
+        variant="template"
+      />
+
       {(maxDurationEnabled || requireMaxDuration) && (
         <ColumnLayout columns={3} variant="default">
           <InputField
             controllerProps={{ control, name: "leaseDurationInHours" }}
+            min={0}
+            max={globalMaxDurationHours}
             formFieldProps={{
               label: "Maximum Duration (Hours)",
               description: globalMaxDurationHours
@@ -97,6 +131,7 @@ export function DurationSettingsForm({
             }}
             inputProps={{
               type: "number",
+              step: "any",
               placeholder: "e.g., 168 (1 week)",
               inputMode: "decimal",
               onChange: () => trigger(),
@@ -105,7 +140,7 @@ export function DurationSettingsForm({
         </ColumnLayout>
       )}
 
-      {maxDurationEnabled && (
+      {(maxDurationEnabled || requireMaxDuration) && (
         <FormField
           label={
             <>
@@ -133,8 +168,10 @@ export function DurationSettingsForm({
                     control,
                     name: `durationThresholds.${index}.hoursRemaining` as const,
                   }}
+                  min={0}
                   inputProps={{
                     type: "number",
+                    step: "any",
                     placeholder: "e.g., 24",
                     inputMode: "decimal",
                   }}

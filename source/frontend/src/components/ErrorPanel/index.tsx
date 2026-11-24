@@ -43,7 +43,7 @@ export const ErrorPanel = ({
       )}
     </Alert>
   );
-  if (error && error.toString().includes("403")) {
+  if (error?.toString().includes("403")) {
     return sessionExpiredAlert;
   } else {
     return errorAlert;

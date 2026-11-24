@@ -59,10 +59,25 @@ describe("EditBlueprintSelection", () => {
     renderComponent();
 
     await waitFor(() => {
-      expect(screen.getByText(/Edit Blueprint Selection/i)).toBeInTheDocument();
+      expect(
+        screen.getByRole("heading", { name: "Blueprint", level: 1 }),
+      ).toBeInTheDocument();
     });
 
-    expect(screen.getByText(/Enable Blueprint Selection/i)).toBeInTheDocument();
+    expect(
+      screen.getByText("Resources deployed with the lease"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Deploy a blueprint", level: 2 }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "When enabled, every lease created from this template starts with the blueprint's resources already deployed in its sandbox account. When disabled, users get an empty account.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("checkbox", { name: "Deploy a blueprint" }),
+    ).toBeInTheDocument();
   });
 
   test("navigates back on cancel", async () => {
@@ -70,7 +85,9 @@ describe("EditBlueprintSelection", () => {
     const user = userEvent.setup();
 
     await waitFor(() => {
-      expect(screen.getByText(/Edit Blueprint Selection/i)).toBeInTheDocument();
+      expect(
+        screen.getByRole("heading", { name: "Blueprint", level: 1 }),
+      ).toBeInTheDocument();
     });
 
     await user.click(screen.getByRole("button", { name: /cancel/i }));
@@ -113,23 +130,43 @@ describe("EditBlueprintSelection", () => {
     const user = userEvent.setup();
 
     await waitFor(() => {
-      expect(screen.getByText(/Edit Blueprint Selection/i)).toBeInTheDocument();
+      expect(
+        screen.getByRole("heading", { name: "Blueprint", level: 1 }),
+      ).toBeInTheDocument();
     });
 
     // Toggle ON to show blueprint selector (template has no blueprint, so toggle starts OFF)
     const toggle = screen.getByRole("checkbox", {
-      name: /Blueprint selection disabled/i,
+      name: "Deploy a blueprint",
     });
+    expect(screen.getByText("Empty account")).toBeInTheDocument();
+
     await user.click(toggle);
+
+    expect(toggle).toBeChecked();
+    expect(screen.queryByText("Empty account")).not.toBeInTheDocument();
 
     await waitFor(() => {
       expect(
         screen.getByText(mockBlueprint.blueprint.name),
       ).toBeInTheDocument();
     });
+    expect(
+      screen.getByRole("heading", { name: "Blueprints", level: 2 }),
+    ).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Find a blueprint")).toBeInTheDocument();
+    expect(screen.getByText("Blueprint ID")).toBeInTheDocument();
+    expect(screen.getByText("Deployment Timeout")).toBeInTheDocument();
+    expect(screen.getByText("Created By")).toBeInTheDocument();
 
     const blueprintCard = screen.getByText(mockBlueprint.blueprint.name);
     await user.click(blueprintCard);
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("heading", { name: "Blueprints", level: 2 }),
+      ).toBeInTheDocument();
+    });
 
     await user.click(screen.getByRole("button", { name: /save changes/i }));
 
@@ -174,12 +211,14 @@ describe("EditBlueprintSelection", () => {
     const user = userEvent.setup();
 
     await waitFor(() => {
-      expect(screen.getByText(/Edit Blueprint Selection/i)).toBeInTheDocument();
+      expect(
+        screen.getByRole("heading", { name: "Blueprint", level: 1 }),
+      ).toBeInTheDocument();
     });
 
     // Toggle starts ON because template has a blueprint — toggle OFF to remove
     const toggle = await screen.findByRole("checkbox", {
-      name: /Blueprint selection enabled/i,
+      name: "Deploy a blueprint",
     });
     await user.click(toggle);
 
@@ -197,7 +236,9 @@ describe("EditBlueprintSelection", () => {
     renderComponent();
 
     await waitFor(() => {
-      expect(screen.getByText(/Edit Blueprint Selection/i)).toBeInTheDocument();
+      expect(
+        screen.getByRole("heading", { name: "Blueprint", level: 1 }),
+      ).toBeInTheDocument();
     });
 
     const saveButton = screen.getByRole("button", { name: /save changes/i });
@@ -226,12 +267,21 @@ describe("EditBlueprintSelection", () => {
     renderComponent();
 
     await waitFor(() => {
-      expect(screen.getByText(/Edit Blueprint Selection/i)).toBeInTheDocument();
+      expect(
+        screen.getByRole("heading", { name: "Blueprint", level: 1 }),
+      ).toBeInTheDocument();
     });
 
     // Toggle is OFF (no blueprint on template), so blueprint cards should not be visible
     expect(
+      screen.getByRole("checkbox", { name: "Deploy a blueprint" }),
+    ).not.toBeChecked();
+    expect(screen.getByText("Empty account")).toBeInTheDocument();
+    expect(
       screen.queryByText(mockBlueprint.blueprint.name),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: /^Blueprints/, level: 2 }),
     ).not.toBeInTheDocument();
   });
 
@@ -257,7 +307,9 @@ describe("EditBlueprintSelection", () => {
     renderComponent();
 
     await waitFor(() => {
-      expect(screen.getByText(/Edit Blueprint Selection/i)).toBeInTheDocument();
+      expect(
+        screen.getByRole("heading", { name: "Blueprint", level: 1 }),
+      ).toBeInTheDocument();
     });
 
     // Toggle is ON (template has blueprint), so blueprint cards should be visible
@@ -266,6 +318,9 @@ describe("EditBlueprintSelection", () => {
         screen.getByText(mockBlueprint.blueprint.name),
       ).toBeInTheDocument();
     });
+    expect(
+      screen.getByRole("heading", { name: "Blueprints", level: 2 }),
+    ).toBeInTheDocument();
   });
 
   test("displays error toast on submission failure", async () => {
@@ -301,12 +356,14 @@ describe("EditBlueprintSelection", () => {
     const user = userEvent.setup();
 
     await waitFor(() => {
-      expect(screen.getByText(/Edit Blueprint Selection/i)).toBeInTheDocument();
+      expect(
+        screen.getByRole("heading", { name: "Blueprint", level: 1 }),
+      ).toBeInTheDocument();
     });
 
     // Toggle ON to show blueprint selector
     const toggle = screen.getByRole("checkbox", {
-      name: /Blueprint selection disabled/i,
+      name: "Deploy a blueprint",
     });
     await user.click(toggle);
 
@@ -353,14 +410,20 @@ describe("EditBlueprintSelection", () => {
     renderComponent();
 
     await waitFor(() => {
-      expect(screen.getByText(/Edit Blueprint Selection/i)).toBeInTheDocument();
+      expect(
+        screen.getByRole("heading", { name: "Blueprint", level: 1 }),
+      ).toBeInTheDocument();
     });
 
     await waitFor(() => {
-      const toggle = screen.getByRole("checkbox");
+      const toggle = screen.getByRole("checkbox", {
+        name: "Deploy a blueprint",
+      });
       expect(toggle).toBeDisabled();
+      expect(toggle).not.toBeChecked();
     });
 
+    expect(screen.getByText("Empty account")).toBeInTheDocument();
     expect(
       screen.getByText(/No blueprints are available/i),
     ).toBeInTheDocument();

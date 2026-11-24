@@ -45,26 +45,32 @@ import {
   StorageClass,
 } from "aws-cdk-lib/aws-s3";
 import { BucketDeployment, Source } from "aws-cdk-lib/aws-s3-deployment";
-import { execSync } from "child_process";
 import { Construct } from "constructs";
 import { existsSync, rmSync } from "fs-extra";
-import path from "path";
+import { execSync } from "node:child_process";
+import path from "node:path";
 
 import { IsbKmsKeys } from "@amzn/innovation-sandbox-infrastructure/components/kms";
 import { IsbLogGroups } from "@amzn/innovation-sandbox-infrastructure/components/observability/log-groups";
 import { getContextFromMapping } from "@amzn/innovation-sandbox-infrastructure/helpers/cdk-context";
 import { addCfnGuardSuppression } from "@amzn/innovation-sandbox-infrastructure/helpers/cfn-guard";
 import { ConditionAspect } from "@amzn/innovation-sandbox-infrastructure/helpers/cfn-utils";
-import { isDevMode } from "@amzn/innovation-sandbox-infrastructure/helpers/deployment-mode";
+import {
+  MCP_CLIENT_CALLBACK_URLS,
+  isDevMode,
+} from "@amzn/innovation-sandbox-infrastructure/helpers/deployment-mode";
 
 export interface CloudFrontUiApiProps {
   restApi: ApiGatewayRestApi;
   namespace: string;
   cognitoUserPoolId: string;
   cognitoAppClientId: string;
+  cognitoMcpClientId: string;
   cognitoIdentityPoolId: string;
   cognitoDomain: string;
   awsAccessPortalUrl: string;
+  webSocketUrl: string;
+  mcpGatewayUrl: string;
   customDomainName: string;
   customDomainCertificateArn: string;
 }
@@ -172,6 +178,7 @@ export class CloudfrontUiApi extends Construct {
       `https://${props.cognitoDomain}.auth.${Stack.of(this).region}.amazoncognito.com`,
       `https://cognito-idp.${Stack.of(this).region}.amazonaws.com`,
       `https://cognito-identity.${Stack.of(this).region}.amazonaws.com`,
+      props.webSocketUrl,
     ];
 
     const responseHeadersPolicy = new ResponseHeadersPolicy(
@@ -222,6 +229,11 @@ export class CloudfrontUiApi extends Construct {
             },
           ],
         },
+        removeHeaders: [
+          "x-amz-server-side-encryption",
+          "x-amz-server-side-encryption-aws-kms-key-id",
+          "x-amz-version-id",
+        ],
       },
     );
 
@@ -278,13 +290,13 @@ export class CloudfrontUiApi extends Construct {
       {
         runtime: FunctionRuntime.JS_2_0,
         functionName: `${props.namespace}-IsbS3OriginPathRedirectCloudFrontFunction`,
-        code: CloudFrontFunctionCode.fromInline(`
+        code: CloudFrontFunctionCode.fromInline(String.raw`
           function handler(event) {
             var request = event.request;
             var uri = request.uri;
             // A dot after the last slash = the last segment has a file extension
             // (e.g. /assets/app.js) -> serve as-is; otherwise it's a client-side route.
-            // No regex on purpose: a prior version used request.uri.split(/\\#|\\?/)
+            // No regex on purpose: a prior version used request.uri.split(/\#|\?/)
             // and a long URI (e.g. a ~127-char base64 leaseId path) failed with
             // "RangeError: Regex execute instruction limit exceeded" -> 503,
             // probably the regex evaluation exceeding its time/step budget.
@@ -406,6 +418,10 @@ export class CloudfrontUiApi extends Construct {
           AwsAccessPortalUrl: props.awsAccessPortalUrl,
           ApiGatewayHost: `${props.restApi.restApiId}.execute-api.${Stack.of(this).region}.${Stack.of(this).urlSuffix}`,
           ApiGatewayStage: props.restApi.deploymentStage.stageName,
+          SandboxAgentWebSocketUrl: props.webSocketUrl,
+          SandboxAgentMcpGatewayUrl: props.mcpGatewayUrl,
+          CognitoMcpClientId: props.cognitoMcpClientId,
+          CognitoMcpCallbackUrls: MCP_CLIENT_CALLBACK_URLS,
         }),
       ],
       destinationBucket: feBucket,
@@ -426,6 +442,20 @@ export class CloudfrontUiApi extends Construct {
       },
     });
     feBucket.addToResourcePolicy(bucketPolicyStatement);
+
+    feBucket.addToResourcePolicy(
+      new PolicyStatement({
+        actions: ["s3:ListBucket"],
+        effect: Effect.ALLOW,
+        principals: [new ServicePrincipal("cloudfront.amazonaws.com")],
+        resources: [feBucket.bucketArn],
+        conditions: {
+          StringEquals: {
+            "AWS:SourceArn": `arn:aws:cloudfront::${Stack.of(this).account}:distribution/${distribution.distributionId}`,
+          },
+        },
+      }),
+    );
 
     kmsKey.addToResourcePolicy(
       new PolicyStatement({
@@ -496,7 +526,7 @@ function buildFrontend(frontendPath: string): string {
     execSync("npm run build", { // NOSONAR typescript:S4036 - only used in cdk synth process
       cwd: frontendPath,
       stdio: "inherit",
-    });
+    })
 
     console.log(`Frontend build completed successfully at ${distPath}`);
     return distPath;

@@ -9,25 +9,28 @@ import {
   CopyToClipboard,
   Header,
   KeyValuePairs,
-  Popover,
   SpaceBetween,
   StatusIndicator,
 } from "@cloudscape-design/components";
-import { DateTime } from "luxon";
 
+import { AccessSettingsSummary } from "@amzn/innovation-sandbox-frontend/components/AccessSettingsSummary";
 import { AccountId } from "@amzn/innovation-sandbox-frontend/components/AccountId";
 import { BlueprintName } from "@amzn/innovation-sandbox-frontend/components/BlueprintName";
 import { BudgetProgressBar } from "@amzn/innovation-sandbox-frontend/components/BudgetProgressBar";
 import { BudgetStatus } from "@amzn/innovation-sandbox-frontend/components/BudgetStatus";
 import { DurationStatus } from "@amzn/innovation-sandbox-frontend/components/DurationStatus";
+import { FeatureStatusIndicator } from "@amzn/innovation-sandbox-frontend/components/FeatureStatusIndicator";
 import { LeaseName } from "@amzn/innovation-sandbox-frontend/components/LeaseName";
 import { LeaseTemplateName } from "@amzn/innovation-sandbox-frontend/components/LeaseTemplateName";
-import { SharingStatusIndicator } from "@amzn/innovation-sandbox-frontend/components/SharingStatusIndicator";
+import { predictiveBudgetSummaryItems } from "@amzn/innovation-sandbox-frontend/components/PredictiveBudgetSummaryItems";
+import { useSandboxSpacesSummaryItems } from "@amzn/innovation-sandbox-frontend/components/SandboxSpacesSummaryItems";
 import { ThresholdDetails } from "@amzn/innovation-sandbox-frontend/components/ThresholdDetails";
+import { TimePopover } from "@amzn/innovation-sandbox-frontend/components/TimePopover";
 import { LeaseStatusBadge } from "@amzn/innovation-sandbox-frontend/domains/leases/components/LeaseStatusBadge";
 import { LeaseView } from "@amzn/innovation-sandbox-frontend/domains/leases/model";
 import { getLeaseExpiryInfo } from "@amzn/innovation-sandbox-frontend/helpers/LeaseExpiryInfo";
 import {
+  getCurrentLeaseSpend,
   isExpiredLease,
   isMonitoredLease,
   isPendingLease,
@@ -38,23 +41,14 @@ interface LeaseSummaryProps {
   showEditButtons?: boolean;
   showAdminFields?: boolean;
   leaseSharingEnabled?: boolean;
+  /** Global `agent.sandboxSpacesEnabled` flag; when off, an enabled lease reads as overridden. */
+  sandboxSpacesEnabled?: boolean;
   onEditBudget?: () => void;
   onEditDuration?: () => void;
   onEditCostReport?: () => void;
-  onEditSharing?: () => void;
+  onEditSandboxSpaces?: () => void;
+  onEditAccessSettings?: () => void;
 }
-
-// Helper function to render time popover
-const renderTimePopover = (date: string) => (
-  <Popover
-    position="top"
-    size="large"
-    dismissButton={false}
-    content={DateTime.fromISO(date).toLocaleString(DateTime.DATETIME_HUGE)}
-  >
-    <Box>{DateTime.fromISO(date).toRelative()}</Box>
-  </Popover>
-);
 
 // Helper function to render approved by
 const renderApprovedBy = (lease: LeaseView) => {
@@ -79,7 +73,7 @@ const renderLeaseStarted = (lease: LeaseView) => {
     return <StatusIndicator type="info">Not started</StatusIndicator>;
   }
 
-  return renderTimePopover(lease.startDate);
+  return <TimePopover time={lease.startDate} />;
 };
 
 // Helper function to render last monitored
@@ -90,7 +84,7 @@ const renderLastMonitored = (lease: LeaseView) => {
     return <StatusIndicator type="info">Not monitored</StatusIndicator>;
   }
 
-  return renderTimePopover(lease.lastCheckedDate);
+  return <TimePopover time={lease.lastCheckedDate} />;
 };
 
 // Helper function to render comments
@@ -113,7 +107,7 @@ const renderBudgetStatus = (lease: LeaseView) => {
 
   return (
     <BudgetProgressBar
-      currentValue={isMonitoredOrExpired ? lease.totalCostAccrued : 0}
+      currentValue={isMonitoredOrExpired ? getCurrentLeaseSpend(lease) : 0}
       maxValue={lease.maxSpend}
     />
   );
@@ -133,11 +127,18 @@ export const LeaseSummary = ({
   showEditButtons = false,
   showAdminFields = false,
   leaseSharingEnabled = false,
+  sandboxSpacesEnabled = false,
   onEditBudget,
   onEditDuration,
   onEditCostReport,
-  onEditSharing,
+  onEditSandboxSpaces,
+  onEditAccessSettings,
 }: LeaseSummaryProps) => {
+  const leaseSandboxSpacesEnabled = lease.sandboxSpacesEnabled === true;
+  const sandboxSpacesModelItems = useSandboxSpacesSummaryItems(lease, {
+    canReadCatalog: showAdminFields,
+  });
+
   return (
     <SpaceBetween size="l">
       {/* Basic Details */}
@@ -260,6 +261,10 @@ export const LeaseSummary = ({
                 label: <Box variant="h3">Budget Status</Box>,
                 value: renderBudgetStatus(lease),
               },
+              ...predictiveBudgetSummaryItems(
+                lease,
+                <StatusIndicator type="info">Not set</StatusIndicator>,
+              ),
             ]}
           />
           {showAdminFields && (
@@ -275,6 +280,7 @@ export const LeaseSummary = ({
                       renderValue={(threshold) =>
                         `$${threshold.dollarsSpent.toFixed(2)}`
                       }
+                      showTriggerOn
                     />
                   ),
                 },
@@ -361,20 +367,49 @@ export const LeaseSummary = ({
         />
       </Container>
 
-      {/* Sharing Settings */}
+      {/* Access Settings */}
       <Container
         header={
           <Header
             variant="h2"
             actions={
-              showEditButtons && onEditSharing && leaseSharingEnabled ? (
-                <Button iconName="edit" onClick={onEditSharing}>
+              showEditButtons && onEditAccessSettings ? (
+                <Button
+                  iconName="edit"
+                  onClick={onEditAccessSettings}
+                  ariaLabel="Edit access settings"
+                >
                   Edit
                 </Button>
               ) : undefined
             }
           >
-            Sharing Settings
+            Access settings
+          </Header>
+        }
+      >
+        <AccessSettingsSummary
+          allowOwnerToShareLease={lease.allowOwnerToShareLease}
+          leaseSharingEnabled={leaseSharingEnabled}
+          defaultPermissionSet={lease.defaultPermissionSet}
+          allowedPermissionSets={lease.allowedPermissionSets}
+        />
+      </Container>
+
+      {/* Sandbox Spaces */}
+      <Container
+        header={
+          <Header
+            variant="h2"
+            actions={
+              showEditButtons && onEditSandboxSpaces ? (
+                <Button iconName="edit" onClick={onEditSandboxSpaces}>
+                  Edit
+                </Button>
+              ) : undefined
+            }
+          >
+            Sandbox Spaces
           </Header>
         }
       >
@@ -382,14 +417,16 @@ export const LeaseSummary = ({
           columns={1}
           items={[
             {
-              label: "Sharing",
+              label: "Sandbox Spaces",
               value: (
-                <SharingStatusIndicator
-                  allowOwnerToShareLease={lease.allowOwnerToShareLease}
-                  leaseSharingEnabled={leaseSharingEnabled}
+                <FeatureStatusIndicator
+                  featureName="Sandbox Spaces"
+                  enabled={leaseSandboxSpacesEnabled}
+                  globallyEnabled={sandboxSpacesEnabled}
                 />
               ),
             },
+            ...sandboxSpacesModelItems,
           ]}
         />
       </Container>

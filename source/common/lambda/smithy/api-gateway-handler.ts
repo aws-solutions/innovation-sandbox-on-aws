@@ -58,6 +58,38 @@ export type ApiLambdaHandler<TEnv extends BaseApiLambdaEnvironment> = (
  * again on the same handler would register a duplicate interceptor — harmless (it
  * only re-assigns the same `pipelineError`), but avoid it.
  */
+/**
+ * Drops the `Content-Type` header from a request that has no body.
+ */
+export function stripContentTypeWhenBodyless<
+  T extends { body?: string | null },
+>(
+  event: T & {
+    headers?: Record<string, string | undefined> | null;
+    multiValueHeaders?: Record<string, string[] | undefined> | null;
+  },
+): typeof event {
+  if (event.body) {
+    return event;
+  }
+  const withoutContentType = <V>(
+    headers: Record<string, V | undefined> | null | undefined,
+  ) =>
+    headers === null || headers === undefined
+      ? headers
+      : Object.fromEntries(
+          Object.entries(headers).filter(
+            ([name]) => name.toLowerCase() !== "content-type",
+          ),
+        );
+
+  return {
+    ...event,
+    headers: withoutContentType(event.headers),
+    multiValueHeaders: withoutContentType(event.multiValueHeaders),
+  };
+}
+
 export function toLambdaHandler<TEnv extends BaseApiLambdaEnvironment>(
   serviceHandler: ServiceHandler<
     IsbSmithyContext<TEnv>,
@@ -82,7 +114,7 @@ export function toLambdaHandler<TEnv extends BaseApiLambdaEnvironment>(
     const context: IsbSmithyContext<TEnv> = { event, lambdaContext };
 
     const httpResponse: HttpResponse = await serviceHandler.handle(
-      convertEvent(event),
+      convertEvent(stripContentTypeWhenBodyless(event)),
       context,
     );
 

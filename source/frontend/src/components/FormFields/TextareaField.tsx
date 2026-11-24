@@ -10,10 +10,10 @@ import {
 import type { FormFieldProps } from "@cloudscape-design/components/form-field";
 import type { TextareaProps } from "@cloudscape-design/components/textarea";
 import {
-  useController,
-  UseControllerProps,
   type FieldPath,
   type FieldValues,
+  useController,
+  UseControllerProps,
 } from "react-hook-form";
 
 export interface TextareaFieldProps<
@@ -43,7 +43,7 @@ export default function TextareaField<
   formFieldProps,
   textareaProps,
   maxLength,
-}: TextareaFieldProps<TFieldValues, TName>) {
+}: Readonly<TextareaFieldProps<TFieldValues, TName>>) {
   const {
     field: {
       onBlur: onFieldBlur,
@@ -73,7 +73,9 @@ export default function TextareaField<
   const valueLength = (fieldValue ?? "").length;
   const overLength = maxLength !== undefined && valueLength > maxLength;
   const constraintText =
-    maxLength !== undefined ? (
+    maxLength === undefined ? (
+      formFieldProps?.constraintText
+    ) : (
       <>
         <Box
           variant="span"
@@ -88,8 +90,6 @@ export default function TextareaField<
           }`}
         </LiveRegion>
       </>
-    ) : (
-      formFieldProps?.constraintText
     );
 
   return (

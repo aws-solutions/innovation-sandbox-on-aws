@@ -9,9 +9,9 @@ import { FC, useMemo } from "react";
 
 import { useAppContext } from "@amzn/innovation-sandbox-frontend/components/AppContext/context";
 import {
-  type IsbUser,
   getUserEmail,
   getUserLabel,
+  type IsbUser,
 } from "@amzn/innovation-sandbox-shared/utils/auth-utils";
 
 export interface NavHeaderProps {

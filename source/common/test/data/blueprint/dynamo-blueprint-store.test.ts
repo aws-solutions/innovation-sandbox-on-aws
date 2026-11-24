@@ -13,6 +13,10 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { DynamoBlueprintStore } from "@amzn/innovation-sandbox-commons/data/blueprint/dynamo-blueprint-store.js";
 import {
+  base64EncodeCompositeKey,
+  InvalidPageIdentifierError,
+} from "@amzn/innovation-sandbox-commons/data/encoding.js";
+import {
   ItemAlreadyExists,
   UnknownItem,
 } from "@amzn/innovation-sandbox-commons/data/errors.js";
@@ -373,14 +377,18 @@ describe("DynamoBlueprintStore", () => {
         PK: `bp#${blueprintId}`,
       });
       const lastEvaluatedKey = {
+        PK: "bp#550e8400-e29b-41d4-a716-446655440003",
+        SK: "blueprint",
         itemType: "BLUEPRINT",
         blueprintId: "550e8400-e29b-41d4-a716-446655440003",
       };
 
       // Create a valid base64-encoded pageIdentifier
       const pageKey = {
+        PK: `bp#${blueprintId}`,
+        SK: "blueprint",
         itemType: "BLUEPRINT",
-        blueprintId: "550e8400-e29b-41d4-a716-446655440000",
+        blueprintId,
       };
       const validPageIdentifier = Buffer.from(
         JSON.stringify(pageKey),
@@ -412,6 +420,32 @@ describe("DynamoBlueprintStore", () => {
       expect(queryCall).toBeDefined();
       expect(queryCall!.args[0].input.Limit).toBe(10);
     });
+
+    test.each([
+      ["sort key", { SK: "deployment#2026-10-26" }],
+      ["item type", { itemType: "DEPLOYMENT" }],
+      ["blueprint ID", { blueprintId: "not-a-uuid" }],
+    ])(
+      "should reject a pageIdentifier with an invalid %s",
+      async (_description, override) => {
+        const blueprintId = "550e8400-e29b-41d4-a716-446655440000";
+        const pageIdentifier = Buffer.from(
+          JSON.stringify({
+            PK: `bp#${blueprintId}`,
+            SK: "blueprint",
+            itemType: "BLUEPRINT",
+            blueprintId,
+            ...override,
+          }),
+          "utf8",
+        ).toString("base64url");
+
+        await expect(
+          store.listBlueprints({ pageIdentifier }),
+        ).rejects.toThrow();
+        expect(mockDynamoClient.commandCalls(QueryCommand)).toHaveLength(0);
+      },
+    );
 
     test("should return empty result when no blueprints exist", async () => {
       // Arrange
@@ -652,15 +686,13 @@ describe("DynamoBlueprintStore", () => {
     test("should handle pagination for deployment history", async () => {
       // Arrange
       const blueprintId = "b1c2d3e4-5678-90ab-cdef-blueprintabc";
+      const pk = `bp#${blueprintId}`;
       const deployment = createTestDeploymentHistoryItem();
-      const lastEvaluatedKey = { PK: "bp#test", SK: "deployment#last" };
+      const lastEvaluatedKey = { PK: pk, SK: "deployment#last" };
 
       // Create a valid base64-encoded pageIdentifier
-      const pageKey = { PK: "bp#test", SK: "deployment#start" };
-      const validPageIdentifier = Buffer.from(
-        JSON.stringify(pageKey),
-        "utf8",
-      ).toString("base64");
+      const pageKey = { PK: pk, SK: "deployment#start" };
+      const validPageIdentifier = base64EncodeCompositeKey(pageKey)!;
 
       mockDynamoClient.on(QueryCommand).resolves({
         Items: [deployment],
@@ -680,6 +712,19 @@ describe("DynamoBlueprintStore", () => {
       const queryCall = mockDynamoClient.commandCalls(QueryCommand)[0];
       expect(queryCall).toBeDefined();
       expect(queryCall!.args[0].input.Limit).toBe(5);
+    });
+
+    test("should reject a deployment cursor from another blueprint", async () => {
+      const blueprintId = "b1c2d3e4-5678-90ab-cdef-blueprintabc";
+      const pageIdentifier = base64EncodeCompositeKey({
+        PK: "bp#another-blueprint",
+        SK: "deployment#start",
+      })!;
+
+      await expect(
+        store.getDeploymentHistory(blueprintId, { pageIdentifier }),
+      ).rejects.toThrow(InvalidPageIdentifierError);
+      expect(mockDynamoClient.commandCalls(QueryCommand)).toHaveLength(0);
     });
 
     test("should return empty result when no deployment history exists", async () => {

@@ -23,6 +23,11 @@ vi.mock(
   }),
 );
 
+vi.mock(
+  "@amzn/innovation-sandbox-durable-cleanup-orchestration/steps/pending-account-grants.js",
+  () => ({ hasPendingAccountGrants: vi.fn().mockResolvedValue(false) }),
+);
+
 // Mock triggerAssignmentProcessing — the actual IDC throttling is tested in the
 // lease-assignment service tests; here we verify the cleanup orchestration calls it.
 vi.mock(
@@ -41,6 +46,7 @@ import { DynamoConfigStore } from "@amzn/innovation-sandbox-commons/data/config/
 import { DynamoLeaseStore } from "@amzn/innovation-sandbox-commons/data/lease/dynamo-lease-store.js";
 import { DynamoSandboxAccountStore } from "@amzn/innovation-sandbox-commons/data/sandbox-account/dynamo-sandbox-account-store.js";
 import { PersistedSandboxAccountSchema } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account.js";
+import { EventDetailTypes } from "@amzn/innovation-sandbox-commons/events/index.js";
 import { ResourceExplorerService } from "@amzn/innovation-sandbox-commons/isb-services/resource-explorer-service.js";
 import { DurableCleanupLambdaEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/durable-cleanup-lambda-environment.js";
 import { generateSchemaData } from "@amzn/innovation-sandbox-commons/test/generate-schema-data.js";
@@ -68,8 +74,11 @@ import yaml from "js-yaml";
 import path from "node:path";
 
 import { IsbServices } from "@amzn/innovation-sandbox-commons/isb-services/index.js";
+import { ResourceExclusionFilter } from "@amzn/innovation-sandbox-commons/isb-services/resource-exclusion-filter.js";
 import { handler } from "@amzn/innovation-sandbox-durable-cleanup-orchestration/durable-cleanup-handler.js";
+import { cleanupAccountAccess } from "@amzn/innovation-sandbox-durable-cleanup-orchestration/steps/cleanup-account-access.js";
 import { initializeCleanup } from "@amzn/innovation-sandbox-durable-cleanup-orchestration/steps/index.js";
+import { hasPendingAccountGrants } from "@amzn/innovation-sandbox-durable-cleanup-orchestration/steps/pending-account-grants.js";
 import type { CleanupContext } from "@amzn/innovation-sandbox-durable-cleanup-orchestration/steps/types.js";
 
 const testEnv = generateSchemaData(DurableCleanupLambdaEnvironmentSchema, {
@@ -193,6 +202,8 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
+  vi.mocked(hasPendingAccountGrants).mockReset().mockResolvedValue(false);
+  vi.mocked(cleanupAccountAccess).mockClear();
   bulkStubEnv(testEnv);
   vi.stubEnv("AWS_REGION", "us-east-1");
   vi.stubEnv(
@@ -293,6 +304,7 @@ beforeEach(async () => {
 
   // Mock AccountPoolStackConfigStore — provides ISB managed regions
   vi.spyOn(SsmAccountPoolStackConfigStore.prototype, "get").mockResolvedValue({
+    organizationId: "o-a1b2c3d4e5",
     sandboxOuId: "ou-sandbox",
     availableOuId: "ou-available",
     activeOuId: "ou-active",
@@ -475,9 +487,107 @@ describe("Validator Exclusion Overlay", () => {
     expect(patterns).toContain(
       "arn:aws:elasticache:*:*:usergroup:default.iam-user-group",
     );
+    // Only this deployment's role, so a look-alike role is still flagged.
+    expect(patterns).toContain(
+      `arn:aws:iam::*:role/SandboxAgentRole-${testEnv.ISB_NAMESPACE}`,
+    );
+    expect(patterns.filter((p) => p.includes("SandboxAgentRole"))).toEqual([
+      `arn:aws:iam::*:role/SandboxAgentRole-${testEnv.ISB_NAMESPACE}`,
+    ]);
     expect(patterns).toContain("arn:aws:xray:*:*:group/Default");
+    for (const keyspace of [
+      "system",
+      "system_schema",
+      "system_schema_mcs",
+      "system_multiregion_info",
+    ]) {
+      expect(patterns).toContain(
+        `arn:aws:cassandra:*:*:/keyspace/${keyspace}/*`,
+      );
+    }
     // the customer's own AppConfig pattern survives the merge
     expect(patterns).toContain("arn:aws:iam::*:role/aws-service-role/*");
+  });
+
+  it("ignores this deployment's SandboxAgentRole but flags a look-alike", async () => {
+    mockAccountStoreDefaults();
+    mockConfigStore();
+
+    const resourceExplorerSpy = vi.spyOn(IsbServices, "resourceExplorer");
+
+    const runPromise = runner.run({
+      payload: createCleanAccountEvent("123456789012", "LEASE_TERMINATION"),
+    });
+    await completeNukeCallbacks(2);
+    await runPromise;
+
+    const filter = new ResourceExclusionFilter(
+      resourceExplorerSpy.mock.calls[0]![1].exclusionConfig,
+    );
+    const role = (name: string) => ({
+      Arn: `arn:aws:iam::123456789012:role/${name}`,
+      ResourceType: "iam:role",
+    });
+    const result = filter.applyExclusions([
+      role(`SandboxAgentRole-${testEnv.ISB_NAMESPACE}`),
+      role("SandboxAgentRole-CleanupEvasion"),
+    ]);
+
+    expect(result.ignoredResources.map((r) => r.Arn)).toEqual([
+      `arn:aws:iam::123456789012:role/SandboxAgentRole-${testEnv.ISB_NAMESPACE}`,
+    ]);
+    expect(result.remainingResources.map((r) => r.Arn)).toEqual([
+      "arn:aws:iam::123456789012:role/SandboxAgentRole-CleanupEvasion",
+    ]);
+  });
+
+  it("ignores the Amazon Keyspaces system keyspaces but flags a look-alike", async () => {
+    mockAccountStoreDefaults();
+    mockConfigStore();
+
+    const resourceExplorerSpy = vi.spyOn(IsbServices, "resourceExplorer");
+
+    const runPromise = runner.run({
+      payload: createCleanAccountEvent("123456789012", "LEASE_TERMINATION"),
+    });
+    await completeNukeCallbacks(2);
+    await runPromise;
+
+    const filter = new ResourceExclusionFilter(
+      resourceExplorerSpy.mock.calls[0]![1].exclusionConfig,
+    );
+    const keyspaceArn = (path: string) =>
+      `arn:aws:cassandra:us-east-1:123456789012:/keyspace/${path}`;
+    const result = filter.applyExclusions(
+      [
+        "system/",
+        "system_schema/table/tables",
+        "system_schema_mcs/table/keyspaces",
+        "system_multiregion_info/",
+        "system_foo/",
+        "systemx/table/t",
+        "System/",
+        "mykeyspace/table/system",
+      ].map((path) => ({
+        Arn: keyspaceArn(path),
+        ResourceType: path.includes("/table/")
+          ? "cassandra:keyspace/table"
+          : "cassandra:keyspace",
+      })),
+    );
+
+    expect(result.ignoredResources.map((r) => r.Arn)).toEqual([
+      keyspaceArn("system/"),
+      keyspaceArn("system_schema/table/tables"),
+      keyspaceArn("system_schema_mcs/table/keyspaces"),
+      keyspaceArn("system_multiregion_info/"),
+    ]);
+    expect(result.remainingResources.map((r) => r.Arn)).toEqual([
+      keyspaceArn("system_foo/"),
+      keyspaceArn("systemx/table/t"),
+      keyspaceArn("System/"),
+      keyspaceArn("mykeyspace/table/system"),
+    ]);
   });
 
   it("does not duplicate a pattern the customer already declared", async () => {
@@ -769,6 +879,68 @@ describe("revoke-access Step", () => {
     leaseId: "550e8400-e29b-41d4-a716-446655440000",
     ownerEmail: "owner@example.com",
   };
+
+  it("waits for accepted grants before taking the assignment snapshot", async () => {
+    mockAccountStoreDefaults({ currentLease: CURRENT_LEASE });
+    mockConfigStore();
+    vi.spyOn(DynamoLeaseStore.prototype, "get").mockResolvedValue({
+      result: { resourceLock: undefined },
+    } as any);
+    vi.mocked(hasPendingAccountGrants)
+      .mockResolvedValueOnce(true)
+      .mockResolvedValue(false);
+    vi.mocked(cleanupAccountAccess).mockImplementationOnce(async () => {
+      expect(hasPendingAccountGrants).toHaveBeenCalledTimes(2);
+      return {
+        assignmentsFound: 1,
+        assignmentsDeleted: 1,
+        principalRecordsFound: 1,
+        principalRecordsDeleted: 1,
+        failed: false,
+      };
+    });
+    const runPromise = runner.run({
+      payload: createCleanAccountEvent("123456789012", "LEASE_TERMINATION"),
+    });
+    await completeNukeCallbacks(2);
+    expect((await runPromise).getStatus()).toBe(ExecutionStatus.SUCCEEDED);
+    expect(cleanupAccountAccess).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["pending", "error"])(
+    "fails cleanup before sweeping or nuking when IDC grants remain %s",
+    async (failure) => {
+      mockAccountStoreDefaults();
+      mockConfigStore();
+      if (failure === "pending") {
+        vi.mocked(hasPendingAccountGrants).mockResolvedValue(true);
+      } else {
+        vi.mocked(hasPendingAccountGrants).mockRejectedValue(
+          new Error("IDC unavailable"),
+        );
+      }
+      const result = await runner.run({
+        payload: createCleanAccountEvent("123456789012", "LEASE_TERMINATION"),
+      });
+      expect(result.getStatus()).toBe(ExecutionStatus.FAILED);
+      expect(cleanupAccountAccess).not.toHaveBeenCalled();
+      expect(codeBuildClient.commandCalls(StartBuildCommand)).toHaveLength(0);
+      const events = eventBridgeClient
+        .commandCalls(PutEventsCommand)
+        .flatMap((call) => call.args[0].input.Entries ?? []);
+      expect(events.map((event) => event.DetailType)).toContain(
+        EventDetailTypes.AccountCleanupFailure,
+      );
+      expect(events.map((event) => event.DetailType)).not.toContain(
+        EventDetailTypes.AccountCleanupSuccessful,
+      );
+      if (failure === "pending") {
+        expect(
+          vi.mocked(hasPendingAccountGrants).mock.calls.length,
+        ).toBeLessThanOrEqual(21);
+      }
+    },
+  );
 
   it("resolves immediately when the lease lock is already cleared", async () => {
     mockAccountStoreDefaults({ currentLease: CURRENT_LEASE });

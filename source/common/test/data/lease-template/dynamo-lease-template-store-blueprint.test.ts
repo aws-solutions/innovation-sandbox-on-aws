@@ -6,6 +6,7 @@
  * Tests that null values are properly transformed to undefined before DynamoDB writes.
  */
 
+import { ConditionalCheckFailedException } from "@aws-sdk/client-dynamodb";
 import {
   DynamoDBDocumentClient,
   GetCommand,
@@ -14,6 +15,7 @@ import {
 import { mockClient } from "aws-sdk-client-mock";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
+import { ConcurrentDataModificationException } from "@amzn/innovation-sandbox-commons/data/errors.js";
 import { DynamoLeaseTemplateStore } from "@amzn/innovation-sandbox-commons/data/lease-template/dynamo-lease-template-store.js";
 import { PersistedLeaseTemplateSchema } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template.js";
 import { generateSchemaData } from "@amzn/innovation-sandbox-commons/test/generate-schema-data.js";
@@ -152,6 +154,59 @@ describe("DynamoLeaseTemplateStore - blueprintId transformation", () => {
       const putCalls = mockDynamoClient.commandCalls(PutCommand);
       expect(putCalls).toHaveLength(1);
       expect(putCalls[0]!.args[0].input.Item).not.toHaveProperty("blueprintId");
+    });
+
+    test("conditions the write on the expected lastEditTime and reports a stale one as a concurrent modification", async () => {
+      const template = generateSchemaData(PersistedLeaseTemplateSchema, {
+        uuid: "550e8400-e29b-41d4-a716-446655440000",
+      });
+      const expected = generateSchemaData(PersistedLeaseTemplateSchema, {
+        uuid: template.uuid,
+        meta: {
+          schemaVersion: 1,
+          lastEditTime: "2023-12-31T00:00:00.000Z",
+        },
+      });
+
+      mockDynamoClient.on(GetCommand).resolves({ Item: template });
+      mockDynamoClient.on(PutCommand).rejects(
+        new ConditionalCheckFailedException({
+          $metadata: {},
+          message: "The conditional request failed",
+        }),
+      );
+
+      await expect(store.update(template, expected)).rejects.toBeInstanceOf(
+        ConcurrentDataModificationException,
+      );
+      const input = mockDynamoClient.commandCalls(PutCommand)[0]!.args[0].input;
+      expect(input.ConditionExpression).toBe(
+        "attribute_exists(#uid) and meta.lastEditTime = :expectedTime",
+      );
+      expect(input.ExpressionAttributeValues).toEqual({
+        ":expectedTime": "2023-12-31T00:00:00.000Z",
+      });
+    });
+
+    test("conditions the write on lastEditTime being absent when the expected legacy template has no metadata", async () => {
+      const template = generateSchemaData(PersistedLeaseTemplateSchema, {
+        uuid: "550e8400-e29b-41d4-a716-446655440000",
+      });
+      const expected = generateSchemaData(PersistedLeaseTemplateSchema, {
+        uuid: template.uuid,
+      });
+      delete expected.meta; // legacy row written before metadata existed
+
+      mockDynamoClient.on(GetCommand).resolves({ Item: template });
+      mockDynamoClient.on(PutCommand).resolves({ Attributes: expected });
+
+      await store.update(template, expected);
+
+      const input = mockDynamoClient.commandCalls(PutCommand)[0]!.args[0].input;
+      expect(input.ConditionExpression).toBe(
+        "attribute_exists(#uid) and attribute_not_exists(meta.lastEditTime)",
+      );
+      expect(input).not.toHaveProperty("ExpressionAttributeValues");
     });
   });
 

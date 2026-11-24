@@ -41,9 +41,9 @@ export function useDirtySections(): ReadonlySet<string> {
 
 function RouteChangeGuard({
   hasUnsavedChanges,
-}: {
+}: Readonly<{
   hasUnsavedChanges: boolean;
-}) {
+}>) {
   const blocker = useBlocker(
     ({ currentLocation, nextLocation }) =>
       hasUnsavedChanges && currentLocation.pathname !== nextLocation.pathname,
@@ -88,7 +88,7 @@ function BeforeUnloadGuard({
     }
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
       event.preventDefault();
-      event.returnValue = "";
+      event.returnValue = true; // NOSONAR typescript:S1874: Preserve the unsaved-changes warning in legacy browsers.
     };
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
@@ -101,7 +101,9 @@ function BeforeUnloadGuard({
  * throws under a plain BrowserRouter/MemoryRouter, so tests must render
  * with createMemoryRouter + RouterProvider.
  */
-export function UnsavedChangesProvider({ children }: { children: ReactNode }) {
+export function UnsavedChangesProvider({
+  children,
+}: Readonly<{ children: ReactNode }>) {
   const [dirtySections, setDirtySections] = useState<ReadonlySet<string>>(
     new Set(),
   );

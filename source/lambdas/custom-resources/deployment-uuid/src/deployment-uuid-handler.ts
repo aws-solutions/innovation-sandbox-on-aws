@@ -12,7 +12,7 @@ import type {
 
 import { DeploymentUuidLambdaEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/deployment-uuid-lambda-environment.js";
 import baseMiddlewareBundle from "@amzn/innovation-sandbox-commons/lambda/middleware/base-middleware-bundle.js";
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 
 const tracer = new Tracer();
 const logger = new Logger();

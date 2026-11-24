@@ -60,8 +60,12 @@ use aws.protocols#restJson1
 ///   sharing, and principal assignments.
 /// - **Lease templates**: Define the reusable budget, duration, blueprint, and
 ///   visibility settings used to request leases.
+/// - **Permission sets**: Discover IAM Identity Center permission sets available
+///   for lease permission profiles.
 /// - **Principals**: Search IAM Identity Center users and groups for lease
 ///   assignments.
+/// - **Sandbox Agent**: AI agent that lets users interact with their sandbox
+///   account via natural language.
 @service(sdkId: "Isb", arnNamespace: "execute-api")
 @sigv4(name: "execute-api")
 @restJson1
@@ -89,6 +93,10 @@ service IsbApi {
         UpdateTermsOfServiceConfiguration
         GetCostReportingConfiguration
         UpdateCostReportingConfiguration
+        GetAgentConfiguration
+        UpdateAgentConfiguration
+        ListAgentModelCatalog
+        PutAgentModelCatalogEntry
         SearchPrincipals
         ListAccounts
         RegisterAccount
@@ -110,12 +118,20 @@ service IsbApi {
         UnfreezeLease
         GetLeaseAssignments
         UpdateLeaseAssignments
+        GetLeaseCostSummary
+        GetLeaseCostHistory
+        GetLeaseBedrockTokenHistory
+        GetLeaseBreachHistory
         ListStackSets
         ListBlueprints
         RegisterBlueprint
         GetBlueprint
         UpdateBlueprint
         DeleteBlueprint
+        ListPermissionSets
+        ListAgentHistory
+        GetSandboxSpacesUsage
+        ListAgentModels
     ]
     errors: [
         ValidationError

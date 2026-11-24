@@ -73,6 +73,7 @@ const ALL_SECTION_KEYS = [
   "maintenance",
   "termsOfService",
   "costReporting",
+  "agent",
 ];
 
 function validGlobalConfig() {
@@ -291,7 +292,7 @@ describe("Config Migrator Handler", () => {
       expect(ddbMock.commandCalls(TransactWriteCommand)).toHaveLength(1);
     });
 
-    it("migrates all six sections atomically with the migration sentinel", async () => {
+    it("migrates all seven sections atomically with the migration sentinel", async () => {
       mockAppConfig({
         profiles: [
           NUKE_PROFILE,
@@ -316,7 +317,7 @@ describe("Config Migrator Handler", () => {
       expect(transactCalls).toHaveLength(1);
 
       const transactItems = transactCalls[0]?.args[0].input.TransactItems ?? [];
-      expect(transactItems).toHaveLength(6);
+      expect(transactItems).toHaveLength(7);
 
       const items = transactItems.map((t: any) => t.Put.Item);
       const bySection: Record<string, any> = Object.fromEntries(
@@ -340,6 +341,10 @@ describe("Config Migrator Handler", () => {
       expect(bySection.leases.enablePrincipalSearch).toBe(true);
       expect(bySection.cleanup.numberOfFailedAttemptsToCancelCleanup).toBe(3);
       expect(bySection.notification.emailFrom).toBe("admin@example.com");
+      // The channel toggles have no legacy AppConfig source; the section's
+      // `.default()`s apply, matching pre-feature behavior (SES on, SNS off).
+      expect(bySection.notification.sesEnabled).toBe(true);
+      expect(bySection.notification.snsIntegrationTopicEnabled).toBe(false);
       expect(bySection.maintenance.enabled).toBe(true);
       expect(bySection.termsOfService.content).toBe("Test terms of service");
       expect(bySection.costReporting.costReportGroups).toEqual(["team-a"]);

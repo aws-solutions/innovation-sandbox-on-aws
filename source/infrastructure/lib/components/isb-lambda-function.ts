@@ -1,6 +1,6 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
-import { Aws, Duration, RemovalPolicy } from "aws-cdk-lib";
+import { Aws, Duration, RemovalPolicy, Token } from "aws-cdk-lib";
 import { Policy, Role, ServicePrincipal } from "aws-cdk-lib/aws-iam";
 import { Key } from "aws-cdk-lib/aws-kms";
 import {
@@ -24,6 +24,7 @@ import { BaseLambdaEnvironment } from "@amzn/innovation-sandbox-commons/lambda/e
 import { getAppConfigExtensionConfig } from "@amzn/innovation-sandbox-infrastructure/components/config/app-config-lambda-extension";
 import { IsbKmsKeys } from "@amzn/innovation-sandbox-infrastructure/components/kms";
 import { LambdaLayers } from "@amzn/innovation-sandbox-infrastructure/components/lambda-layers";
+import { getContextFromMapping } from "@amzn/innovation-sandbox-infrastructure/helpers/cdk-context";
 import { addCfnGuardSuppression } from "@amzn/innovation-sandbox-infrastructure/helpers/cfn-guard";
 import { isDevMode } from "@amzn/innovation-sandbox-infrastructure/helpers/deployment-mode";
 import { getCustomUserAgent } from "@amzn/innovation-sandbox-infrastructure/helpers/manifest-reader";
@@ -50,19 +51,21 @@ import { IsbComputeResources } from "@amzn/innovation-sandbox-infrastructure/isb
 const smithyServerExternalModules = ["@aws-sdk/*", "re2-wasm"];
 
 export interface IsbLambdaFunctionProps<
-  T extends z.ZodSchema<any>,
+  T extends z.ZodType<Record<string, string>>,
 > extends Omit<NodejsFunctionProps, "role" | "runtime"> {
   kmsKey?: Key;
   layers?: ILayerVersion[];
   logGroup?: LogGroup;
   namespace: string;
   envSchema: T;
-  environment: Omit<z.infer<T>, keyof BaseLambdaEnvironment> & {
+  environment: Omit<z.infer<T>, keyof BaseLambdaEnvironment | "AWS_REGION"> & {
     POWERTOOLS_SERVICE_NAME?: string;
   };
 }
 
-export class IsbLambdaFunction<T extends z.ZodSchema<any>> extends Construct {
+export class IsbLambdaFunction<
+  T extends z.ZodType<Record<string, string>>,
+> extends Construct {
   readonly lambdaFunction: NodejsFunction;
   readonly kmsKey: Key;
   constructor(scope: Construct, id: string, props: IsbLambdaFunctionProps<T>) {
@@ -119,9 +122,7 @@ export class IsbLambdaFunction<T extends z.ZodSchema<any>> extends Construct {
       new ServicePrincipal("logs.amazonaws.com", { region: Aws.REGION }),
     );
 
-    if (props.logGroup !== undefined) {
-      props.logGroup.grantWrite(this.lambdaFunction);
-    } else {
+    if (props.logGroup === undefined) {
       //if no log group provided, explicitly manage the default lambda log group instead
       const functionLogGroup = new LogGroup(this, "FunctionLogGroup", {
         logGroupName: `/aws/lambda/${this.lambdaFunction.functionName}`,
@@ -129,12 +130,20 @@ export class IsbLambdaFunction<T extends z.ZodSchema<any>> extends Construct {
         removalPolicy: isDevMode(scope)
           ? RemovalPolicy.DESTROY
           : RemovalPolicy.RETAIN,
+        retention: Token.asNumber(
+          getContextFromMapping(scope, "cloudWatchLogRetentionInDays"),
+        ),
       });
+      addCfnGuardSuppression(functionLogGroup, [
+        "CW_LOGGROUP_RETENTION_PERIOD_CHECK",
+      ]); // Retention period is defined in CfnMapping and evades the CFN Guard check
       const functionPolicy = new Policy(this, "FunctionPolicy", {
         roles: [functionRole],
       });
 
       functionLogGroup.grantWrite(functionPolicy);
+    } else {
+      props.logGroup.grantWrite(this.lambdaFunction);
     }
 
     addCfnGuardSuppression(this.lambdaFunction, ["LAMBDA_INSIDE_VPC"]);
@@ -155,7 +164,7 @@ export class IsbLambdaFunction<T extends z.ZodSchema<any>> extends Construct {
  * pass `logGroup`; a caller-supplied `logGroup` still wins.
  */
 export class IsbApiLambdaFunction<
-  T extends z.ZodSchema<any>,
+  T extends z.ZodType<Record<string, string>>,
 > extends IsbLambdaFunction<T> {
   constructor(scope: Construct, id: string, props: IsbLambdaFunctionProps<T>) {
     super(scope, id, {

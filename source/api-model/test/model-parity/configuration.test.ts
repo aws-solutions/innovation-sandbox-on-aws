@@ -9,6 +9,7 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
+import { AgentModelUpsertBodySchema } from "@amzn/innovation-sandbox-commons/data/config/agent-model-catalog.js";
 import {
   ConfigPutBodySchemas,
   ConfigSchemas,
@@ -38,6 +39,7 @@ const SECTIONS: Array<[keyof typeof ConfigSchemas, string]> = [
   ["maintenance", "Maintenance"],
   ["termsOfService", "TermsOfService"],
   ["costReporting", "CostReporting"],
+  ["agent", "Agent"],
 ];
 
 function schemaShape(schema: unknown): Record<string, z.ZodType> {
@@ -87,6 +89,7 @@ describe("AdminConfiguration", () => {
         ...SECTIONS.map(([section]) => section),
         "isbManagedRegions",
         "awsAccessPortalUrl",
+        "bedrockInferenceProfilePatterns",
       ].sort(),
     );
     expect(modelRequired("AdminConfiguration")).toEqual(
@@ -180,6 +183,23 @@ describe("field constraints match production Zod schemas", () => {
     expect(modelMemberSchema("NotificationConfiguration", "emailFrom")).toEqual(
       zodComparableSchema(constrainedEmail!),
     );
+  });
+});
+
+describe("agent model catalog write", () => {
+  it("accepts only the model ID, enabled state, OCC token, and model type", () => {
+    expect(modelMembers("PutAgentModelCatalogEntryInput")).toEqual(
+      ["modelId", "enabled", "expectedLastEditTime", "modelType"].sort(),
+    );
+    expect(modelRequired("PutAgentModelCatalogEntryInput")).toEqual([
+      "enabled",
+      "modelId",
+    ]);
+    expect(zodMembers(schemaShape(AgentModelUpsertBodySchema))).toEqual([
+      "enabled",
+      "expectedLastEditTime",
+      "modelType",
+    ]);
   });
 });
 

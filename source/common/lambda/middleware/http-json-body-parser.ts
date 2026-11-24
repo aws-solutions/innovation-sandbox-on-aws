@@ -49,7 +49,7 @@ export function httpJsonBodyParser(): MiddlewareObj<
         : body;
 
       request.event.body = typeof data === "string" ? JSON.parse(data) : data;
-    } catch (err) {
+    } catch {
       throw createHttpJSendError({
         statusCode: 400,
         errorType: "ValidationError",

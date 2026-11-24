@@ -7,16 +7,16 @@ import {
   LayerVersion,
   Runtime,
 } from "aws-cdk-lib/aws-lambda";
-import { execSync } from "child_process";
 import { Construct } from "constructs";
 import { existsSync, mkdirSync, moveSync, rmSync } from "fs-extra";
-import path from "path";
+import { execSync } from "node:child_process";
+import path from "node:path";
 
 export class LambdaLayers extends Construct {
   readonly commonLayerVersion: LayerVersion;
   readonly dependencyLayerVersion: LayerVersion;
   readonly layers: LayerVersion[];
-  private static instances: { [key: string]: LambdaLayers } = {};
+  private static readonly instances: { [key: string]: LambdaLayers } = {};
 
   private constructor(scope: Construct, id: string) {
     super(scope, id);
@@ -48,13 +48,11 @@ export class LambdaLayers extends Construct {
     layerId: string | undefined = undefined,
   ): LambdaLayers {
     const currentId = layerId ?? Stack.of(scope).stackName;
-    if (!LambdaLayers.instances[currentId]) {
-      LambdaLayers.instances[currentId] = new LambdaLayers(
-        scope,
-        `ISB-Lambda-Layer-${currentId}`,
-      );
-    }
-    return LambdaLayers.instances[currentId]!;
+    LambdaLayers.instances[currentId] ??= new LambdaLayers(
+      scope,
+      `ISB-Lambda-Layer-${currentId}`,
+    );
+    return LambdaLayers.instances[currentId];
   }
 }
 

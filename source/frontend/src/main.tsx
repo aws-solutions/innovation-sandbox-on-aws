@@ -8,7 +8,7 @@ import { App } from "@amzn/innovation-sandbox-frontend/App";
 import { configureAmplifyAuth } from "@amzn/innovation-sandbox-frontend/helpers/cognito-config";
 import { loadConfig } from "@amzn/innovation-sandbox-frontend/helpers/config";
 
-loadConfig()
+await loadConfig()
   .then((cfg) => {
     if (
       cfg.CognitoUserPoolId &&

@@ -41,6 +41,10 @@ service ConfigurationsApi {
         UpdateTermsOfServiceConfiguration
         GetCostReportingConfiguration
         UpdateCostReportingConfiguration
+        GetAgentConfiguration
+        UpdateAgentConfiguration
+        ListAgentModelCatalog
+        PutAgentModelCatalogEntry
     ]
     errors: [
         ValidationError
@@ -111,6 +115,9 @@ operation GetLeasesConfiguration {
             leaseSharingEnabled: false
             enablePrincipalSearch: true
             groupAssignmentMode: "NONE"
+            allowPredictiveBudgetControls: false
+            serviceBreakdownEnabled: false
+            allowBedrockTokenMonitoring: false
             meta: { lastEditTime: "2026-04-04T12:30:00.000Z" }
         }
         output: {
@@ -128,6 +135,9 @@ operation GetLeasesConfiguration {
                 leaseSharingEnabled: false
                 enablePrincipalSearch: true
                 groupAssignmentMode: "NONE"
+                allowPredictiveBudgetControls: false
+                serviceBreakdownEnabled: false
+                allowBedrockTokenMonitoring: false
                 lastSavedBy: "admin@example.com"
                 meta: { createdTime: "2026-04-04T12:30:00.000Z", lastEditTime: "2026-04-04T12:30:00.000Z" }
             }
@@ -148,6 +158,9 @@ operation GetLeasesConfiguration {
             leaseSharingEnabled: false
             enablePrincipalSearch: true
             groupAssignmentMode: "ALL"
+            allowPredictiveBudgetControls: false
+            serviceBreakdownEnabled: false
+            allowBedrockTokenMonitoring: false
             meta: { lastEditTime: "2026-04-04T12:30:00.000Z" }
         }
         error: {
@@ -317,6 +330,41 @@ operation UpdateCostReportingConfiguration {
     ]
 }
 
+/// Reads the `agent` configuration section: its current values (or code defaults
+/// if never saved) plus the `lastSavedBy` audit field. Governs the Sandbox Spaces
+/// chat feature and its per-principal token budget.
+@http(method: "GET", uri: "/configurations/agent", code: 200)
+@readonly
+@tags(["configurations"])
+operation GetAgentConfiguration {
+    output := with [AgentConfigurationOutputMixin] {}
+}
+
+/// Replaces the `agent` configuration section. Uses optimistic concurrency:
+/// echo `meta.lastEditTime` from a prior read to detect a concurrent edit (409
+/// `ConflictError` on mismatch); omit it on the first save. Admin role only.
+@examples([
+    {
+        title: "Save the agent configuration"
+        input: { sandboxSpacesEnabled: true }
+        output: {
+            status: "success"
+            data: { sandboxSpacesEnabled: true, lastSavedBy: "admin@example.com" }
+        }
+    }
+])
+@http(method: "PUT", uri: "/configurations/agent", code: 200)
+@idempotent
+@tags(["configurations"])
+operation UpdateAgentConfiguration {
+    input := with [AgentConfigMixin, ConfigurationWriteEnvelopeMixin] {}
+    output := with [AgentConfigurationOutputMixin] {}
+    errors: [
+        ConflictError
+        UnsupportedMediaTypeError
+    ]
+}
+
 // ---------------------------------------------------------------------------
 // Aggregate shape
 // ---------------------------------------------------------------------------
@@ -341,6 +389,9 @@ structure AdminConfiguration {
     @required
     costReporting: CostReportingConfiguration
 
+    @required
+    agent: AgentConfiguration
+
     /// Regions the account pool is configured to manage.
     // Resolved from the AccountPoolConfig SSM parameter, not the config store.
     @required
@@ -348,9 +399,17 @@ structure AdminConfiguration {
 
     @required
     awsAccessPortalUrl: String
+
+    /// Bedrock inference profile patterns from the Account Pool deploy parameter; empty when unset.
+    @required
+    bedrockInferenceProfilePatterns: BedrockInferenceProfilePatternList
 }
 
 list RegionList {
+    member: String
+}
+
+list BedrockInferenceProfilePatternList {
     member: String
 }
 
@@ -449,7 +508,7 @@ structure LeasesConfigMixin {
     /// Number of days the solution stores expired lease records before purging
     /// them.
     @required
-    @range(min: 1)
+    @range(min: 1, max: 3650)
     ttl: Integer
 
     /// Whether users can self-terminate their own active leases.
@@ -481,6 +540,19 @@ structure LeasesConfigMixin {
     /// Existing group assignments are retained when set to `NONE`.
     @required
     groupAssignmentMode: GroupAssignmentMode
+
+    /// Predictive Budget Controls feature gate: allows templates and leases to
+    /// opt into spend-rate limits, cost projection and predicted-cost thresholds.
+    @required
+    allowPredictiveBudgetControls: Boolean
+
+    /// Whether per-service cost breakdown is collected.
+    @required
+    serviceBreakdownEnabled: Boolean
+
+    /// Feature gate for monitored Bedrock token cost tracking.
+    @required
+    allowBedrockTokenMonitoring: Boolean
 }
 
 structure LeasesConfiguration with [LeasesConfigMixin, ConfigurationAuditMixin] {}
@@ -543,17 +615,26 @@ enum CleanupFailureAction {
 
 structure CleanupConfiguration with [CleanupConfigMixin, ConfigurationAuditMixin] {}
 
-/// Notification sender configuration.
+/// Notification delivery: which channels are active and the SES sender.
 @mixin
 structure NotificationConfigMixin {
-    /// From address used for notification emails; an empty string disables
-    /// notifications.
+    /// From address used for SES notification emails; an empty string leaves
+    /// SES unable to deliver even when `sesEnabled` is true.
     // The email format and SES identity verification are enforced by the
     // operation, not the model. `@sensitive` (via `SensitiveEmail`) so the
     // generated client redacts it.
     @required
     @length(max: 254)
     emailFrom: SensitiveEmail
+
+    /// Whether SES email delivery is enabled. Defaults to true when not configured.
+    @required
+    sesEnabled: Boolean
+
+    /// Whether publishing to the shared SNS integration topic is enabled.
+    /// Defaults to false when not configured.
+    @required
+    snsIntegrationTopicEnabled: Boolean
 }
 
 structure NotificationConfiguration with [NotificationConfigMixin, ConfigurationAuditMixin] {}
@@ -600,6 +681,17 @@ list CostReportGroupList {
 string CostReportGroup
 
 structure CostReportingConfiguration with [CostReportingConfigMixin, ConfigurationAuditMixin] {}
+
+@mixin
+structure AgentConfigMixin {
+    /// Global Sandbox Spaces capability. `true` turns the feature on for
+    /// every role with an active lease (still subject to the enabled-model
+    /// catalog gate); `false` turns it off entirely.
+    @required
+    sandboxSpacesEnabled: Boolean
+}
+
+structure AgentConfiguration with [AgentConfigMixin, ConfigurationAuditMixin] {}
 
 // Output-envelope mixins: one per section so the read/update operations share a
 // single `{status, data}` output shape typed to that section.
@@ -655,4 +747,163 @@ structure CostReportingConfigurationOutputMixin {
 
     @required
     data: CostReportingConfiguration
+}
+
+@mixin
+structure AgentConfigurationOutputMixin {
+    @required
+    status: JSendStatus
+
+    @required
+    data: AgentConfiguration
+}
+
+// ---------------------------------------------------------------------------
+// Agent Model Catalog — GET + PUT (upsert)
+// ---------------------------------------------------------------------------
+/// Returns all agent-model catalog rows, enabled and disabled, for the Admin
+/// Settings table and for lease-template model selection.
+/// Pricing rate fields are optional — present if provided during initial
+/// catalog entry creation or populated later.
+/// Readable by every role; only Admin may change a row.
+@http(method: "GET", uri: "/configurations/agent/models", code: 200)
+@readonly
+@tags(["configurations"])
+@paginated(inputToken: "nextToken", outputToken: "data.nextToken", pageSize: "maxResults", items: "data.models")
+operation ListAgentModelCatalog {
+    input := {
+        /// Pagination cursor from a previous response. Omit to start from the beginning.
+        @httpQuery("nextToken")
+        nextToken: String
+
+        /// Maximum number of models to return per page. Omit for the default page size.
+        /// Clients must follow `nextToken` until absent to retrieve the full catalog.
+        @httpQuery("maxResults")
+        @range(min: 1, max: 500)
+        maxResults: Integer
+    }
+
+    output := {
+        @required
+        status: JSendStatus
+
+        @required
+        data: AgentModelCatalogData
+    }
+}
+
+/// Creates a Bedrock model catalog entry or updates its enabled state.
+/// When creating an entry, omit `expectedLastEditTime` and provide `modelType`.
+/// The service looks the model up in Amazon Bedrock as that type and stores its
+/// canonical metadata.
+/// When updating an existing entry, provide its current `meta.lastEditTime` and
+/// omit `modelType`; the operation updates only its enabled state.
+@http(method: "PUT", uri: "/configurations/agent/models/{modelId}", code: 200)
+@idempotent
+@tags(["configurations"])
+operation PutAgentModelCatalogEntry {
+    input := {
+        @required
+        @httpLabel
+        modelId: String
+
+        /// Whether this model is available in the chat UI.
+        @required
+        enabled: Boolean
+
+        /// OCC token from the prior read's `meta.lastEditTime`.
+        /// Omit on the first call; required on subsequent calls.
+        expectedLastEditTime: String
+
+        /// Whether `modelId` is a foundation model or an inference profile.
+        /// Required when creating an entry; rejected when updating one.
+        modelType: AgentModelType
+    }
+
+    output := {
+        @required
+        status: JSendStatus
+
+        @required
+        data: AgentModelCatalogEntry
+    }
+
+    errors: [
+        ConflictError
+    ]
+}
+
+// ---------------------------------------------------------------------------
+// Agent Model Catalog shapes
+// ---------------------------------------------------------------------------
+/// The `data` payload of `GET /configurations/agent/models`.
+structure AgentModelCatalogData {
+    @required
+    models: AgentModelCatalogList
+
+    /// Present only when additional pages exist.
+    nextToken: String
+}
+
+list AgentModelCatalogList {
+    member: AgentModelCatalogEntry
+}
+
+/// A single catalog row as returned by the configurations API.
+structure AgentModelCatalogEntry {
+    @required
+    modelId: String
+
+    @required
+    displayName: String
+
+    @required
+    provider: String
+
+    /// Geographic availability prefix: `"global"`, `"us"`, `"eu"`, etc.
+    /// Kept as String — derived from Bedrock's inferenceProfileId prefix; open-ended
+    /// as AWS adds new profile regions over time.
+    @required
+    availability: String
+
+    description: String
+
+    /// Whether this entry is a foundation model or a system-defined inference profile.
+    modelType: AgentModelType
+
+    /// ID of the foundation model this entry invokes; a foundation model's own ID.
+    foundationModelId: String
+
+    /// Name of the foundation model this entry invokes.
+    foundationModelName: String
+
+    /// How the rates were sourced.
+    pricingSource: AgentModelPricingSource
+
+    /// ISO 8601 instant of the last pricing refresh.
+    pricingRefreshedAt: String
+
+    inputPricePer1KTokens: Double
+
+    outputPricePer1KTokens: Double
+
+    cacheReadPricePer1KTokens: Double
+
+    cacheWritePricePer1KTokens: Double
+
+    /// Whether this model is available for selection in the chat UI.
+    @required
+    enabled: Boolean
+
+    /// ISO 8601 instant when this model was first added to the catalog.
+    @required
+    addedAt: String
+
+    /// Email of the admin who last toggled this entry.
+    @required
+    lastSavedBy: SensitiveEmail
+
+    /// OCC envelope. Present on every catalog row.
+    @required
+    meta: ConfigurationResponseMetadata
 }

@@ -25,6 +25,8 @@ import {
   BlueprintSchemaVersion,
   PersistedBlueprintItem,
   PersistedBlueprintItemSchema,
+  PersistedBlueprintListCursorSchema,
+  PersistedBlueprintTableKeySchema,
   PersistedBlueprintWithStackSets,
   PersistedBlueprintWithStackSetsSchema,
   PersistedDeploymentHistoryItem,
@@ -37,8 +39,8 @@ import {
   SingleItemResult,
 } from "@amzn/innovation-sandbox-commons/data/common-types.js";
 import {
-  base64DecodeCompositeKey,
   base64EncodeCompositeKey,
+  decodePageIdentifier,
 } from "@amzn/innovation-sandbox-commons/data/encoding.js";
 import {
   ConcurrentDataModificationException,
@@ -305,7 +307,9 @@ export class DynamoBlueprintStore extends BlueprintStore {
         ExpressionAttributeValues: {
           ":itemType": "BLUEPRINT",
         },
-        ExclusiveStartKey: base64DecodeCompositeKey(pageIdentifier),
+        ExclusiveStartKey: decodePageIdentifier(pageIdentifier, (decoded) =>
+          PersistedBlueprintListCursorSchema.parse(decoded),
+        ),
         Limit: pageSize,
       }),
     );
@@ -502,7 +506,12 @@ export class DynamoBlueprintStore extends BlueprintStore {
         },
         ScanIndexForward: false, // Reverse chronological order
         Limit: pageSize,
-        ExclusiveStartKey: base64DecodeCompositeKey(pageIdentifier),
+        ExclusiveStartKey: decodePageIdentifier(pageIdentifier, (decoded) =>
+          PersistedBlueprintTableKeySchema.refine(
+            (cursor) =>
+              cursor.PK === pk && cursor.SK.startsWith(DEPLOYMENT_SK_PREFIX),
+          ).parse(decoded),
+        ),
       }),
     );
 

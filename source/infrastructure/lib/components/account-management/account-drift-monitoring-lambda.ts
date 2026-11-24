@@ -4,7 +4,7 @@ import { EventBus } from "aws-cdk-lib/aws-events";
 import { Role, ServicePrincipal } from "aws-cdk-lib/aws-iam";
 import { CfnSchedule } from "aws-cdk-lib/aws-scheduler";
 import { Construct } from "constructs";
-import path from "path";
+import path from "node:path";
 
 import { AccountDriftMonitoringEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/account-drift-monitoring-environment.js";
 import { IsbLambdaFunction } from "@amzn/innovation-sandbox-infrastructure/components/isb-lambda-function";

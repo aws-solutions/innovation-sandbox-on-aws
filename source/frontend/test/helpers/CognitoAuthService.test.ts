@@ -26,6 +26,8 @@ describe("CognitoAuthService", () => {
             payload: {
               email: "user@example.com",
               "custom:idc_user_id": "uid-123",
+              "custom:idc_display_name": "User Name",
+              "custom:idc_user_name": "user.name",
               "custom:isb_roles": '["Admin","User"]',
               sub: "sub-123",
               iss: "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_test",
@@ -49,6 +51,8 @@ describe("CognitoAuthService", () => {
           email: "user@example.com",
           userId: "uid-123",
           roles: ["Admin", "User"],
+          displayName: "User Name",
+          userName: "user.name",
         },
       });
     });

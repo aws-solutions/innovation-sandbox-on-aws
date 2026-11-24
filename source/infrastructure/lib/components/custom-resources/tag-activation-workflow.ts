@@ -27,7 +27,7 @@ import {
 } from "aws-cdk-lib/aws-stepfunctions";
 import { LambdaInvoke } from "aws-cdk-lib/aws-stepfunctions-tasks";
 import { Construct } from "constructs";
-import path from "path";
+import path from "node:path";
 
 import { TagActivationCheckerEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/tag-activation-checker-environment";
 import { TagActivationTriggerEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/tag-activation-trigger-environment";

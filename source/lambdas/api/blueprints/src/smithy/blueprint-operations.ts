@@ -393,9 +393,5 @@ export function blueprintsService(
     GetBlueprint: withDelegatedErrors(getBlueprint(logger)),
     UpdateBlueprint: withDelegatedErrors(updateBlueprint(logger)),
     DeleteBlueprint: withDelegatedErrors(deleteBlueprint(logger)),
-    // Whole-object cast: `withDelegatedErrors` erases the per-operation return
-    // type, so the literal no longer structurally matches `BlueprintsApiService`.
-    // Each inner operation is individually typed against its own `...ServerInput`/
-    // `...ServerOutput` above, which is where the real signature checking happens.
-  } as unknown as BlueprintsApiService<BlueprintsSmithyContext>;
+  };
 }

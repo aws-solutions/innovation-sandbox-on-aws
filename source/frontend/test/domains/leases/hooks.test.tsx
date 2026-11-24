@@ -2,18 +2,27 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { renderHook, waitFor } from "@testing-library/react";
+import { DateTime } from "luxon";
 import { http, HttpResponse } from "msw";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { toCostHistoryRange } from "@amzn/innovation-sandbox-frontend/domains/leases/components/cost-history-range";
 import {
   useFreezeLease,
   useGetAssignments,
+  useGetLeaseBedrockTokenBaseline,
+  useGetLeaseBedrockTokenHistory,
   useGetLeaseById,
+  useGetLeaseCostSummary,
   useGetLeases,
   useGetLeasesByEmail,
+  useGetMergedLeaseBedrockTokenHistory,
+  useGetMergedLeaseBreachHistory,
+  useGetMergedLeaseCostHistory,
   useGetPendingApprovals,
   useGetSharedLeases,
   useLeasesForCurrentUser,
+  useRefetchLeaseById,
   useRequestNewLease,
   useReviewLease,
   useTerminateLease,
@@ -21,19 +30,32 @@ import {
   useUpdateAssignments,
   useUpdateLease,
 } from "@amzn/innovation-sandbox-frontend/domains/leases/hooks";
-import { LeaseAssignmentView } from "@amzn/innovation-sandbox-frontend/domains/leases/model";
-import {
+import type { LeaseAssignmentView } from "@amzn/innovation-sandbox-frontend/domains/leases/model";
+import type {
   AssignmentPrincipalRef,
+  CostHistoryPageOptions,
   LeasePatchRequest,
   NewLeaseRequest,
 } from "@amzn/innovation-sandbox-frontend/domains/leases/types";
 import { getConfig } from "@amzn/innovation-sandbox-frontend/helpers/config";
 import {
+  leaseBedrockTokenHistoryGetHandler,
+  leaseBreachHistoryGetHandler,
+  leaseCostHistoryGetHandler,
+  leaseCostSummaryGetHandler,
   mockApiLease,
+  mockCostHistoryLeaseId,
+  mockForbiddenCostHistoryLeaseId,
   mockLease,
 } from "@amzn/innovation-sandbox-frontend/mocks/handlers/leaseHandlers";
 import { server } from "@amzn/innovation-sandbox-frontend/mocks/server";
 import { createQueryClientWrapper } from "@amzn/innovation-sandbox-frontend/setupTests";
+import {
+  createMockBedrockTokenCostHistory,
+  createMockCostHistory,
+  createMockLeaseEndBreachCostHistory,
+  createMockNoCurrentCostHistory,
+} from "@amzn/innovation-sandbox-frontend-test/domains/leases/factories/costHistoryFactory";
 
 vi.mock(
   "@amzn/innovation-sandbox-frontend/helpers/CognitoAuthService",
@@ -198,6 +220,13 @@ describe("Lease hooks", () => {
         isOwner: false,
         isDesired: true,
         syncStatus: "active",
+        permissionSet: {
+          permissionSetArn:
+            "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-0123456789abcdef",
+          permissionSetId: "ps-0123456789abcdef",
+          name: "BuiltInUserAccess",
+          availability: "AVAILABLE",
+        },
       },
       {
         principalId: "group-1",
@@ -208,6 +237,13 @@ describe("Lease hooks", () => {
         isOwner: false,
         isDesired: true,
         syncStatus: "active",
+        permissionSet: {
+          permissionSetArn:
+            "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-0123456789abcdef",
+          permissionSetId: "ps-0123456789abcdef",
+          name: "BuiltInUserAccess",
+          availability: "AVAILABLE",
+        },
       },
     ];
 
@@ -227,6 +263,59 @@ describe("Lease hooks", () => {
 
       await waitFor(() => expect(result.current.isSuccess).toBe(true));
       expect(result.current.data?.assignments).toEqual(mockAssignments);
+    });
+
+    it("does not retain assignments from the previous lease", async () => {
+      const nextLeaseId = "lease-uuid-2";
+      const nextAssignments = [
+        {
+          ...mockAssignments[0],
+          principalId: "user-2",
+          displayName: "Bob",
+          assigneeEmail: "bob@example.com",
+        },
+      ];
+      let releaseNextResponse!: () => void;
+      const nextResponseReady = new Promise<void>((resolve) => {
+        releaseNextResponse = resolve;
+      });
+      server.use(
+        http.get(`${getConfig().ApiUrl}/leases/${leaseId}/assignments`, () =>
+          HttpResponse.json({
+            status: "success",
+            data: { assignments: mockAssignments },
+          }),
+        ),
+        http.get(
+          `${getConfig().ApiUrl}/leases/${nextLeaseId}/assignments`,
+          async () => {
+            await nextResponseReady;
+            return HttpResponse.json({
+              status: "success",
+              data: { assignments: nextAssignments },
+            });
+          },
+        ),
+      );
+
+      const { result, rerender } = renderHook(
+        ({ currentLeaseId }) => useGetAssignments(currentLeaseId),
+        {
+          initialProps: { currentLeaseId: leaseId },
+          wrapper: createQueryClientWrapper(),
+        },
+      );
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+      rerender({ currentLeaseId: nextLeaseId });
+
+      await waitFor(() => expect(result.current.isFetching).toBe(true));
+      expect(result.current.data).toBeUndefined();
+
+      releaseNextResponse();
+      await waitFor(() =>
+        expect(result.current.data?.assignments).toEqual(nextAssignments),
+      );
     });
 
     it("should handle errors from the assignments endpoint", async () => {
@@ -279,6 +368,43 @@ describe("Lease hooks", () => {
       await waitFor(() => expect(result.current.isSuccess).toBe(true));
       expect(receivedBody).toEqual({ assignments: desired });
       expect(result.current.data).toEqual({ desiredCount: desired.length });
+    });
+
+    it("refetches the matching assignments query after an update", async () => {
+      let getCalls = 0;
+      server.use(
+        http.get(`${getConfig().ApiUrl}/leases/${leaseId}/assignments`, () => {
+          getCalls++;
+          return HttpResponse.json({
+            status: "success",
+            data: { assignments: [] },
+          });
+        }),
+        http.put(`${getConfig().ApiUrl}/leases/${leaseId}/assignments`, () =>
+          HttpResponse.json(
+            { status: "success", data: { desiredCount: desired.length } },
+            { status: 202 },
+          ),
+        ),
+      );
+
+      const { result } = renderHook(
+        () => ({
+          assignments: useGetAssignments(leaseId),
+          update: useUpdateAssignments(),
+        }),
+        { wrapper: createQueryClientWrapper() },
+      );
+
+      await waitFor(() =>
+        expect(result.current.assignments.isSuccess).toBe(true),
+      );
+      expect(getCalls).toBe(1);
+
+      result.current.update.mutate({ leaseId, assignments: desired });
+
+      await waitFor(() => expect(result.current.update.isSuccess).toBe(true));
+      expect(getCalls).toBe(2);
     });
 
     it("surfaces errors from the assignments endpoint", async () => {
@@ -621,6 +747,43 @@ describe("Lease hooks", () => {
     });
   });
 
+  describe("useRefetchLeaseById", () => {
+    it("reads the lease again, and no other lease query", async () => {
+      const leaseId = "lease-uuid-123";
+      let leaseReads = 0;
+      let listReads = 0;
+      server.use(
+        http.get(`${getConfig().ApiUrl}/leases/${leaseId}`, () => {
+          leaseReads++;
+          return HttpResponse.json({ status: "success", data: mockApiLease });
+        }),
+        http.get(`${getConfig().ApiUrl}/leases`, () => {
+          listReads++;
+          return HttpResponse.json({
+            status: "success",
+            data: { result: [mockApiLease], nextPageIdentifier: null },
+          });
+        }),
+      );
+
+      const { result } = renderHook(
+        () => ({
+          lease: useGetLeaseById(leaseId),
+          leases: useGetLeases(),
+          refetchLease: useRefetchLeaseById(leaseId),
+        }),
+        { wrapper: createQueryClientWrapper() },
+      );
+      await waitFor(() => expect(result.current.lease.isSuccess).toBe(true));
+      await waitFor(() => expect(result.current.leases.isSuccess).toBe(true));
+
+      await result.current.refetchLease();
+
+      expect(leaseReads).toBe(2);
+      expect(listReads).toBe(1);
+    });
+  });
+
   describe("useUpdateLease", () => {
     it("should PATCH a lease successfully", async () => {
       const patchRequest: LeasePatchRequest = {
@@ -866,6 +1029,514 @@ describe("Lease hooks", () => {
 
       await waitFor(() => expect(result.current.isError).toBe(true));
       expect(result.current.error).toBeDefined();
+    });
+  });
+
+  type CostRoute =
+    "costSummary" | "costHistory" | "bedrockTokenHistory" | "breachHistory";
+
+  // Falls through to the handler serving the fixture, having noted the query.
+  const recordQueries = (route: CostRoute) => {
+    const queries: URLSearchParams[] = [];
+    server.use(
+      http.get(
+        `${getConfig().ApiUrl}/leases/:leaseId/${route}`,
+        ({ request }) => {
+          queries.push(new URL(request.url).searchParams);
+        },
+      ),
+    );
+    return queries;
+  };
+
+  // `count` copies of the fixture's first row, a minute apart, newest first.
+  const series = <T extends { timestamp: string }>(row: T, count: number) =>
+    Array.from({ length: count }, (_, index) => ({
+      ...row,
+      timestamp: DateTime.fromISO("2026-08-11T12:00:00.000Z")
+        .minus({ minutes: index })
+        .toUTC()
+        .toISO()!,
+    }));
+
+  // The fixture's token rows at the given readings.
+  const tokenRowsAt = (...timestamps: string[]) =>
+    createMockBedrockTokenCostHistory().data.tokens.filter(({ timestamp }) =>
+      timestamps.includes(timestamp),
+    );
+
+  describe("useGetLeaseCostSummary", () => {
+    const renderSummary = (leaseId: string | undefined) =>
+      renderHook(() => useGetLeaseCostSummary(leaseId), {
+        wrapper: createQueryClientWrapper(),
+      });
+
+    it("should resolve the fixture's newest figures, asking with no query", async () => {
+      const queries = recordQueries("costSummary");
+
+      const { result } = renderSummary(mockCostHistoryLeaseId);
+
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+      expect(result.current.data).toEqual({
+        current: createMockCostHistory().data.current,
+      });
+      expect([...queries[0]!.keys()]).toEqual([]);
+    });
+
+    it("should resolve with no figures where no reading is available", async () => {
+      server.use(leaseCostSummaryGetHandler(createMockNoCurrentCostHistory()));
+
+      const { result } = renderSummary(mockCostHistoryLeaseId);
+
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+      expect(result.current.data!.current).toBeUndefined();
+    });
+
+    it("should error for an unknown lease", async () => {
+      const { result } = renderSummary("dW5rbm93bi1sZWFzZQ");
+
+      await waitFor(() => expect(result.current.isError).toBe(true));
+    });
+
+    it("should error for a lease the caller cannot read", async () => {
+      const { result } = renderSummary(mockForbiddenCostHistoryLeaseId);
+
+      await waitFor(() => expect(result.current.isError).toBe(true));
+    });
+
+    it("should not fetch without a leaseId", () => {
+      const { result } = renderSummary(undefined);
+
+      expect(result.current.fetchStatus).toBe("idle");
+    });
+  });
+
+  describe("useGetLeaseBedrockTokenHistory", () => {
+    const renderTokenPage = (
+      leaseId: string | undefined,
+      page: CostHistoryPageOptions,
+    ) =>
+      renderHook(() => useGetLeaseBedrockTokenHistory(leaseId, page), {
+        wrapper: createQueryClientWrapper(),
+      });
+
+    const NEWEST = "2026-08-11T11:00:00.000Z";
+
+    it("should resolve the newest reading, a row per region and model, for one result", async () => {
+      server.use(
+        leaseBedrockTokenHistoryGetHandler(createMockBedrockTokenCostHistory()),
+      );
+
+      const { result } = renderTokenPage(mockCostHistoryLeaseId, {
+        maxResults: 1,
+      });
+
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+      expect(result.current.data!.result).toEqual(tokenRowsAt(NEWEST));
+      expect(result.current.data!.nextPageIdentifier).toBe("1");
+    });
+
+    it("should error for an unknown lease", async () => {
+      const { result } = renderTokenPage("dW5rbm93bi1sZWFzZQ", {});
+
+      await waitFor(() => expect(result.current.isError).toBe(true));
+    });
+
+    it("should error for a lease the caller cannot read", async () => {
+      const { result } = renderTokenPage(mockForbiddenCostHistoryLeaseId, {});
+
+      await waitFor(() => expect(result.current.isError).toBe(true));
+    });
+
+    it("should not fetch without a leaseId", () => {
+      const { result } = renderTokenPage(undefined, {});
+
+      expect(result.current.fetchStatus).toBe("idle");
+    });
+
+    it("should name the pagination parameters maxResults and pageIdentifier on the wire", async () => {
+      const queries = recordQueries("bedrockTokenHistory");
+
+      const { result } = renderTokenPage(mockCostHistoryLeaseId, {
+        maxResults: 2,
+        pageIdentifier: "2",
+      });
+
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+      const [query] = queries;
+      expect(query!.get("maxResults")).toBe("2");
+      expect(query!.get("pageIdentifier")).toBe("2");
+      expect(query!.has("type")).toBe(false);
+    });
+
+    it("should page by reading and return a cursor when truncated", async () => {
+      server.use(
+        leaseBedrockTokenHistoryGetHandler(createMockBedrockTokenCostHistory()),
+      );
+
+      const { result } = renderTokenPage(mockCostHistoryLeaseId, {
+        maxResults: 2,
+      });
+
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+      expect(result.current.data!.result).toEqual(
+        tokenRowsAt(NEWEST, "2026-08-11T10:00:00.000Z"),
+      );
+      expect(result.current.data!.nextPageIdentifier).toBe("2");
+    });
+
+    it("should follow the cursor to the final page", async () => {
+      server.use(
+        leaseBedrockTokenHistoryGetHandler(createMockBedrockTokenCostHistory()),
+      );
+
+      const { result } = renderTokenPage(mockCostHistoryLeaseId, {
+        maxResults: 2,
+        pageIdentifier: "4",
+      });
+
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+      expect(result.current.data!.result).toEqual(
+        tokenRowsAt("2026-08-11T07:00:00.000Z"),
+      );
+      expect(result.current.data!.nextPageIdentifier).toBeUndefined();
+    });
+
+    const clampCases: [string, number, string][] = [
+      ["above the maximum", 5000, "100"],
+      ["below the minimum", 0, "1"],
+    ];
+
+    it.each(clampCases)(
+      "should clamp a maxResults %s on the wire",
+      async (_case, maxResults, expected) => {
+        const queries = recordQueries("bedrockTokenHistory");
+
+        const { result } = renderTokenPage(mockCostHistoryLeaseId, {
+          maxResults,
+        });
+
+        await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+        expect(queries[0]!.get("maxResults")).toBe(expected);
+      },
+    );
+
+    it("should not 400 on a maxResults the endpoint would reject", async () => {
+      const { result } = renderTokenPage(mockCostHistoryLeaseId, {
+        maxResults: 5000,
+      });
+
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    });
+  });
+
+  describe("useGetLeaseBedrockTokenBaseline", () => {
+    const renderBaseline = (rangeStart: string | undefined) =>
+      renderHook(
+        () =>
+          useGetLeaseBedrockTokenBaseline(mockCostHistoryLeaseId, rangeStart),
+        { wrapper: createQueryClientWrapper() },
+      );
+
+    beforeEach(() => {
+      server.use(
+        leaseBedrockTokenHistoryGetHandler(createMockBedrockTokenCostHistory()),
+      );
+    });
+
+    it("should ask for one reading, ending at the range's start", async () => {
+      const queries = recordQueries("bedrockTokenHistory");
+
+      const { result } = renderBaseline("2026-08-11T11:00:00.000Z");
+
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+      expect(Object.fromEntries(queries[0]!)).toEqual({
+        beforeTimestamp: "2026-08-11T11:00:00.000Z",
+        maxResults: "1",
+      });
+    });
+
+    it("should resolve the newest reading before the range, leaving out the one at its start", async () => {
+      const { result } = renderBaseline("2026-08-11T11:00:00.000Z");
+
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+      expect(result.current.data!.result).toEqual(
+        tokenRowsAt("2026-08-11T10:00:00.000Z"),
+      );
+    });
+
+    it("should resolve no reading and no cursor where none came before the range", async () => {
+      const { result } = renderBaseline("2026-08-11T06:00:00.000Z");
+
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+      expect(result.current.data!.result).toEqual([]);
+      expect(result.current.data!.nextPageIdentifier).toBeUndefined();
+    });
+
+    it("should read a new range's own reading rather than the last range's", async () => {
+      const queries = recordQueries("bedrockTokenHistory");
+      const { result, rerender } = renderHook(
+        ({ rangeStart }: { rangeStart: string }) =>
+          useGetLeaseBedrockTokenBaseline(mockCostHistoryLeaseId, rangeStart),
+        {
+          wrapper: createQueryClientWrapper(),
+          initialProps: { rangeStart: "2026-08-11T11:00:00.000Z" },
+        },
+      );
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+      rerender({ rangeStart: "2026-08-11T09:00:00.000Z" });
+
+      await waitFor(() =>
+        expect(result.current.data!.result).toEqual(
+          tokenRowsAt("2026-08-11T08:00:00.000Z"),
+        ),
+      );
+      expect(queries.map((query) => query.get("beforeTimestamp"))).toEqual([
+        "2026-08-11T11:00:00.000Z",
+        "2026-08-11T09:00:00.000Z",
+      ]);
+    });
+
+    it("should not fetch for a range without a start", () => {
+      const { result } = renderBaseline(undefined);
+
+      expect(result.current.fetchStatus).toBe("idle");
+    });
+  });
+
+  describe("the merged drains", () => {
+    it("should drain every cost page, returning the readings alone", async () => {
+      const { data } = createMockCostHistory();
+      const result = series(data.result[0]!, 150);
+      server.use(
+        leaseCostHistoryGetHandler({
+          status: "success",
+          data: { ...data, result },
+        }),
+      );
+      const queries = recordQueries("costHistory");
+
+      const { result: query } = renderHook(
+        () => useGetMergedLeaseCostHistory(mockCostHistoryLeaseId),
+        { wrapper: createQueryClientWrapper() },
+      );
+
+      await waitFor(() => expect(query.current.isSuccess).toBe(true));
+
+      expect(queries).toHaveLength(2);
+      expect(query.current.data).toEqual({ result, nextPageIdentifier: null });
+    });
+
+    it("should read an absolute range through its end, and not the millisecond after", async () => {
+      const { data } = createMockCostHistory();
+      const at = (timestamp: string) => ({ ...data.result[0]!, timestamp });
+      const result = [
+        at("2026-08-11T10:30:00.001Z"),
+        at("2026-08-11T10:30:00.000Z"),
+        at("2026-08-11T09:00:00.000Z"),
+        at("2026-08-11T08:59:59.999Z"),
+      ];
+      server.use(
+        leaseCostHistoryGetHandler({
+          status: "success",
+          data: { ...data, result },
+        }),
+      );
+      const queries = recordQueries("costHistory");
+      // Picked with an offset, so the range is the same instants in any zone.
+      const range = toCostHistoryRange({
+        type: "absolute",
+        startDate: "2026-08-11T09:00:00Z",
+        endDate: "2026-08-11T10:30:00Z",
+      });
+
+      const { result: query } = renderHook(
+        () => useGetMergedLeaseCostHistory(mockCostHistoryLeaseId, range),
+        { wrapper: createQueryClientWrapper() },
+      );
+
+      await waitFor(() => expect(query.current.isSuccess).toBe(true));
+
+      expect(Object.fromEntries(queries[0]!)).toEqual({
+        afterTimestamp: "2026-08-11T09:00:00.000Z",
+        beforeTimestamp: "2026-08-11T10:30:00.001Z",
+        maxResults: "100",
+      });
+      expect(query.current.data!.result).toEqual([result[1], result[2]]);
+    });
+
+    it("should drain every Bedrock token page", async () => {
+      const { data } = createMockBedrockTokenCostHistory();
+      const tokens = series(data.tokens[0]!, 250);
+      server.use(
+        leaseBedrockTokenHistoryGetHandler({
+          status: "success",
+          data: { ...data, tokens },
+        }),
+      );
+      const queries = recordQueries("bedrockTokenHistory");
+
+      const { result: query } = renderHook(
+        () => useGetMergedLeaseBedrockTokenHistory(mockCostHistoryLeaseId),
+        { wrapper: createQueryClientWrapper() },
+      );
+
+      await waitFor(() => expect(query.current.isSuccess).toBe(true));
+
+      expect(queries).toHaveLength(3);
+      expect(query.current.data).toEqual({
+        result: tokens,
+        nextPageIdentifier: null,
+      });
+    });
+
+    it("should drain every breach page in full pages", async () => {
+      const { data } = createMockCostHistory();
+      const breaches = series(data.breaches[0]!, 250);
+      server.use(
+        leaseBreachHistoryGetHandler({
+          status: "success",
+          data: { ...data, breaches },
+        }),
+      );
+      const queries = recordQueries("breachHistory");
+
+      const { result: query } = renderHook(
+        () => useGetMergedLeaseBreachHistory(mockCostHistoryLeaseId),
+        { wrapper: createQueryClientWrapper() },
+      );
+
+      await waitFor(() => expect(query.current.isSuccess).toBe(true));
+
+      expect(
+        queries.map((asked) => [
+          asked.get("maxResults"),
+          asked.get("pageIdentifier"),
+        ]),
+      ).toEqual([
+        ["100", null],
+        ["100", "100"],
+        ["100", "200"],
+      ]);
+      expect(query.current.data).toEqual({
+        result: breaches,
+        nextPageIdentifier: null,
+      });
+    });
+
+    it("should keep each history's drain of one range under a key of its own", async () => {
+      const { data } = createMockCostHistory();
+
+      const { result } = renderHook(
+        () => ({
+          cost: useGetMergedLeaseCostHistory(mockCostHistoryLeaseId),
+          breaches: useGetMergedLeaseBreachHistory(mockCostHistoryLeaseId),
+        }),
+        { wrapper: createQueryClientWrapper() },
+      );
+
+      await waitFor(() => {
+        expect(result.current.cost.isSuccess).toBe(true);
+        expect(result.current.breaches.isSuccess).toBe(true);
+      });
+
+      expect(result.current.cost.data!.result).toEqual(data.result);
+      expect(result.current.breaches.data!.result).toEqual(data.breaches);
+    });
+
+    it("should return duration and expiry breaches from the breach drain", async () => {
+      const costHistory = createMockLeaseEndBreachCostHistory();
+      server.use(leaseBreachHistoryGetHandler(costHistory));
+
+      const { result } = renderHook(
+        () => useGetMergedLeaseBreachHistory(mockCostHistoryLeaseId),
+        { wrapper: createQueryClientWrapper() },
+      );
+
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+      expect(result.current.data!.result).toEqual(costHistory.data.breaches);
+    });
+  });
+
+  it("should read only the edited lease's cost summary again after a budget edit", async () => {
+    server.use(
+      http.patch(`${getConfig().ApiUrl}/leases/:id`, () =>
+        HttpResponse.json({ status: "success" }, { status: 200 }),
+      ),
+    );
+    const routes: CostRoute[] = [
+      "costSummary",
+      "costHistory",
+      "bedrockTokenHistory",
+      "breachHistory",
+    ];
+    const asked = Object.fromEntries(
+      routes.map((route) => [route, recordQueries(route)]),
+    );
+    const counts = () =>
+      Object.fromEntries(routes.map((route) => [route, asked[route]!.length]));
+    const range = { afterTimestamp: "2026-08-11T00:00:00.000Z" };
+
+    const { result } = renderHook(
+      () => ({
+        summary: useGetLeaseCostSummary(mockCostHistoryLeaseId),
+        cost: useGetMergedLeaseCostHistory(mockCostHistoryLeaseId),
+        tokens: useGetMergedLeaseBedrockTokenHistory(mockCostHistoryLeaseId),
+        latest: useGetLeaseBedrockTokenHistory(mockCostHistoryLeaseId, {
+          maxResults: 1,
+        }),
+        baseline: useGetLeaseBedrockTokenBaseline(
+          mockCostHistoryLeaseId,
+          range.afterTimestamp,
+        ),
+        breaches: useGetMergedLeaseBreachHistory(mockCostHistoryLeaseId),
+        update: useUpdateLease(),
+      }),
+      { wrapper: createQueryClientWrapper() },
+    );
+
+    await waitFor(() => {
+      expect(result.current.summary.isSuccess).toBe(true);
+      expect(result.current.cost.isSuccess).toBe(true);
+      expect(result.current.tokens.isSuccess).toBe(true);
+      expect(result.current.latest.isSuccess).toBe(true);
+      expect(result.current.baseline.isSuccess).toBe(true);
+      expect(result.current.breaches.isSuccess).toBe(true);
+    });
+    // The token route serves the drain, the newest reading and the baseline.
+    expect(counts()).toEqual({
+      costSummary: 1,
+      costHistory: 1,
+      bedrockTokenHistory: 3,
+      breachHistory: 1,
+    });
+
+    result.current.update.mutate({
+      leaseId: mockCostHistoryLeaseId,
+      maxSpend: 500,
+    });
+
+    await waitFor(() => expect(result.current.update.isSuccess).toBe(true));
+    await waitFor(() => expect(counts()["costSummary"]).toBe(2));
+    // The history rows do not change with the lease's settings, and the budget
+    // lines come from the lease itself.
+    expect(counts()).toEqual({
+      costSummary: 2,
+      costHistory: 1,
+      bedrockTokenHistory: 3,
+      breachHistory: 1,
     });
   });
 });

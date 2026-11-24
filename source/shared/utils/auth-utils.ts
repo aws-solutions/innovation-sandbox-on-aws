@@ -32,6 +32,8 @@ export type IsbUser = IdcIdentity | M2MIdentity;
 export const COGNITO_ISB_ROLES_CLAIM = "custom:isb_roles";
 export const COGNITO_USERNAME_CLAIM = "cognito:username";
 export const COGNITO_IDC_USER_ID_CLAIM = "custom:idc_user_id";
+export const COGNITO_IDC_DISPLAY_NAME_CLAIM = "custom:idc_display_name";
+export const COGNITO_IDC_USER_NAME_CLAIM = "custom:idc_user_name";
 /**
  * Custom HTTP header that carries the Cognito ID token on SigV4-signed
  * requests. Read by the `captureIsbUser` middleware to extract RBAC
@@ -71,6 +73,10 @@ export function isM2MUser(user: IsbUser): user is M2MIdentity {
   return user.type === "m2m";
 }
 
+export function isAdminOrManager(user: IsbUser): boolean {
+  return user.roles.includes("Admin") || user.roles.includes("Manager");
+}
+
 export function getUserEmail(user: IsbUser): string {
   if (isM2MUser(user)) {
     // roles[0] is the highest-privilege tier ("Admin" wins over "Manager" /
@@ -94,7 +100,7 @@ export function getUserLabel(user: IsbUser): string {
   if (isM2MUser(user)) {
     return `Automation: ${user.clientId}`;
   }
-  return user.displayName ?? user.email;
+  return user.displayName || user.userName || user.email;
 }
 
 /**

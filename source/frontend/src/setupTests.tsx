@@ -58,6 +58,10 @@ vi.mock("@amzn/innovation-sandbox-frontend/helpers/config", () => {
     AwsAccessPortalUrl: "https://test.awsapps.com/start",
     ApiGatewayHost: "test1234.execute-api.us-east-1.amazonaws.com",
     ApiGatewayStage: "prod",
+    SandboxAgentWebSocketUrl:
+      "wss://test5678.execute-api.us-east-1.amazonaws.com/prod",
+    SandboxAgentMcpGatewayUrl:
+      "https://test5678.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp",
   };
   return {
     loadConfig: vi.fn().mockResolvedValue(testConfig),
@@ -101,7 +105,7 @@ vi.mock(
 );
 
 // Mocking matchMedia for future use cases
-Object.defineProperty(window, "matchMedia", {
+Object.defineProperty(globalThis.window, "matchMedia", {
   writable: true,
   value: (query: any) => ({
     matches: false,
@@ -116,19 +120,24 @@ Object.defineProperty(window, "matchMedia", {
 });
 
 // Mocking window.scrollTo
-Object.defineProperty(window, "scrollTo", {
+Object.defineProperty(globalThis.window, "scrollTo", {
   writable: true,
   value: vi.fn(),
 });
 
 // Adding global mocks
-globalThis.fetch = vi.fn();
+// Spy on fetch without replacing it — replacing with vi.fn() would kill
+// Smithy's FetchHttpHandler-based clients (CloudFrontFetchHttpHandler calls
+// globalThis.fetch directly, and a no-op stub causes all queries to hang).
+// MSW's setupServer already intercepts fetch in Node via @mswjs/interceptors;
+// stubbing it here clobbers that before beforeAll(() => server.listen()) runs.
+vi.spyOn(globalThis, "fetch");
 globalThis.URL.createObjectURL = vi.fn();
 vi.stubGlobal("SOLUTION_VERSION", "1.0.0-test");
 
 // Mock sessionStorage — CognitoAuthService uses Amplify-managed storage
 // (mocked via aws-amplify/auth above), not manual keys.
-Object.defineProperty(window, "sessionStorage", {
+Object.defineProperty(globalThis.window, "sessionStorage", {
   value: {
     getItem: vi.fn().mockReturnValue(null),
     setItem: vi.fn(),

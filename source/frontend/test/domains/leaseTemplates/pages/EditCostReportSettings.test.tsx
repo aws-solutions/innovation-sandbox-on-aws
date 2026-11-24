@@ -58,6 +58,16 @@ describe("EditCostReportSettings", () => {
     });
   });
 
+  test("describes the leases that use the template", async () => {
+    renderComponent();
+
+    expect(
+      await screen.findByText(
+        "When enabled, leases using this template will be assigned to a cost report group for billing and reporting purposes",
+      ),
+    ).toBeInTheDocument();
+  });
+
   test("navigates back on cancel", async () => {
     renderComponent();
     const user = userEvent.setup();
@@ -203,6 +213,8 @@ describe("EditCostReportSettings", () => {
         screen.getByText(/Edit Cost Report Settings/i),
       ).toBeInTheDocument();
     });
+
+    expect(screen.getByRole("checkbox")).toBeChecked();
 
     // Open the select and choose a group.
     const selectTrigger = screen

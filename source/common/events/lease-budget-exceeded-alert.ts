@@ -7,11 +7,21 @@ import { IsbEvent } from "@amzn/innovation-sandbox-commons/sdk-clients/event-bri
 import { AwsAccountIdSchema } from "@amzn/innovation-sandbox-commons/utils/zod.js";
 import { LeaseKeySchema } from "@amzn/innovation-sandbox-shared/types/lease.js";
 
+/** Which evaluator detected the exceeded budget. */
+export const BudgetExceededDetectedBySchema = z.enum([
+  "LEASE_MONITORING",
+  "TOKEN_POLL",
+]);
+export type BudgetExceededDetectedBy = z.infer<
+  typeof BudgetExceededDetectedBySchema
+>;
+
 export const LeaseBudgetExceededEventSchema = z.object({
   leaseId: LeaseKeySchema,
   accountId: AwsAccountIdSchema,
   budget: z.number(),
   totalSpend: z.number(),
+  detectedBy: BudgetExceededDetectedBySchema,
 });
 
 export class LeaseBudgetExceededAlert implements IsbEvent {

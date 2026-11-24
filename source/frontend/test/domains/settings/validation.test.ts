@@ -4,11 +4,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  CONFIG_CONSTRAINTS,
+  CONFIG_BOUNDS,
   ConfigSchemas,
   ConfigWriteSchemas,
-} from "@amzn/innovation-sandbox-frontend/domains/settings/validation";
-import type { LeasesConfigInput } from "@amzn/innovation-sandbox-shared/types/configuration.js";
+  type LeasesConfigInput,
+} from "@amzn/innovation-sandbox-shared/types/configuration.js";
 
 // A complete, valid leases write payload reused across tests. Individual tests
 // override single fields to exercise specific rules.
@@ -25,6 +25,9 @@ const validLeases: LeasesConfigInput = {
   leaseSharingEnabled: false,
   enablePrincipalSearch: true,
   groupAssignmentMode: "ALL",
+  allowPredictiveBudgetControls: false,
+  serviceBreakdownEnabled: false,
+  allowBedrockTokenMonitoring: false,
 };
 
 const validWritePayloads = {
@@ -38,28 +41,14 @@ const validWritePayloads = {
     cooldownPeriodHours: 0,
     reportRetentionDays: 730,
   },
-  notification: { emailFrom: "admin@example.com" },
+  notification: {
+    ...ConfigSchemas.notification.parse({}),
+    emailFrom: "admin@example.com",
+  },
   maintenance: { enabled: false },
   termsOfService: { content: "Some terms" },
   costReporting: { costReportGroups: ["team-a"], requireCostReportGroup: true },
 } as const;
-
-describe("settings validation re-exports", () => {
-  it("exposes all six sections on both read and write schema maps", () => {
-    const sections = [
-      "leases",
-      "cleanup",
-      "notification",
-      "maintenance",
-      "termsOfService",
-      "costReporting",
-    ] as const;
-    for (const section of sections) {
-      expect(ConfigSchemas[section]).toBeDefined();
-      expect(ConfigWriteSchemas[section]).toBeDefined();
-    }
-  });
-});
 
 describe("read schemas (defaults-first)", () => {
   it("produces a full code-default object when parsing an empty object", () => {
@@ -103,13 +92,21 @@ describe("write schemas accept valid payloads", () => {
       false,
     );
   });
+
+  it("requires the predictive budget gate fields on write", () => {
+    const { allowPredictiveBudgetControls, ...missingNewField } = validLeases;
+    void allowPredictiveBudgetControls;
+    expect(ConfigWriteSchemas.leases.safeParse(missingNewField).success).toBe(
+      false,
+    );
+  });
 });
 
 describe("leases field constraints", () => {
   it("rejects maxBudget above the maximum bound", () => {
     const result = ConfigWriteSchemas.leases.safeParse({
       ...validLeases,
-      maxBudget: CONFIG_CONSTRAINTS.MAX_BUDGET + 1,
+      maxBudget: CONFIG_BOUNDS.MAX_BUDGET + 1,
     });
     expect(result.success).toBe(false);
   });
@@ -117,7 +114,7 @@ describe("leases field constraints", () => {
   it("rejects maxDurationHours above the maximum bound", () => {
     const result = ConfigWriteSchemas.leases.safeParse({
       ...validLeases,
-      maxDurationHours: CONFIG_CONSTRAINTS.MAX_DURATION_HOURS + 1,
+      maxDurationHours: CONFIG_BOUNDS.MAX_DURATION_HOURS + 1,
     });
     expect(result.success).toBe(false);
   });
@@ -136,6 +133,32 @@ describe("leases field constraints", () => {
       ttl: 0,
     });
     expect(result.success).toBe(false);
+  });
+
+  it("rejects ttl above the maximum bound on the write path", () => {
+    const result = ConfigWriteSchemas.leases.safeParse({
+      ...validLeases,
+      ttl: CONFIG_BOUNDS.MAX_TTL_DAYS + 1,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts ttl exactly at the maximum bound", () => {
+    const result = ConfigWriteSchemas.leases.safeParse({
+      ...validLeases,
+      ttl: CONFIG_BOUNDS.MAX_TTL_DAYS,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("still parses a stored ttl above the bound on the read path", () => {
+    // GlobalConfigSchema validates on read, so bounding the read schema would
+    // make an existing deployment fail isbConfigMiddleware in every Lambda.
+    const result = ConfigSchemas.leases.safeParse({
+      ...validLeases,
+      ttl: CONFIG_BOUNDS.MAX_TTL_DAYS + 1,
+    });
+    expect(result.success).toBe(true);
   });
 
   it("rejects non-integer numeric values", () => {
@@ -214,29 +237,40 @@ describe("cleanup field constraints", () => {
   it("rejects cooldownPeriodHours above the maximum bound", () => {
     const result = ConfigWriteSchemas.cleanup.safeParse({
       ...validWritePayloads.cleanup,
-      cooldownPeriodHours: CONFIG_CONSTRAINTS.MAX_COOLDOWN_PERIOD_HOURS + 1,
+      cooldownPeriodHours: CONFIG_BOUNDS.MAX_COOLDOWN_PERIOD_HOURS + 1,
     });
     expect(result.success).toBe(false);
   });
 });
 
 describe("notification emailFrom", () => {
+  const withSender = (emailFrom: string) => ({
+    ...ConfigSchemas.notification.parse({}),
+    emailFrom,
+  });
+
   it("accepts a valid email", () => {
     expect(
-      ConfigWriteSchemas.notification.safeParse({ emailFrom: "a@b.com" })
-        .success,
+      ConfigWriteSchemas.notification.safeParse(withSender("a@b.com")).success,
     ).toBe(true);
   });
 
-  it('accepts an empty string ("" disables notifications)', () => {
+  it("accepts an empty string (no SES sender configured)", () => {
     expect(
-      ConfigWriteSchemas.notification.safeParse({ emailFrom: "" }).success,
+      ConfigWriteSchemas.notification.safeParse(withSender("")).success,
     ).toBe(true);
   });
 
   it("rejects a malformed email", () => {
     expect(
-      ConfigWriteSchemas.notification.safeParse({ emailFrom: "not-an-email" })
+      ConfigWriteSchemas.notification.safeParse(withSender("not-an-email"))
+        .success,
+    ).toBe(false);
+  });
+
+  it("requires the channel toggles on a write", () => {
+    expect(
+      ConfigWriteSchemas.notification.safeParse({ emailFrom: "a@b.com" })
         .success,
     ).toBe(false);
   });
@@ -245,7 +279,7 @@ describe("notification emailFrom", () => {
 describe("termsOfService content", () => {
   it("rejects content longer than the maximum length", () => {
     const result = ConfigWriteSchemas.termsOfService.safeParse({
-      content: "x".repeat(CONFIG_CONSTRAINTS.MAX_TERMS_OF_SERVICE_LENGTH + 1),
+      content: "x".repeat(CONFIG_BOUNDS.MAX_TERMS_OF_SERVICE_LENGTH + 1),
     });
     expect(result.success).toBe(false);
   });
@@ -255,7 +289,7 @@ describe("costReporting groups", () => {
   it("rejects more than the maximum number of groups", () => {
     const result = ConfigWriteSchemas.costReporting.safeParse({
       costReportGroups: Array.from(
-        { length: CONFIG_CONSTRAINTS.MAX_COST_REPORT_GROUPS + 1 },
+        { length: CONFIG_BOUNDS.MAX_COST_REPORT_GROUPS + 1 },
         (_, i) => `g${i}`,
       ),
       requireCostReportGroup: false,
@@ -266,7 +300,7 @@ describe("costReporting groups", () => {
   it("rejects a group name longer than the maximum length", () => {
     const result = ConfigWriteSchemas.costReporting.safeParse({
       costReportGroups: [
-        "x".repeat(CONFIG_CONSTRAINTS.MAX_COST_REPORT_GROUP_LENGTH + 1),
+        "x".repeat(CONFIG_BOUNDS.MAX_COST_REPORT_GROUP_LENGTH + 1),
       ],
       requireCostReportGroup: false,
     });

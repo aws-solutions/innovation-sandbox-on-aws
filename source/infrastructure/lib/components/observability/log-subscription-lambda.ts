@@ -9,7 +9,7 @@ import { Duration } from "aws-cdk-lib";
 import { FilterPattern, SubscriptionFilter } from "aws-cdk-lib/aws-logs";
 import { LambdaDestination } from "aws-cdk-lib/aws-logs-destinations";
 import { Construct } from "constructs";
-import path from "path";
+import path from "node:path";
 
 export class LogMetricsSubscriber extends Construct {
   public readonly lambdaHandler: IsbLambdaFunction<any>;

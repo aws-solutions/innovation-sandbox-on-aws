@@ -30,6 +30,7 @@ describe("logging diffs", () => {
       expirationDate: "2024-12-20T08:45:00.000Z",
       originalLeaseTemplateUuid: "someId",
       originalLeaseTemplateName: "myTemplate",
+      sandboxSpacesEnabled: false,
       lastCheckedDate: "someDate",
       totalCostAccrued: 5,
     };
@@ -62,6 +63,7 @@ describe("logging diffs", () => {
       expirationDate: "2024-12-20T08:45:00.000Z",
       originalLeaseTemplateUuid: "someId",
       originalLeaseTemplateName: "myTemplate",
+      sandboxSpacesEnabled: false,
       lastCheckedDate: "someDate",
       totalCostAccrued: 5,
     };

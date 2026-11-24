@@ -5,13 +5,13 @@ import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
+import { RecentCleanupsTable } from "@amzn/innovation-sandbox-frontend/domains/accounts/components/RecentCleanupsTable";
+import { renderWithQueryClient } from "@amzn/innovation-sandbox-frontend/setupTests";
 import {
   createMockCleanupReport,
   createMockFailedReport,
   createMockInProgressReport,
 } from "@amzn/innovation-sandbox-frontend-test/domains/accounts/factories/cleanupReportFactory";
-import { RecentCleanupsTable } from "@amzn/innovation-sandbox-frontend/domains/accounts/components/RecentCleanupsTable";
-import { renderWithQueryClient } from "@amzn/innovation-sandbox-frontend/setupTests";
 
 class ResizeObserver {
   observe() {}
@@ -171,5 +171,21 @@ describe("RecentCleanupsTable", () => {
     expect(
       screen.getByText("No cleanup history available"),
     ).toBeInTheDocument();
+  });
+
+  test("shows each report's start as a relative time", () => {
+    const reports = [
+      createMockCleanupReport({ startedAt: "2024-06-15T07:00:00.000Z" }),
+    ];
+
+    renderWithQueryClient(
+      <RecentCleanupsTable
+        {...defaultProps}
+        reports={reports}
+        selectedReport={reports[0]}
+      />,
+    );
+
+    expect(screen.getByText("5 hours ago")).toBeInTheDocument();
   });
 });

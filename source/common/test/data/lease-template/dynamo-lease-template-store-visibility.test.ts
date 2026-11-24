@@ -15,7 +15,10 @@ import { DynamoDBDocumentClient, ScanCommand } from "@aws-sdk/lib-dynamodb";
 import { mockClient } from "aws-sdk-client-mock";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
-import { base64DecodeCompositeKey } from "@amzn/innovation-sandbox-commons/data/encoding.js";
+import {
+  base64DecodeCompositeKey,
+  base64EncodeCompositeKey,
+} from "@amzn/innovation-sandbox-commons/data/encoding.js";
 import { DynamoLeaseTemplateStore } from "@amzn/innovation-sandbox-commons/data/lease-template/dynamo-lease-template-store.js";
 import { PersistedLeaseTemplateSchema } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template.js";
 import { generateSchemaData } from "@amzn/innovation-sandbox-commons/test/generate-schema-data.js";
@@ -36,6 +39,18 @@ describe("DynamoLeaseTemplateStore - visibility-aware pagination", () => {
 
   afterEach(() => {
     vi.resetAllMocks();
+  });
+
+  test("rejects a pagination cursor whose key is not a lease-template UUID", async () => {
+    const pageIdentifier = base64EncodeCompositeKey({ uuid: "not-a-uuid" });
+
+    await expect(
+      store.findAllVisible({
+        pageIdentifier: pageIdentifier!,
+        includePrivate: false,
+      }),
+    ).rejects.toThrow();
+    expect(mockDynamoClient.commandCalls(ScanCommand)).toHaveLength(0);
   });
 
   test("does not leak a PRIVATE template UUID via nextPageIdentifier when the scan boundary is PRIVATE", async () => {

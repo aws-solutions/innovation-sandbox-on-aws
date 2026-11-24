@@ -1,7 +1,13 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import React, { createContext, ReactNode, useContext, useMemo } from "react";
+import React, {
+  createContext,
+  ReactNode,
+  useCallback,
+  useContext,
+  useMemo,
+} from "react";
 
 interface AppLayoutContextType {
   toolsOpen: boolean;
@@ -36,13 +42,19 @@ export const AppLayoutProvider: React.FC<AppLayoutProviderProps> = ({
   onToolsChange,
   onToolsContentChange,
 }) => {
-  const setTools = (newTools: ReactNode) => {
-    onToolsContentChange(newTools);
-  };
+  const setTools = useCallback(
+    (newTools: ReactNode) => {
+      onToolsContentChange(newTools);
+    },
+    [onToolsContentChange],
+  );
 
-  const setToolsOpen = (open: boolean) => {
-    onToolsChange(open);
-  };
+  const setToolsOpen = useCallback(
+    (open: boolean) => {
+      onToolsChange(open);
+    },
+    [onToolsChange],
+  );
 
   const value = useMemo(
     () => ({

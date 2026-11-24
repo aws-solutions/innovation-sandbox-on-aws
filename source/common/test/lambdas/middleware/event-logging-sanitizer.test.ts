@@ -1,7 +1,11 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { injectSanitizedLambdaContext } from "@amzn/innovation-sandbox-commons/lambda/middleware/inject-sanitized-lambda-context.js";
+import {
+  injectLambdaContextWithEventSanitizer,
+  injectSanitizedLambdaContext,
+  sanitizeApiGatewayEvent,
+} from "@amzn/innovation-sandbox-commons/lambda/middleware/inject-sanitized-lambda-context.js";
 import { createAPIGatewayProxyEvent } from "@amzn/innovation-sandbox-commons/test/lambdas/fixtures.js";
 import { IDENTITY_HEADER } from "@amzn/innovation-sandbox-shared/utils/auth-utils.js";
 import { Logger } from "@aws-lambda-powertools/logger";
@@ -56,13 +60,8 @@ describe("injectSanitizedLambdaContext", () => {
     // Verify that the original token is NOT present in the logged event
     expect(JSON.stringify(loggedEvent)).not.toContain(mockBearerToken);
 
-    // Verify that the current event has sanitized headers
-    expect(mockRequest.event.headers.authorization).toBe("[REDACTED]");
-    if (mockRequest.event.multiValueHeaders?.authorization) {
-      expect(mockRequest.event.multiValueHeaders.authorization).toEqual([
-        "[REDACTED]",
-      ]);
-    }
+    // The handler receives the original event after logging completes.
+    expect(mockRequest.event.headers.authorization).toBe(mockBearerToken);
   });
 
   it.each([
@@ -71,6 +70,7 @@ describe("injectSanitizedLambdaContext", () => {
   ])(
     "should handle different authorization header types: $description",
     async ({ auth }) => {
+      const loggerInfoSpy = vi.spyOn(logger, "info");
       const request = {
         event: createMockEvent(auth),
         context: {},
@@ -80,15 +80,19 @@ describe("injectSanitizedLambdaContext", () => {
       const middleware = injectSanitizedLambdaContext(logger);
       await middleware.before!(request);
 
+      const loggedEvent = (loggerInfoSpy.mock.calls[0]![1] as any).event;
+
       // All authorization headers should be redacted
-      expect(request.event.headers.authorization).toBe("[REDACTED]");
-      expect(request.event.multiValueHeaders.authorization).toEqual([
+      expect(loggedEvent.headers.authorization).toBe("[REDACTED]");
+      expect(loggedEvent.multiValueHeaders.authorization).toEqual([
         "[REDACTED]",
       ]);
+      expect(request.event.headers.authorization).toBe(auth);
     },
   );
 
   it("should handle case-insensitive authorization headers and rawHeaders", async () => {
+    const loggerInfoSpy = vi.spyOn(logger, "info");
     const event = createMockEvent() as APIGatewayProxyEvent & {
       rawHeaders: Record<string, string>;
       rawMultiValueHeaders: Record<string, string[]>;
@@ -104,15 +108,16 @@ describe("injectSanitizedLambdaContext", () => {
 
     await middleware.before!(request);
 
-    expect(request.event.headers.Authorization).toBe("[REDACTED]");
-    expect(request.event.multiValueHeaders.Authorization).toEqual([
-      "[REDACTED]",
-    ]);
+    const loggedEvent = (loggerInfoSpy.mock.calls[0]![1] as any).event;
+
+    expect(loggedEvent.headers.Authorization).toBe("[REDACTED]");
+    expect(loggedEvent.multiValueHeaders.Authorization).toEqual(["[REDACTED]"]);
     // Verify rawHeaders are also sanitized
-    expect((request.event as any).rawHeaders.Authorization).toBe("[REDACTED]");
-    expect((request.event as any).rawMultiValueHeaders.Authorization).toEqual([
+    expect(loggedEvent.rawHeaders.Authorization).toBe("[REDACTED]");
+    expect(loggedEvent.rawMultiValueHeaders.Authorization).toEqual([
       "[REDACTED]",
     ]);
+    expect(request.event).toBe(event);
   });
 
   it("should handle events without authorization headers", async () => {
@@ -130,6 +135,7 @@ describe("injectSanitizedLambdaContext", () => {
   });
 
   it("should handle multiple authorization values", async () => {
+    const loggerInfoSpy = vi.spyOn(logger, "info");
     const event = createMockEvent();
     event.multiValueHeaders = {
       authorization: [
@@ -144,14 +150,17 @@ describe("injectSanitizedLambdaContext", () => {
 
     await middleware.before!(request);
 
-    expect(request.event.multiValueHeaders.authorization).toEqual([
+    const loggedEvent = (loggerInfoSpy.mock.calls[0]![1] as any).event;
+    expect(loggedEvent.multiValueHeaders.authorization).toEqual([
       "[REDACTED]",
       "[REDACTED]",
       "[REDACTED]",
     ]);
+    expect(request.event).toBe(event);
   });
 
   it("should sanitize x-isb-identity headers (Cognito ID token)", async () => {
+    const loggerInfoSpy = vi.spyOn(logger, "info");
     const idToken = "eyJ.fake.idtoken";
     const event = createAPIGatewayProxyEvent({
       headers: { [IDENTITY_HEADER]: idToken, Authorization: "Bearer x" },
@@ -164,11 +173,13 @@ describe("injectSanitizedLambdaContext", () => {
 
     await middleware.before!(request);
 
-    expect(request.event.headers[IDENTITY_HEADER]).toBe("[REDACTED]");
-    expect(request.event.multiValueHeaders["X-ISB-Identity"]).toEqual([
+    const loggedEvent = (loggerInfoSpy.mock.calls[0]![1] as any).event;
+    expect(loggedEvent.headers[IDENTITY_HEADER]).toBe("[REDACTED]");
+    expect(loggedEvent.multiValueHeaders["X-ISB-Identity"]).toEqual([
       "[REDACTED]",
     ]);
-    expect(JSON.stringify(request.event)).not.toContain(idToken);
+    expect(JSON.stringify(loggedEvent)).not.toContain(idToken);
+    expect(request.event).toBe(event);
   });
 
   it("should sanitize x-amz-security-token headers (SigV4 session token)", async () => {
@@ -210,21 +221,64 @@ describe("injectSanitizedLambdaContext", () => {
     expect(loggedEvent.headers["x-amz-date"]).toBe(signedAt);
   });
 
-  it("should preserve original event data integrity", async () => {
+  it("should restore the original event after logging", async () => {
+    const originalEvent = mockRequest.event;
     const originalAuth = mockRequest.event.headers.authorization;
     const middleware = injectSanitizedLambdaContext(logger);
 
     await middleware.before!(mockRequest);
 
-    // Original event should be preserved in _originalEvent
-    expect((mockRequest as any)._originalEvent.headers.authorization).toBe(
-      originalAuth,
-    );
-    expect((mockRequest as any)._originalEvent.headers.authorization).toContain(
-      mockBearerToken,
+    expect(mockRequest.event).toBe(originalEvent);
+    expect(mockRequest.event.headers.authorization).toBe(originalAuth);
+    expect(mockRequest.event.headers.authorization).toContain(mockBearerToken);
+  });
+
+  it("should redact all non-allowlisted query parameters before logging", async () => {
+    const loggerInfoSpy = vi.spyOn(logger, "info");
+    const idToken = "eyJ.websocket.id-token";
+    const signature = "secret-signature";
+    const sessionToken = "secret-session-token";
+    const event = createMockEvent();
+    event.queryStringParameters = {
+      "x-isb-identity": idToken,
+      "x-isb-protocol-version": "1",
+      "X-ISB-PROTOCOL-VERSION": "must-be-redacted",
+      "X-Amz-Signature": signature,
+      "X-Amz-Security-Token": sessionToken,
+    };
+    event.multiValueQueryStringParameters = {
+      "x-isb-protocol-version": ["1"],
+      "X-ISB-PROTOCOL-VERSION": ["must-be-redacted"],
+      "X-Amz-Signature": [signature],
+    };
+    const request = { event, context: {}, response: {} } as any;
+    const middleware = injectLambdaContextWithEventSanitizer(
+      logger,
+      (eventToLog) =>
+        sanitizeApiGatewayEvent(eventToLog, {
+          queryStringParameterAllowlist: ["x-isb-protocol-version"],
+        }),
     );
 
-    // Current event should be sanitized
-    expect(mockRequest.event.headers.authorization).toBe("[REDACTED]");
+    await middleware.before!(request);
+
+    const loggedEvent = (loggerInfoSpy.mock.calls[0]![1] as any).event;
+    expect(loggedEvent.queryStringParameters).toEqual({
+      "x-isb-identity": "[REDACTED]",
+      "x-isb-protocol-version": "1",
+      "X-ISB-PROTOCOL-VERSION": "[REDACTED]",
+      "X-Amz-Signature": "[REDACTED]",
+      "X-Amz-Security-Token": "[REDACTED]",
+    });
+    expect(loggedEvent.multiValueQueryStringParameters).toEqual({
+      "x-isb-protocol-version": ["1"],
+      "X-ISB-PROTOCOL-VERSION": ["[REDACTED]"],
+      "X-Amz-Signature": ["[REDACTED]"],
+    });
+    expect(JSON.stringify(loggedEvent)).not.toContain(idToken);
+    expect(JSON.stringify(loggedEvent)).not.toContain(signature);
+    expect(JSON.stringify(loggedEvent)).not.toContain(sessionToken);
+    expect(request.event).toBe(event);
+    expect(request.event.queryStringParameters["x-isb-identity"]).toBe(idToken);
   });
 });

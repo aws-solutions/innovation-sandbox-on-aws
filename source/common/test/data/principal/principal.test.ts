@@ -4,9 +4,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  PersistedAssignmentLeaseIndexKeySchema,
   PersistedGroupAssignmentSchema,
   PersistedGroupMembershipCacheSchema,
   PersistedPrincipalCacheItemSchema,
+  PersistedUserAssignmentKeySchema,
   PersistedUserAssignmentSchema,
   PRINCIPAL_CACHE_GROUP_SK_PREFIX,
   PRINCIPAL_CACHE_PK,
@@ -19,7 +21,10 @@ import {
 } from "@amzn/innovation-sandbox-shared/types/principal.js";
 
 const VALID_UUID = "00000000-0000-4000-8000-000000000001";
+const VALID_UUID_2 = "00000000-0000-4000-8000-000000000002";
 const VALID_IDC_ID_PREFIXED = "0000000000-00000000-0000-0000-0000-000000000002";
+const VALID_PERMISSION_SET_ID = "ps-a1b2c3d4e5f60001";
+const VALID_PERMISSION_SET_ARN = `arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/${VALID_PERMISSION_SET_ID}`;
 const NOW = new Date().toISOString();
 
 const validMeta = {
@@ -39,6 +44,7 @@ function validUserAssignment(overrides = {}) {
     leaseId: VALID_UUID,
     assigneeEmail: "assignee@example.com",
     leaseOwnerEmail: "owner@example.com",
+    permissionSetArn: VALID_PERMISSION_SET_ARN,
     addedBy: "admin@example.com",
     addedDate: NOW,
     ...validMeta,
@@ -55,6 +61,7 @@ function validGroupAssignment(overrides = {}) {
     principalType: "GROUP" as const,
     displayName: "Engineering Team",
     leaseOwnerEmail: "owner@example.com",
+    permissionSetArn: VALID_PERMISSION_SET_ARN,
     addedBy: "admin@example.com",
     addedDate: NOW,
     ...validMeta,
@@ -113,7 +120,7 @@ describe("Principal Validation", () => {
         PersistedUserAssignmentSchema.safeParse(
           validUserAssignment({
             accountId: "123456789012",
-            permissionSetArn: "arn:aws:sso:::permissionSet/ssoins-1234/ps-1234",
+            permissionSetArn: VALID_PERMISSION_SET_ARN,
           }),
         ).success,
       ).toBe(true);
@@ -141,6 +148,69 @@ describe("Principal Validation", () => {
       expect(
         PersistedUserAssignmentSchema.safeParse(validUserAssignment(overrides))
           .success,
+      ).toBe(false);
+    });
+  });
+
+  describe("PersistedUserAssignmentKeySchema", () => {
+    it("should accept a valid direct-assignment key", () => {
+      expect(
+        PersistedUserAssignmentKeySchema.safeParse({
+          pk: `user#${VALID_UUID}`,
+          sk: `lease#${VALID_UUID}`,
+        }).success,
+      ).toBe(true);
+    });
+
+    it.each([
+      ["invalid user partition key", { pk: `group#${VALID_UUID}` }],
+      ["invalid assignment sort key", { sk: "groupMembership" }],
+      ["extra fields", { leaseId: VALID_UUID }],
+    ])("should reject %s", (_label, overrides) => {
+      expect(
+        PersistedUserAssignmentKeySchema.safeParse({
+          pk: `user#${VALID_UUID}`,
+          sk: `lease#${VALID_UUID}`,
+          ...overrides,
+        }).success,
+      ).toBe(false);
+    });
+  });
+
+  describe("PersistedAssignmentLeaseIndexKeySchema", () => {
+    it.each([`user#${VALID_UUID}`, `group#${VALID_UUID}`])(
+      "accepts an assignment key for %s",
+      (pk) => {
+        expect(
+          PersistedAssignmentLeaseIndexKeySchema.safeParse({
+            pk,
+            sk: `lease#${VALID_UUID}`,
+            leaseId: VALID_UUID,
+          }).success,
+        ).toBe(true);
+      },
+    );
+
+    it.each([
+      ["invalid principal key", { pk: `principal#${VALID_UUID}` }],
+      ["invalid assignment key", { sk: "groupMembership" }],
+      ["invalid lease ID", { leaseId: "not-a-uuid" }],
+      [
+        "mismatched lease ID",
+        {
+          sk: `lease#${VALID_UUID_2}`,
+          leaseId: VALID_UUID,
+        },
+      ],
+      ["extra fields", { unexpected: true }],
+    ])("rejects %s", (_label, overrides) => {
+      expect(
+        PersistedAssignmentLeaseIndexKeySchema.safeParse({
+          pk: `user#${VALID_UUID}`,
+          sk: `lease#${VALID_UUID}`,
+          leaseId: VALID_UUID,
+          ...overrides,
+        }).success,
       ).toBe(false);
     });
   });
@@ -292,5 +362,142 @@ describe("Principal Validation", () => {
         ).success,
       ).toBe(false);
     });
+  });
+});
+
+describe("Assignment schema compatibility", () => {
+  const tupleSk = `lease#${VALID_UUID}#ps#${VALID_PERMISSION_SET_ID}`;
+  const legacyMeta = {
+    meta: {
+      schemaVersion: 1,
+      createdTime: NOW,
+      lastEditTime: NOW,
+    },
+  };
+
+  it("accepts an unchanged v1 user assignment", () => {
+    const { permissionSetArn: _permissionSetArn, ...legacyAssignment } =
+      validUserAssignment(legacyMeta);
+    expect(
+      PersistedUserAssignmentSchema.safeParse(legacyAssignment).success,
+    ).toBe(true);
+  });
+
+  it("accepts an unchanged v1 group assignment", () => {
+    const { permissionSetArn: _permissionSetArn, ...legacyAssignment } =
+      validGroupAssignment(legacyMeta);
+    expect(
+      PersistedGroupAssignmentSchema.safeParse(legacyAssignment).success,
+    ).toBe(true);
+  });
+
+  it("accepts a v2 tuple-keyed user assignment", () => {
+    expect(
+      PersistedUserAssignmentSchema.safeParse(
+        validUserAssignment({
+          sk: tupleSk,
+          permissionSetArn: VALID_PERMISSION_SET_ARN,
+        }),
+      ).success,
+    ).toBe(true);
+  });
+
+  it("accepts a v2 tuple-keyed group assignment", () => {
+    expect(
+      PersistedGroupAssignmentSchema.safeParse(
+        validGroupAssignment({
+          sk: tupleSk,
+          permissionSetArn: VALID_PERMISSION_SET_ARN,
+        }),
+      ).success,
+    ).toBe(true);
+  });
+
+  it.each([
+    ["empty permission set ID", `lease#${VALID_UUID}#ps#`],
+    [
+      "missing permission set prefix",
+      `lease#${VALID_UUID}#ps#a1b2c3d4e5f60001`,
+    ],
+    ["trailing segment", `${tupleSk}#extra`],
+  ])("rejects a user assignment SK with %s", (_label, sk) => {
+    expect(
+      PersistedUserAssignmentSchema.safeParse(validUserAssignment({ sk }))
+        .success,
+    ).toBe(false);
+  });
+
+  it.each([
+    [
+      "a mismatched leaseId",
+      () =>
+        PersistedUserAssignmentSchema.safeParse(
+          validUserAssignment({
+            leaseId: "00000000-0000-4000-8000-000000000002",
+          }),
+        ).success,
+    ],
+    [
+      "a tuple key whose permission set ID differs from permissionSetArn",
+      () =>
+        PersistedGroupAssignmentSchema.safeParse(
+          validGroupAssignment({
+            sk: tupleSk,
+            permissionSetArn:
+              "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-f9e8d7c6b5a40002",
+          }),
+        ).success,
+    ],
+  ])("rejects an assignment with %s", (_label, parse) => {
+    expect(parse()).toBe(false);
+  });
+
+  it("rejects a redundant permissionSetId field", () => {
+    expect(
+      PersistedGroupAssignmentSchema.safeParse(
+        validGroupAssignment({ permissionSetId: VALID_PERMISSION_SET_ID }),
+      ).success,
+    ).toBe(false);
+  });
+
+  it.each([
+    [
+      "user",
+      PersistedUserAssignmentSchema,
+      validUserAssignment({ sk: tupleSk }),
+    ],
+    [
+      "group",
+      PersistedGroupAssignmentSchema,
+      validGroupAssignment({ sk: tupleSk }),
+    ],
+  ])(
+    "rejects a tuple-keyed %s assignment without permissionSetArn",
+    (_label, schema, record) => {
+      const { permissionSetArn: _permissionSetArn, ...withoutArn } = record;
+      expect(schema.safeParse(withoutArn).success).toBe(false);
+    },
+  );
+
+  it("rejects a malformed permissionSetArn field", () => {
+    expect(
+      PersistedUserAssignmentSchema.safeParse(
+        validUserAssignment({ permissionSetArn: "not-an-arn" }),
+      ).success,
+    ).toBe(false);
+  });
+
+  it("rejects a schema version newer than supported", () => {
+    expect(
+      PersistedUserAssignmentSchema.safeParse(
+        validUserAssignment({
+          meta: {
+            schemaVersion: PrincipalSchemaVersion + 1,
+            createdTime: NOW,
+            lastEditTime: NOW,
+          },
+        }),
+      ).success,
+    ).toBe(false);
   });
 });

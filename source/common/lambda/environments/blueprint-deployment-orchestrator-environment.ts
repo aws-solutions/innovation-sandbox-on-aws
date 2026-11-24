@@ -3,6 +3,7 @@
 import { z } from "zod";
 
 import { BaseLambdaEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/base-lambda-environment.js";
+import { AwsAccountIdSchema } from "@amzn/innovation-sandbox-commons/utils/zod.js";
 
 export const BlueprintDeploymentOrchestratorEnvironmentSchema =
   BaseLambdaEnvironmentSchema.extend({
@@ -13,8 +14,8 @@ export const BlueprintDeploymentOrchestratorEnvironmentSchema =
     BLUEPRINT_DEPLOYMENT_STATE_MACHINE_ARN: z.string().optional(),
     INTERMEDIATE_ROLE_ARN: z.string(),
     SANDBOX_ACCOUNT_ROLE_NAME: z.string(),
-    ORG_MGT_ACCOUNT_ID: z.string(),
-    HUB_ACCOUNT_ID: z.string(),
+    ORG_MGT_ACCOUNT_ID: AwsAccountIdSchema,
+    HUB_ACCOUNT_ID: AwsAccountIdSchema,
   });
 
 export type BlueprintDeploymentOrchestratorEnvironment = z.infer<

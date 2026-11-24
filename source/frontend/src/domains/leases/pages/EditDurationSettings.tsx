@@ -27,6 +27,7 @@ import {
   showErrorToast,
   showSuccessToast,
 } from "@amzn/innovation-sandbox-frontend/components/Toast";
+import { getLeaseDisplayName } from "@amzn/innovation-sandbox-frontend/domains/leases/helpers";
 import {
   useGetLeaseById,
   useUpdateLease,
@@ -100,7 +101,7 @@ export const EditDurationSettings = () => {
       reset({
         maxDurationEnabled: !!expirationDate,
         expirationDate,
-        durationThresholds: lease.durationThresholds,
+        durationThresholds: lease.durationThresholds ?? [],
       });
     }
   }, [lease, reset]);
@@ -110,7 +111,10 @@ export const EditDurationSettings = () => {
     setBreadcrumb([
       { text: "Home", href: "/" },
       { text: "Leases", href: "/leases" },
-      { text: lease?.userEmail ?? "...", href: `/leases/${leaseId}` },
+      {
+        text: lease ? getLeaseDisplayName(lease) : "...",
+        href: `/leases/${leaseId}`,
+      },
       { text: "Edit Duration Settings", href: "" },
     ]);
     setTools(<Markdown file="edit-lease-duration" />);
@@ -182,7 +186,11 @@ export const EditDurationSettings = () => {
             <Container
               header={<Header variant="h2">Edit Duration Settings</Header>}
             >
-              <ExpirationSettingsForm requireMaxDuration={requireMaxDuration} />
+              <ExpirationSettingsForm
+                requireMaxDuration={requireMaxDuration}
+                predictiveBudgetEnabled={lease.predictiveBudgetEnabled ?? false}
+                leaseStartDate={leaseStartDate}
+              />
             </Container>
 
             <Box float="right">

@@ -69,7 +69,8 @@ function searchPrincipals(logger: Logger) {
       return handleExactLookup(query, typeParam, context, logger);
     }
 
-    // Fuzzy search over the DynamoDB principal cache.
+    // Fuzzy and exact cache hits reflect the hourly membership snapshot.
+    // Exact cache misses use membership-aware IDC read-through.
     const principalStore = IsbServices.principalStore(env);
     const cacheItems = await principalStore.getCacheItems({
       type: groupSearchEnabled ? TYPE_PARAM_TO_FILTER[typeParam] : "USER",
@@ -107,11 +108,7 @@ function searchPrincipals(logger: Logger) {
   };
 }
 
-/**
- * Exact principal resolution via the cached read-through method on IdcService
- * (cache check + IDC fallback + write-through are encapsulated in
- * `getCachedPrincipalByAttr`).
- */
+/** Exact principal resolution through the membership-aware read-through cache. */
 async function handleExactLookup(
   query: string,
   typeParam: SearchTypeParam,

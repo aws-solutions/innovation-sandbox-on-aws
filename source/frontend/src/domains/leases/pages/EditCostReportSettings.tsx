@@ -27,6 +27,7 @@ import {
   showErrorToast,
   showSuccessToast,
 } from "@amzn/innovation-sandbox-frontend/components/Toast";
+import { getLeaseDisplayName } from "@amzn/innovation-sandbox-frontend/domains/leases/helpers";
 import {
   useGetLeaseById,
   useUpdateLease,
@@ -95,7 +96,10 @@ export const EditCostReportSettings = () => {
     setBreadcrumb([
       { text: "Home", href: "/" },
       { text: "Leases", href: "/leases" },
-      { text: lease?.userEmail ?? "...", href: `/leases/${leaseId}` },
+      {
+        text: lease ? getLeaseDisplayName(lease) : "...",
+        href: `/leases/${leaseId}`,
+      },
       { text: "Edit Cost Report Settings", href: "" },
     ]);
     setTools(<Markdown file="edit-lease-cost-report" />);
@@ -170,6 +174,7 @@ export const EditCostReportSettings = () => {
               <CostReportSettingsForm
                 costReportGroups={costReportGroups}
                 requireCostReportGroup={requireCostReportGroup}
+                variant="lease"
               />
             </Container>
 

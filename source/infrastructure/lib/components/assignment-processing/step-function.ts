@@ -85,7 +85,7 @@ export class AssignmentProcessorStepFunction extends Construct {
       resultSelector: {
         "workItems.$": "$.Payload.workItems",
         "accountId.$": "$.Payload.accountId",
-        "preExistingPrincipalIds.$": "$.Payload.preExistingPrincipalIds",
+        "preExistingPrincipals.$": "$.Payload.preExistingPrincipals",
       },
       resultPath: "$.fanOutResult",
     });
@@ -149,7 +149,7 @@ export class AssignmentProcessorStepFunction extends Construct {
         "accountId.$": "$.fanOutResult.accountId",
         "executionArn.$": "$.executionArn",
         "fannedOutPrincipals.$": "$.fanOutResult.workItems",
-        "preExistingPrincipalIds.$": "$.fanOutResult.preExistingPrincipalIds",
+        "preExistingPrincipals.$": "$.fanOutResult.preExistingPrincipals",
       }),
       integrationPattern: IntegrationPattern.REQUEST_RESPONSE,
       resultPath: "$.completionResult",

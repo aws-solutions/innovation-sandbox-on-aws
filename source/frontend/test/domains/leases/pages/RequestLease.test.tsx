@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import createWrapper from "@cloudscape-design/components/test-utils/dom";
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { DateTime } from "luxon";
 import { http, HttpResponse } from "msw";
@@ -27,6 +27,7 @@ import {
   ApiPaginatedResult,
   ApiResponse,
 } from "@amzn/innovation-sandbox-frontend/types";
+import type { PermissionSetReference } from "@amzn/innovation-sandbox-shared/types/permission-set.js";
 
 const mockNavigate = vi.fn();
 vi.mock("react-router-dom", async () => {
@@ -48,7 +49,34 @@ vi.mock("@amzn/innovation-sandbox-frontend/components/Toast", async () => {
   };
 });
 
+const mockUseUser = vi.hoisted(() => vi.fn());
+vi.mock("@amzn/innovation-sandbox-frontend/hooks/useUser", () => ({
+  useUser: mockUseUser,
+}));
+
 const TERMS_CONTENT = "Please follow these sandbox rules.";
+const defaultUser = {
+  type: "user" as const,
+  email: "test@example.com",
+  displayName: "Test User",
+  userName: "test.user",
+  userId: "test-user-id",
+  roles: ["User"] as const,
+};
+const developerPermissionSet: PermissionSetReference = {
+  permissionSetArn:
+    "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-0123456789abcdef",
+  permissionSetId: "ps-0123456789abcdef",
+  name: "DeveloperAccess",
+  availability: "AVAILABLE",
+};
+const auditorPermissionSet: PermissionSetReference = {
+  permissionSetArn:
+    "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-1123456789abcdef",
+  permissionSetId: "ps-1123456789abcdef",
+  name: "AuditorAccess",
+  availability: "AVAILABLE",
+};
 
 // Build a section-based config carrying known terms-of-service content, so the
 // terms step renders real content rather than the "not configured" fallback.
@@ -68,8 +96,57 @@ describe("RequestLease", () => {
       </Router>,
     );
 
+  const openConfigureAccessStep = async () => {
+    const user = userEvent.setup();
+    server.use(
+      http.get(`${getConfig().ApiUrl}/configurations`, () =>
+        HttpResponse.json({
+          status: "success",
+          data: createConfiguration({
+            leases: {
+              leaseSharingEnabled: true,
+              enablePrincipalSearch: true,
+            },
+          }),
+        }),
+      ),
+    );
+
+    const sharingTemplate: LeaseTemplateView = {
+      ...mockBasicLeaseTemplate,
+      allowOwnerToShareLease: true,
+      defaultPermissionSet: developerPermissionSet,
+      allowedPermissionSets: [developerPermissionSet],
+    };
+    server.use(
+      http.get(`${getConfig().ApiUrl}/leaseTemplates`, () =>
+        HttpResponse.json({
+          status: "success",
+          data: {
+            result: [sharingTemplate],
+            nextPageIdentifier: null,
+          },
+        }),
+      ),
+      http.get(`${getConfig().ApiUrl}/leaseTemplates/:id`, () =>
+        HttpResponse.json({
+          status: "success",
+          data: sharingTemplate,
+        }),
+      ),
+    );
+
+    renderComponent();
+    await waitFor(() => {
+      expect(screen.getByText(sharingTemplate.name)).toBeInTheDocument();
+    });
+    await user.click(screen.getByText(sharingTemplate.name));
+    await user.click(await screen.findByRole("button", { name: /next/i }));
+  };
+
   beforeEach(() => {
     server.use(adminConfigGetHandler(configWithTerms(TERMS_CONTENT)));
+    mockUseUser.mockReturnValue({ user: defaultUser });
   });
 
   test("renders the request lease form with correct title", async () => {
@@ -377,10 +454,81 @@ describe("RequestLease", () => {
     });
   });
 
-  test("shows Share access step when leaseSharingEnabled and allowOwnerToShareLease are both true", async () => {
-    const user = userEvent.setup();
+  test("shows Configure access step when leaseSharingEnabled and allowOwnerToShareLease are both true", async () => {
+    await openConfigureAccessStep();
 
-    // Override config to enable sharing
+    await waitFor(() => {
+      const wizard = createWrapper().findWizard();
+      expect(wizard?.findMenuNavigationLink(2, "active")).not.toBeNull();
+      expect(
+        wizard?.findMenuNavigationLink(2)?.getElement().textContent,
+      ).toContain("Configure access");
+    });
+  });
+
+  test("shows the assignment owner display name and email", async () => {
+    await openConfigureAccessStep();
+    const ownerRow = (await screen.findByText("Test User")).closest("tr");
+    expect(ownerRow).not.toBeNull();
+    expect(within(ownerRow!).getByText("test@example.com")).toBeInTheDocument();
+  });
+
+  test("falls back to the assignment owner email when display name is unavailable", async () => {
+    mockUseUser.mockReturnValue({
+      user: {
+        ...defaultUser,
+        displayName: undefined,
+        userName: undefined,
+      },
+    });
+
+    await openConfigureAccessStep();
+
+    const ownerRow = (await screen.findAllByText("test@example.com"))
+      .map((element) => element.closest("tr"))
+      .find(
+        (row) =>
+          row && within(row).queryAllByText("test@example.com").length === 2,
+      );
+    expect(ownerRow).toBeDefined();
+  });
+
+  test.each([undefined, ""])(
+    "falls back to the assignment owner user name when display name is %s",
+    async (displayName) => {
+      mockUseUser.mockReturnValue({
+        user: { ...defaultUser, displayName },
+      });
+
+      await openConfigureAccessStep();
+
+      const ownerRow = (await screen.findByText("test.user")).closest("tr");
+      expect(ownerRow).not.toBeNull();
+      expect(
+        within(ownerRow!).getByText("test@example.com"),
+      ).toBeInTheDocument();
+    },
+  );
+
+  test("restores the owner when returning to a cached template with the same default permission set", async () => {
+    const user = userEvent.setup();
+    const templates: LeaseTemplateView[] = [
+      {
+        ...mockBasicLeaseTemplate,
+        name: "Sharing template A",
+        allowOwnerToShareLease: true,
+        defaultPermissionSet: developerPermissionSet,
+        allowedPermissionSets: [developerPermissionSet, auditorPermissionSet],
+      },
+      {
+        ...mockAdvancedLeaseTemplate,
+        name: "Sharing template B",
+        allowOwnerToShareLease: true,
+        defaultPermissionSet: developerPermissionSet,
+        allowedPermissionSets: [developerPermissionSet, auditorPermissionSet],
+      },
+    ];
+
     server.use(
       http.get(`${getConfig().ApiUrl}/configurations`, () =>
         HttpResponse.json({
@@ -393,57 +541,54 @@ describe("RequestLease", () => {
           }),
         }),
       ),
-    );
-
-    // Override templates list with one that has allowOwnerToShareLease: true
-    const sharingTemplate: LeaseTemplateView = {
-      ...mockBasicLeaseTemplate,
-      allowOwnerToShareLease: true,
-    };
-    server.use(
       http.get(`${getConfig().ApiUrl}/leaseTemplates`, () =>
         HttpResponse.json({
           status: "success",
           data: {
-            result: [sharingTemplate],
+            result: templates,
             nextPageIdentifier: null,
           },
         }),
       ),
-      http.get(`${getConfig().ApiUrl}/leaseTemplates/:id`, () =>
+      http.get(`${getConfig().ApiUrl}/leaseTemplates/:id`, ({ params }) =>
         HttpResponse.json({
           status: "success",
-          data: sharingTemplate,
+          data: templates.find(({ uuid }) => uuid === params.id),
         }),
       ),
     );
 
     renderComponent();
 
-    // Step 1: select the template
-    await waitFor(() => {
-      expect(screen.getByText(sharingTemplate.name)).toBeInTheDocument();
-    });
-    await user.click(screen.getByText(sharingTemplate.name));
+    await user.click(await screen.findByText("Sharing template A"));
+    await user.click(await screen.findByRole("button", { name: /next/i }));
+    expect(await screen.findByText("Owner")).toBeInTheDocument();
+
+    await user.click(
+      createWrapper().findWizard()!.findMenuNavigationLink(1)!.getElement(),
+    );
+    await user.click(await screen.findByText("Sharing template B"));
+    await user.click(await screen.findByRole("button", { name: /next/i }));
+    expect(await screen.findByText("Owner")).toBeInTheDocument();
+
+    await user.click(
+      createWrapper().findWizard()!.findMenuNavigationLink(1)!.getElement(),
+    );
+    await user.click(await screen.findByText("Sharing template A"));
     await user.click(await screen.findByRole("button", { name: /next/i }));
 
-    // Step 2 should be "Share access"
-    await waitFor(() => {
-      const wizard = createWrapper().findWizard();
-      expect(wizard?.findMenuNavigationLink(2, "active")).not.toBeNull();
-      expect(
-        wizard?.findMenuNavigationLink(2)?.getElement().textContent,
-      ).toContain("Share access");
-    });
+    expect(await screen.findByText("Owner")).toBeInTheDocument();
   });
 
-  test("hides Share access step when allowOwnerToShareLease is false", async () => {
+  test("hides Configure access step when allowOwnerToShareLease is false", async () => {
     const user = userEvent.setup();
 
     // Template explicitly without sharing
     const nonSharingTemplate: LeaseTemplateView = {
       ...mockBasicLeaseTemplate,
       allowOwnerToShareLease: false,
+      defaultPermissionSet: developerPermissionSet,
+      allowedPermissionSets: [developerPermissionSet, auditorPermissionSet],
     };
 
     // Enable sharing globally but not on the template
@@ -485,7 +630,7 @@ describe("RequestLease", () => {
     await user.click(screen.getByText(nonSharingTemplate.name));
     await user.click(await screen.findByRole("button", { name: /next/i }));
 
-    // Step 2 should be "Terms of Service" (no Share access step)
+    // Step 2 should be "Terms of Service" (no Configure access step)
     await waitFor(() => {
       const wizard = createWrapper().findWizard();
       expect(wizard?.findMenuNavigationLink(2, "active")).not.toBeNull();

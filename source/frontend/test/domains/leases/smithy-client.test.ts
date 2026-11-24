@@ -1,12 +1,9 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 
-import {
-  MOCK_ID_TOKEN,
-  mockCognitoCredentials,
-} from "@amzn/innovation-sandbox-frontend-test/utils/cognitoFixtures";
+import type { TokenSeriesRow as WireTokenSeriesRow } from "@amzn/innovation-sandbox-api-client";
 import {
   createLeaseClient,
   reinjectNullMembers,
@@ -14,8 +11,15 @@ import {
 } from "@amzn/innovation-sandbox-frontend/domains/leases/smithy-client";
 import { ApiError } from "@amzn/innovation-sandbox-frontend/helpers/apiError";
 import { ConfigData } from "@amzn/innovation-sandbox-frontend/helpers/config";
+import { createMockLeaseEndBreachCostHistory } from "@amzn/innovation-sandbox-frontend-test/domains/leases/factories/costHistoryFactory";
+import type { TokenSeriesRow } from "@amzn/innovation-sandbox-shared/types/cost-history.js";
 import { isMonitoredLease } from "@amzn/innovation-sandbox-shared/types/lease.js";
 import { IDENTITY_HEADER } from "@amzn/innovation-sandbox-shared/utils/auth-utils";
+
+import {
+  MOCK_ID_TOKEN,
+  mockCognitoCredentials,
+} from "../../utils/cognitoFixtures";
 
 const mockGetIdToken = vi.fn();
 const mockGetCredentials = vi.fn();
@@ -37,7 +41,19 @@ const config: ConfigData = {
   AwsAccessPortalUrl: "https://test.awsapps.com/start",
   ApiGatewayHost: "test1234.execute-api.us-east-1.amazonaws.com",
   ApiGatewayStage: "prod",
+  SandboxAgentWebSocketUrl:
+    "wss://test5678.execute-api.us-east-1.amazonaws.com/prod",
+  SandboxAgentMcpGatewayUrl:
+    "https://test5678.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp",
 };
+
+const developerPermissionSet = {
+  permissionSetArn:
+    "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-0123456789abcdef",
+  permissionSetId: "ps-0123456789abcdef",
+  name: "DeveloperAccess",
+  availability: "AVAILABLE",
+} as const;
 
 // A lease as the server projects it on a read path: raw ISO string timestamps
 // (no Date<->ISO conversion) and the handler-injected `leaseId`. The adapter
@@ -56,6 +72,14 @@ const leaseWithId = {
   expirationDate: "2026-09-01T00:00:00.000Z",
   lastCheckedDate: "2026-08-03T09:00:00.000Z",
   totalCostAccrued: 10,
+  sandboxSpacesEnabled: false,
+  rateLimits: [
+    { basis: "HOURLY", rate: 10, action: "ALERT" },
+    { basis: "DAILY", rate: 200, action: "FREEZE_ACCOUNT" },
+  ],
+  selectableModels: [],
+  defaultPermissionSet: developerPermissionSet,
+  allowedPermissionSets: [developerPermissionSet],
   meta: {
     createdTime: "2026-08-01T12:00:00.000Z",
     lastEditTime: "2026-08-02T13:30:00.000Z",
@@ -66,6 +90,11 @@ const sharedLease = {
   ...leaseWithId,
   accessType: "direct",
 };
+
+// List responses omit `selectableModels`; the mapper defaults it to `[]`.
+const { selectableModels: _leaseListOmitted, ...leaseListItem } = leaseWithId;
+const { selectableModels: _sharedListOmitted, ...sharedLeaseListItem } =
+  sharedLease;
 
 function successResponse(data: unknown, status = 200): Response {
   return new Response(JSON.stringify({ status: "success", data }), {
@@ -136,13 +165,14 @@ describe("generated Lease client", () => {
       ...mockCognitoCredentials,
       expiration: new Date(Date.now() + 60 * 60 * 1000),
     });
-    globalThis.fetch = vi
-      .fn()
-      .mockImplementation(() =>
-        Promise.resolve(
-          successResponse({ result: [leaseWithId], nextPageIdentifier: null }),
-        ),
-      );
+    globalThis.fetch = vi.fn().mockImplementation(() =>
+      Promise.resolve(
+        successResponse({
+          result: [leaseListItem],
+          nextPageIdentifier: null,
+        }),
+      ),
+    );
   });
 
   it("signs the API Gateway stage and lists leases through same-origin CloudFront", async () => {
@@ -170,10 +200,26 @@ describe("generated Lease client", () => {
     expect(lease.leaseId).toBe("bGVhc2UtMQ");
   });
 
+  it("preserves backend-hydrated lease permission-set references", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      successResponse({
+        ...leaseWithId,
+        defaultPermissionSet: developerPermissionSet,
+        allowedPermissionSets: [developerPermissionSet],
+      }),
+    );
+
+    const lease = await createSmithyClient().getLease("bGVhc2UtMQ");
+
+    expect(lease.defaultPermissionSet).toEqual(developerPermissionSet);
+    expect(lease.allowedPermissionSets).toEqual([developerPermissionSet]);
+    expect(lease).not.toHaveProperty("defaultPermissionSetArn");
+  });
+
   it("filters malformed leases without dropping valid list entries", async () => {
     globalThis.fetch = vi.fn().mockResolvedValue(
       successResponse({
-        result: [{ ...leaseWithId, uuid: "not-a-uuid" }, leaseWithId],
+        result: [{ ...leaseListItem, uuid: "not-a-uuid" }, leaseListItem],
         nextPageIdentifier: null,
       }),
     );
@@ -219,14 +265,36 @@ describe("generated Lease client", () => {
     );
   });
 
-  it("gets a lease by id through a signed GET and returns its data", async () => {
-    globalThis.fetch = vi.fn().mockResolvedValue(successResponse(leaseWithId));
+  it("gets a lease by id through a signed GET and returns its data with the selectable models", async () => {
+    const selectableModels = [
+      {
+        modelId: "global.anthropic.claude-sonnet-4-6",
+        displayName: "Claude Sonnet 4.6",
+        provider: "Anthropic",
+      },
+    ];
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValue(successResponse({ ...leaseWithId, selectableModels }));
     const result = await createSmithyClient().getLease("bGVhc2UtMQ");
     const request = fetchedRequest();
 
     expect(request.method).toBe("GET");
     expect(request.url).toBe("http://localhost/api/leases/bGVhc2UtMQ");
-    expect(result).toEqual(leaseWithId);
+    expect(result).toEqual({ ...leaseWithId, selectableModels });
+    expect(result.rateLimits).toEqual([
+      { basis: "HOURLY", rate: 10, action: "ALERT" },
+      { basis: "DAILY", rate: 200, action: "FREEZE_ACCOUNT" },
+    ]);
+  });
+
+  it("returns an empty selectable-model list when the lease read omits the field", async () => {
+    const { selectableModels: _omitted, ...leaseWithoutModels } = leaseWithId;
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValue(successResponse(leaseWithoutModels));
+    const result = await createSmithyClient().getLease("bGVhc2UtMQ");
+    expect(result.selectableModels).toEqual([]);
   });
 
   it("rejects a malformed lease returned by the single-item read", async () => {
@@ -329,6 +397,21 @@ describe("generated Lease client", () => {
     expect(signedHeaders(request)).toContain(IDENTITY_HEADER);
   });
 
+  it("serializes hydrated permission-set references as generated PATCH ARN fields", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(successResponse(leaseWithId));
+
+    await createSmithyClient().updateLease({
+      leaseId: "bGVhc2UtMQ",
+      defaultPermissionSet: developerPermissionSet,
+      allowedPermissionSets: [developerPermissionSet],
+    });
+
+    await expect(fetchedRequest().clone().json()).resolves.toEqual({
+      defaultPermissionSetArn: developerPermissionSet.permissionSetArn,
+      allowedPermissionSetArns: [developerPermissionSet.permissionSetArn],
+    });
+  });
+
   it("re-injects explicit-null clears into the PATCH body (null-to-clear reaches the wire)", async () => {
     // The edit forms send `null` to CLEAR maxSpend/expirationDate/costReportGroup;
     // the server reads a body `null` as clear vs absence as leave-unchanged. The
@@ -412,6 +495,7 @@ describe("generated Lease client", () => {
             isOwner: true,
             isDesired: true,
             syncStatus: "active",
+            permissionSet: developerPermissionSet,
           },
         ],
         operationInProgress: undefined,
@@ -440,6 +524,7 @@ describe("generated Lease client", () => {
             isOwner: false,
             isDesired: true,
             syncStatus: "active",
+            permissionSet: developerPermissionSet,
           },
         ],
       }),
@@ -475,7 +560,11 @@ describe("generated Lease client", () => {
       .fn()
       .mockResolvedValue(successResponse({ desiredCount: 3 }, 202));
     const result = await createSmithyClient().updateAssignments("bGVhc2UtMQ", [
-      { principalId: "p1", principalType: "USER" },
+      {
+        principalId: "p1",
+        principalType: "USER",
+        permissionSetArn: developerPermissionSet.permissionSetArn,
+      },
       { principalId: "g1", principalType: "GROUP" },
     ]);
 
@@ -486,7 +575,11 @@ describe("generated Lease client", () => {
     );
     await expect(request.clone().json()).resolves.toEqual({
       assignments: [
-        { principalId: "p1", principalType: "USER" },
+        {
+          principalId: "p1",
+          principalType: "USER",
+          permissionSetArn: developerPermissionSet.permissionSetArn,
+        },
         { principalId: "g1", principalType: "GROUP" },
       ],
     });
@@ -494,11 +587,12 @@ describe("generated Lease client", () => {
   });
 
   it("lists shared leases with userId/accessType/maxResults in the query", async () => {
-    globalThis.fetch = vi
-      .fn()
-      .mockResolvedValue(
-        successResponse({ result: [sharedLease], nextPageIdentifier: null }),
-      );
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      successResponse({
+        result: [sharedLeaseListItem],
+        nextPageIdentifier: null,
+      }),
+    );
     const page = await createSmithyClient().listSharedLeases(
       "user-id-1",
       "direct",
@@ -624,5 +718,376 @@ describe("generated Lease client", () => {
       "No active session",
     );
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  describe("getLeaseCostHistory", () => {
+    // The mapper checks each member, and which are optional, against both types;
+    // this also keeps their types equal. Checked by tsc in the build, not by vitest.
+    it("types token rows as the API model does", () => {
+      type Wire = {
+        [K in keyof WireTokenSeriesRow]: NonNullable<WireTokenSeriesRow[K]>;
+      };
+      expectTypeOf<TokenSeriesRow>().toEqualTypeOf<Wire>();
+    });
+
+    const costHistoryData = {
+      result: [
+        { timestamp: "2026-08-11T08:00:00.000Z", billedCostAccrued: 60 },
+      ],
+    };
+
+    it("sends the page window as maxResults and pageIdentifier query params", async () => {
+      globalThis.fetch = vi
+        .fn()
+        .mockResolvedValue(successResponse(costHistoryData));
+
+      const result = await createSmithyClient().getLeaseCostHistory(
+        "bGVhc2UtMQ",
+        { maxResults: 25, pageIdentifier: "P2" },
+      );
+      const url = new URL(fetchedRequest().url);
+
+      expect(url.pathname).toBe("/api/leases/bGVhc2UtMQ/costHistory");
+      expect(url.searchParams.get("maxResults")).toBe("25");
+      expect(url.searchParams.get("pageIdentifier")).toBe("P2");
+      expect(url.searchParams.has("type")).toBe(false);
+      expect(result).toEqual(costHistoryData);
+    });
+
+    it("sends no query params when no page window is given", async () => {
+      globalThis.fetch = vi
+        .fn()
+        .mockResolvedValue(successResponse(costHistoryData));
+
+      await createSmithyClient().getLeaseCostHistory("bGVhc2UtMQ", {});
+      const url = new URL(fetchedRequest().url);
+
+      expect([...url.searchParams.keys()]).toEqual([]);
+    });
+
+    it("sends a one-sided range as the single bound it was given", async () => {
+      globalThis.fetch = vi
+        .fn()
+        .mockResolvedValue(successResponse(costHistoryData));
+
+      await createSmithyClient().getLeaseCostHistory("bGVhc2UtMQ", {
+        afterTimestamp: "2026-08-10T00:00:00.000Z",
+      });
+      const url = new URL(fetchedRequest().url);
+
+      // The API fills the missing side, so a relative range keeps including
+      // whatever lands next rather than freezing its upper edge here.
+      expect(url.searchParams.get("afterTimestamp")).toBe(
+        "2026-08-10T00:00:00.000Z",
+      );
+      expect(url.searchParams.has("beforeTimestamp")).toBe(false);
+    });
+
+    it("maps each reading, leaving an absent projection and breakdown undefined", async () => {
+      const page = {
+        result: [
+          {
+            timestamp: "2026-08-11T08:00:00.000Z",
+            billedCostAccrued: 60,
+            predictedCostAtRefresh: 46,
+            serviceBreakdown: { "Amazon Bedrock": 52.1, "Amazon S3": 7.9 },
+          },
+          // Written before a rate existed, on a lease with no breakdown.
+          { timestamp: "2026-08-10T08:00:00.000Z", billedCostAccrued: 8 },
+        ],
+        nextPageIdentifier: "P2",
+      };
+      globalThis.fetch = vi.fn().mockResolvedValue(successResponse(page));
+
+      const result = await createSmithyClient().getLeaseCostHistory(
+        "bGVhc2UtMQ",
+        {},
+      );
+
+      expect(result).toEqual(page);
+      expect(result.result[1]!.predictedCostAtRefresh).toBeUndefined();
+      expect(result.result[1]!.serviceBreakdown).toBeUndefined();
+    });
+
+    it("throws when the cost history response omits data", async () => {
+      globalThis.fetch = vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ status: "success" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+      await expect(
+        createSmithyClient().getLeaseCostHistory("bGVhc2UtMQ", {}),
+      ).rejects.toThrow("Lease cost history response did not contain data");
+    });
+
+    it("throws when the readings are absent (does not hand a panel undefined)", async () => {
+      globalThis.fetch = vi
+        .fn()
+        .mockResolvedValue(successResponse({ nextPageIdentifier: "P2" }));
+
+      await expect(
+        createSmithyClient().getLeaseCostHistory("bGVhc2UtMQ", {}),
+      ).rejects.toThrow("Lease cost history response did not contain data");
+    });
+  });
+
+  describe("getLeaseCostSummary", () => {
+    const current = {
+      billedCostAccrued: 60,
+      predictedCost: 60,
+      latestPeriodStart: "2026-08-11",
+      lastReportedAt: "2026-08-11T08:00:00.000Z",
+      lastCheckedAt: "2026-08-11T11:00:00.000Z",
+      services: [],
+    };
+
+    it("reads the lease's summary with no query params", async () => {
+      globalThis.fetch = vi
+        .fn()
+        .mockResolvedValue(successResponse({ current }));
+
+      const result =
+        await createSmithyClient().getLeaseCostSummary("bGVhc2UtMQ");
+      const url = new URL(fetchedRequest().url);
+
+      expect(url.pathname).toBe("/api/leases/bGVhc2UtMQ/costSummary");
+      expect([...url.searchParams.keys()]).toEqual([]);
+      expect(result).toEqual({ current });
+    });
+
+    it("maps every figure and service, leaving a service's absent change undefined", async () => {
+      const figures = {
+        ...current,
+        hourlyRate: 3.5,
+        dailyRate: 52,
+        hourlyRateWindowHours: 8,
+        dailyRateWindowHours: 24,
+        rateSource: "HOURLY",
+        hoursToBudgetExhaustion: 11.4,
+        services: [
+          {
+            service: "Amazon Bedrock",
+            amount: 52.1,
+            shareOfBilledCost: 0.87,
+            changePercent: 112,
+          },
+          // First seen in the newest reading, so no change to report.
+          { service: "Amazon S3", amount: 7.9, shareOfBilledCost: 0.13 },
+        ],
+      };
+      globalThis.fetch = vi
+        .fn()
+        .mockResolvedValue(successResponse({ current: figures }));
+
+      const result =
+        await createSmithyClient().getLeaseCostSummary("bGVhc2UtMQ");
+
+      expect(result).toEqual({ current: figures });
+      expect(result.current!.services[1]!.changePercent).toBeUndefined();
+    });
+
+    it("leaves the rates undefined in a first interval, which has none", async () => {
+      globalThis.fetch = vi
+        .fn()
+        .mockResolvedValue(successResponse({ current }));
+
+      const result =
+        await createSmithyClient().getLeaseCostSummary("bGVhc2UtMQ");
+
+      expect(result.current!.hourlyRate).toBeUndefined();
+      expect(result.current!.rateSource).toBeUndefined();
+      expect(result.current!.services).toEqual([]);
+    });
+
+    it("reads an absent services list as empty", async () => {
+      // JSON drops the undefined member, so the response carries no services.
+      globalThis.fetch = vi
+        .fn()
+        .mockResolvedValue(
+          successResponse({ current: { ...current, services: undefined } }),
+        );
+
+      const result =
+        await createSmithyClient().getLeaseCostSummary("bGVhc2UtMQ");
+
+      expect(result.current!.services).toEqual([]);
+    });
+
+    it("passes through an absent current, which the contract permits", async () => {
+      globalThis.fetch = vi.fn().mockResolvedValue(successResponse({}));
+
+      const result =
+        await createSmithyClient().getLeaseCostSummary("bGVhc2UtMQ");
+
+      expect(result.current).toBeUndefined();
+    });
+
+    it("throws when the summary response omits data", async () => {
+      globalThis.fetch = vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ status: "success" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+      await expect(
+        createSmithyClient().getLeaseCostSummary("bGVhc2UtMQ"),
+      ).rejects.toThrow("Lease cost summary response did not contain data");
+    });
+  });
+
+  describe("getLeaseBedrockTokenHistory", () => {
+    it("reads one page of token rows, sending only the bounds and page size given", async () => {
+      const result: TokenSeriesRow[] = [
+        {
+          timestamp: "2026-08-11T08:00:00.000Z",
+          region: "us-east-1",
+          modelId: "amazon.nova-pro-v1:0",
+          input: 4000,
+          output: 800,
+          cacheRead: 0,
+          cacheWrite: 0,
+          monitoredBedrockTokenCost: 1.5,
+        },
+      ];
+      globalThis.fetch = vi
+        .fn()
+        .mockResolvedValue(
+          successResponse({ result, nextPageIdentifier: "P2" }),
+        );
+
+      const page = await createSmithyClient().getLeaseBedrockTokenHistory(
+        "bGVhc2UtMQ",
+        { beforeTimestamp: "2026-08-11T00:00:00.000Z", maxResults: 1 },
+      );
+      const url = new URL(fetchedRequest().url);
+
+      expect(url.pathname).toBe("/api/leases/bGVhc2UtMQ/bedrockTokenHistory");
+      expect(url.searchParams.get("beforeTimestamp")).toBe(
+        "2026-08-11T00:00:00.000Z",
+      );
+      expect(url.searchParams.get("maxResults")).toBe("1");
+      expect(url.searchParams.has("afterTimestamp")).toBe(false);
+      expect(url.searchParams.has("pageIdentifier")).toBe(false);
+      expect(page).toEqual({ result, nextPageIdentifier: "P2" });
+    });
+
+    it("maps each row and its counts, leaving an unpriced row's cost undefined", async () => {
+      const result: TokenSeriesRow[] = [
+        {
+          timestamp: "2026-08-11T08:00:00.000Z",
+          region: "us-east-1",
+          modelId: "amazon.nova-pro-v1:0",
+          input: 4000,
+          output: 800,
+          cacheRead: 120,
+          cacheWrite: 60,
+          monitoredBedrockTokenCost: 1.5,
+        },
+        // An older row, saved unpriced.
+        {
+          timestamp: "2026-08-11T07:00:00.000Z",
+          region: "us-east-1",
+          modelId: "unattributed",
+          input: 1000,
+          output: 200,
+          cacheRead: 0,
+          cacheWrite: 0,
+        },
+      ];
+      globalThis.fetch = vi.fn().mockResolvedValue(successResponse({ result }));
+
+      const page = await createSmithyClient().getLeaseBedrockTokenHistory(
+        "bGVhc2UtMQ",
+        {},
+      );
+
+      expect(page).toEqual({ result });
+      expect(page.result[1]!.monitoredBedrockTokenCost).toBeUndefined();
+      expect(page.nextPageIdentifier).toBeUndefined();
+    });
+
+    it("throws when the token rows are absent", async () => {
+      globalThis.fetch = vi.fn().mockResolvedValue(successResponse({}));
+
+      await expect(
+        createSmithyClient().getLeaseBedrockTokenHistory("bGVhc2UtMQ", {}),
+      ).rejects.toThrow(
+        "Lease Bedrock token history response did not contain data",
+      );
+    });
+  });
+
+  describe("getLeaseBreachHistory", () => {
+    it("passes a page's duration and expiry breaches through as the API returns them", async () => {
+      const { breaches } = createMockLeaseEndBreachCostHistory().data;
+      globalThis.fetch = vi
+        .fn()
+        .mockResolvedValue(successResponse({ result: breaches }));
+
+      const page = await createSmithyClient().getLeaseBreachHistory(
+        "bGVhc2UtMQ",
+        { maxResults: 100 },
+      );
+
+      expect(new URL(fetchedRequest().url).pathname).toBe(
+        "/api/leases/bGVhc2UtMQ/breachHistory",
+      );
+      expect(page.result).toEqual(breaches);
+    });
+
+    it("maps each breach and its insight, leaving an absent member undefined", async () => {
+      const result = [
+        {
+          timestamp: "2026-08-11T11:00:00.000Z",
+          triggeredBy: "REPORTED",
+          action: "FREEZE_ACCOUNT",
+          thresholdDollars: 90,
+          billedCostAtFire: 60,
+          predictedCostAtFire: 70.5,
+          rateAtFire: 3.5,
+          rateSourceAtFire: "HOURLY",
+          evaluatedBy: "TOKEN_POLL",
+          evaluatedSpendAtFire: 91,
+          monitoredBedrockTokenCostAtFire: 25,
+          insight: {
+            kind: "COMPOSITION",
+            service: "Amazon Bedrock",
+            amount: 52.1,
+            shareOfComparedSpend: 0.87,
+          },
+        },
+        {
+          timestamp: "2026-08-11T00:00:00.000Z",
+          triggeredBy: "RATE",
+          action: "ALERT",
+          thresholdRate: 12,
+          thresholdRateBasis: "HOURLY",
+          billedCostAtFire: 32,
+          rateAtFire: 14,
+          rateSourceAtFire: "HOURLY",
+          evaluatedBy: "LEASE_MONITORING",
+        },
+      ];
+      globalThis.fetch = vi.fn().mockResolvedValue(successResponse({ result }));
+
+      const page = await createSmithyClient().getLeaseBreachHistory(
+        "bGVhc2UtMQ",
+        {},
+      );
+
+      expect(page).toEqual({ result });
+      expect(page.result[0]!.insight!.changePercent).toBeUndefined();
+      expect(page.result[1]!.insight).toBeUndefined();
+      expect(page.result[1]!.thresholdDollars).toBeUndefined();
+    });
+
+    it("throws when the breaches are absent", async () => {
+      globalThis.fetch = vi.fn().mockResolvedValue(successResponse({}));
+
+      await expect(
+        createSmithyClient().getLeaseBreachHistory("bGVhc2UtMQ", {}),
+      ).rejects.toThrow("Lease breach history response did not contain data");
+    });
   });
 });

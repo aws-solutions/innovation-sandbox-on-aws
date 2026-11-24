@@ -226,7 +226,10 @@ describe("InnovationSandbox.unfreezeLease()", async () => {
   });
 
   it("Fails when attempting to unfreeze a lease that is not frozen", async () => {
-    const alreadyExpiredLease = generateSchemaData(PersistedExpiredLeaseSchema);
+    const alreadyExpiredLease = generateSchemaData(
+      PersistedExpiredLeaseSchema,
+      {},
+    );
 
     await expect(
       InnovationSandbox.unfreezeLease(

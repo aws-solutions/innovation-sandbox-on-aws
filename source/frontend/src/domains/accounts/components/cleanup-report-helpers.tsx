@@ -1,21 +1,9 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { Box, Popover } from "@cloudscape-design/components";
 import { DateTime } from "luxon";
 
 import { CleanupReportView } from "@amzn/innovation-sandbox-frontend/domains/accounts/types";
-
-export const renderTimePopover = (date: string) => (
-  <Popover
-    position="top"
-    size="large"
-    dismissButton={false}
-    content={DateTime.fromISO(date).toLocaleString(DateTime.DATETIME_HUGE)}
-  >
-    <Box>{DateTime.fromISO(date).toRelative()}</Box>
-  </Popover>
-);
 
 export function formatDuration(report: CleanupReportView): string {
   const start = DateTime.fromISO(report.startedAt);

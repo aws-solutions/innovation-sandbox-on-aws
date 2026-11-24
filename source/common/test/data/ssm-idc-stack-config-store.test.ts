@@ -69,7 +69,9 @@ describe("SsmIdcStackConfigStore", () => {
         },
       });
 
-      await expect(store.get()).rejects.toThrow();
+      await expect(store.get()).rejects.toThrow(
+        "IDC stack configuration is invalid.",
+      );
     });
 
     it("should throw error when required fields are missing", async () => {
@@ -84,7 +86,9 @@ describe("SsmIdcStackConfigStore", () => {
         },
       });
 
-      await expect(store.get()).rejects.toThrow();
+      await expect(store.get()).rejects.toThrow(
+        "IDC stack configuration is invalid.",
+      );
     });
   });
 });

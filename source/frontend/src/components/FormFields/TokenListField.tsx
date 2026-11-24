@@ -15,10 +15,10 @@ import type { FormFieldProps } from "@cloudscape-design/components/form-field";
 import type { InputProps } from "@cloudscape-design/components/input";
 import { useEffect, useState } from "react";
 import {
-  useController,
-  UseControllerProps,
   type FieldPath,
   type FieldValues,
+  useController,
+  UseControllerProps,
 } from "react-hook-form";
 
 import { sortedCaseInsensitive } from "@amzn/innovation-sandbox-frontend/helpers/sorted-case-insensitive";
@@ -80,12 +80,13 @@ export default function TokenListField<
   maxItemLength,
   sorted = false,
   itemNoun = "items",
-}: TokenListFieldProps<TFieldValues, TName>) {
+}: Readonly<TokenListFieldProps<TFieldValues, TName>>) {
   const {
     field: { value, onChange },
     fieldState: { error },
   } = useController(controllerProps);
   const [draft, setDraft] = useState("");
+  const readOnly = inputProps?.readOnly ?? false;
   // Inline message for an input-time limit rejection (over-length / over-count).
   // Surfaced via the FormField `warningText` (amber/advisory) slot, not
   // `errorText` (red): a capacity limit is a soft "can't add this" notice, not a
@@ -178,6 +179,7 @@ export default function TokenListField<
     : undefined;
 
   const addItem = () => {
+    if (readOnly) return;
     const trimmed = draft.trim();
     if (!trimmed) {
       // Whitespace-only: leave the typed text in place (no silent discard) and
@@ -215,7 +217,7 @@ export default function TokenListField<
       // Only show the soft limit warning when there is no schema error, so the
       // two never render together (Cloudscape warns when both are set) and a
       // real field error always takes precedence.
-      warningText={!error?.message ? limitMessage : undefined}
+      warningText={error?.message ? undefined : limitMessage}
     >
       <SpaceBetween size="xs">
         <Grid gridDefinition={[{ colspan: 9 }, { colspan: 3 }]}>
@@ -233,11 +235,16 @@ export default function TokenListField<
               }
             }}
           />
-          <Button formAction="none" onClick={addItem} disabled={!draft.trim()}>
+          <Button
+            formAction="none"
+            onClick={addItem}
+            disabled={readOnly || !draft.trim()}
+          >
             Add
           </Button>
         </Grid>
         <TokenGroup
+          readOnly={readOnly}
           items={displayItems.map((item) => ({
             label: item,
             dismissLabel: getDismissLabel(item),

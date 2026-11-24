@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
+
 import { createDateSortingComparator } from "../../src/helpers/date-sorting-comparator";
 
 describe("createDateSortingComparator", () => {

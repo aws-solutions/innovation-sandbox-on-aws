@@ -1,9 +1,8 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-export type Uuid = string;
-export type EmailAddress = string;
-export type AwsAccountId = string;
+export const UUID_PATTERN =
+  "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
 
 export type PaginatedQueryResult<T> = {
   error?: string;

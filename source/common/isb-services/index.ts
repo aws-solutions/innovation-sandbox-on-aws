@@ -4,6 +4,10 @@ import {
   AccountPoolStackConfigStore,
   SsmAccountPoolStackConfigStore,
 } from "@amzn/innovation-sandbox-commons/data/account-pool-stack-config/ssm-account-pool-stack-config-store.js";
+import { ConnectionStore } from "@amzn/innovation-sandbox-commons/data/agent-connection/connection-store.js";
+import { DynamoConnectionStore } from "@amzn/innovation-sandbox-commons/data/agent-connection/dynamo-connection-store.js";
+import { BedrockPriceCache } from "@amzn/innovation-sandbox-commons/data/bedrock-regional-price/bedrock-price-cache.js";
+import { DynamoBedrockPriceCache } from "@amzn/innovation-sandbox-commons/data/bedrock-regional-price/dynamo-bedrock-price-cache.js";
 import { BlueprintStore } from "@amzn/innovation-sandbox-commons/data/blueprint/blueprint-store.js";
 import { DynamoBlueprintStore } from "@amzn/innovation-sandbox-commons/data/blueprint/dynamo-blueprint-store.js";
 import { CleanupReportStore } from "@amzn/innovation-sandbox-commons/data/cleanup-report/cleanup-report-store.js";
@@ -20,6 +24,8 @@ import {
   IdcStackConfigStore,
   SsmIdcStackConfigStore,
 } from "@amzn/innovation-sandbox-commons/data/idc-stack-config/ssm-idc-stack-config-store.js";
+import { DynamoLeaseCostHistoryStore } from "@amzn/innovation-sandbox-commons/data/lease-cost-history/dynamo-lease-cost-history-store.js";
+import { LeaseCostHistoryStore } from "@amzn/innovation-sandbox-commons/data/lease-cost-history/lease-cost-history-store.js";
 import { DynamoLeaseTemplateStore } from "@amzn/innovation-sandbox-commons/data/lease-template/dynamo-lease-template-store.js";
 import { LeaseTemplateStore } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template-store.js";
 import { DynamoLeaseStore } from "@amzn/innovation-sandbox-commons/data/lease/dynamo-lease-store.js";
@@ -28,6 +34,8 @@ import { DynamoPrincipalStore } from "@amzn/innovation-sandbox-commons/data/prin
 import { PrincipalStore } from "@amzn/innovation-sandbox-commons/data/principal/principal-store.js";
 import { DynamoSandboxAccountStore } from "@amzn/innovation-sandbox-commons/data/sandbox-account/dynamo-sandbox-account-store.js";
 import { SandboxAccountStore } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account-store.js";
+import { DynamoSandboxSpacesUsageStore } from "@amzn/innovation-sandbox-commons/data/sandbox-spaces-usage/dynamo-sandbox-spaces-usage-store.js";
+import { SandboxSpacesUsageStore } from "@amzn/innovation-sandbox-commons/data/sandbox-spaces-usage/sandbox-spaces-usage-store.js";
 import { AuthService } from "@amzn/innovation-sandbox-commons/isb-services/auth-service.js";
 import { BlueprintDeploymentService } from "@amzn/innovation-sandbox-commons/isb-services/blueprint-deployment-service.js";
 import { CostExplorerService } from "@amzn/innovation-sandbox-commons/isb-services/cost-explorer-service.js";
@@ -85,8 +93,18 @@ export namespace ServiceEnv {
     USER_AGENT_EXTRA: string;
   };
 
+  export type leaseCostHistoryStore = {
+    LEASE_COST_HISTORY_TABLE_NAME: string;
+    USER_AGENT_EXTRA: string;
+  };
+
   export type configStore = {
     CONFIG_TABLE_NAME: string;
+    USER_AGENT_EXTRA: string;
+  };
+
+  export type bedrockPriceCache = {
+    BEDROCK_REGIONAL_PRICE_TABLE_NAME: string;
     USER_AGENT_EXTRA: string;
   };
 
@@ -160,6 +178,16 @@ export namespace ServiceEnv {
     CLEANUP_SPOKE_ROLE_NAME: string;
     USER_AGENT_EXTRA: string;
   };
+
+  export type connectionStore = {
+    CONNECTIONS_TABLE_NAME: string;
+    USER_AGENT_EXTRA: string;
+  };
+
+  export type sandboxSpacesUsageStore = {
+    SANDBOX_SPACES_USAGE_TABLE_NAME: string;
+    USER_AGENT_EXTRA: string;
+  };
 }
 
 /**
@@ -218,10 +246,28 @@ export class IsbServices {
     });
   }
 
+  public static leaseCostHistoryStore(
+    env: ServiceEnv.leaseCostHistoryStore,
+  ): LeaseCostHistoryStore {
+    return new DynamoLeaseCostHistoryStore({
+      client: IsbClients.dynamo(env),
+      leaseCostHistoryTableName: env.LEASE_COST_HISTORY_TABLE_NAME,
+    });
+  }
+
   public static configStore(env: ServiceEnv.configStore): ConfigStore {
     return new DynamoConfigStore({
       client: IsbClients.dynamo(env),
       tableName: env.CONFIG_TABLE_NAME,
+    });
+  }
+
+  public static bedrockPriceCache(
+    env: ServiceEnv.bedrockPriceCache,
+  ): BedrockPriceCache {
+    return new DynamoBedrockPriceCache({
+      client: IsbClients.dynamo(env),
+      tableName: env.BEDROCK_REGIONAL_PRICE_TABLE_NAME,
     });
   }
 
@@ -271,6 +317,10 @@ export class IsbServices {
       idcStackConfigStore: IsbServices.idcStackConfigStore(env),
       ssoAdminClient: IsbClients.ssoAdmin(env, credentials),
       identityStoreClient: IsbClients.identityStore(env, credentials),
+      resourceGroupsTaggingApiClient: IsbClients.resourceGroupsTaggingApi(
+        env,
+        credentials,
+      ),
     });
   }
 
@@ -349,6 +399,26 @@ export class IsbServices {
       customUserAgent: env.USER_AGENT_EXTRA,
       managedRegions: props.managedRegions,
       exclusionFilter: new ResourceExclusionFilter(props.exclusionConfig),
+    });
+  }
+
+  public static connectionStore(
+    env: ServiceEnv.connectionStore,
+  ): ConnectionStore {
+    return new DynamoConnectionStore({
+      client: IsbClients.dynamo(env),
+      tableName: env.CONNECTIONS_TABLE_NAME,
+    });
+  }
+
+  public static sandboxSpacesUsageStore(
+    env: ServiceEnv.sandboxSpacesUsageStore,
+    ttlDays?: number,
+  ): SandboxSpacesUsageStore {
+    return new DynamoSandboxSpacesUsageStore({
+      client: IsbClients.dynamo(env),
+      tableName: env.SANDBOX_SPACES_USAGE_TABLE_NAME,
+      ttlDays,
     });
   }
 }

@@ -11,6 +11,7 @@ import { z } from "zod";
  * but automatically transformed to a string array when parsed.
  */
 export const AccountPoolConfigSchema = z.object({
+  organizationId: z.string(),
   sandboxOuId: z.string(),
   availableOuId: z.string(),
   activeOuId: z.string(),

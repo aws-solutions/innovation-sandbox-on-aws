@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import createWrapper from "@cloudscape-design/components/test-utils/dom";
-import { screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { FormProvider, useForm } from "react-hook-form";
@@ -136,6 +136,37 @@ describe("TemplateSelectionForm", () => {
     });
   });
 
+  test("clears staged assignments when the selected template changes", async () => {
+    const AssignmentResetWrapper = () => {
+      const methods = useForm({
+        defaultValues: {
+          leaseTemplateUuid: mockBasicLeaseTemplate.uuid,
+          assignments: [{ principalId: "shared-1" }],
+        },
+      });
+      const assignments = methods.watch("assignments");
+
+      return (
+        <Router>
+          <FormProvider {...methods}>
+            <TemplateSelectionForm clearAssignmentsOnChange />
+            <span data-testid="assignment-count">
+              {assignments?.length ?? 0}
+            </span>
+          </FormProvider>
+        </Router>
+      );
+    };
+    renderWithQueryClient(<AssignmentResetWrapper />);
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByText(mockAdvancedLeaseTemplate.name));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("assignment-count")).toHaveTextContent("0"),
+    );
+  });
+
   test("displays no templates message when no templates are available", async () => {
     server.use(
       http.get(`${getConfig().ApiUrl}/leaseTemplates`, () => {
@@ -181,9 +212,10 @@ describe("TemplateSelectionForm", () => {
     });
 
     if (mockBasicLeaseTemplate.description) {
-      expect(
-        screen.getByText(mockBasicLeaseTemplate.description),
-      ).toBeInTheDocument();
+      const description = screen.getByText(mockBasicLeaseTemplate.description);
+      expect(description).toBeInTheDocument();
+      expect(description.style.webkitLineClamp).toBe("4");
+      expect(description).toHaveStyle({ overflow: "hidden" });
     }
     if (mockAdvancedLeaseTemplate.description) {
       expect(
@@ -196,25 +228,102 @@ describe("TemplateSelectionForm", () => {
     expect(
       screen.getByText(`$${mockAdvancedLeaseTemplate.maxSpend}`),
     ).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        mockBasicLeaseTemplate.requiresApproval
-          ? "Requires approval"
-          : "No approval required",
-      ),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        mockAdvancedLeaseTemplate.requiresApproval
-          ? "Requires approval"
-          : "No approval required",
-      ),
-    ).toBeInTheDocument();
-
-    // Check visibility indicators are displayed
-    const visibilityLabels = screen.getAllByText(/Public|Private/);
-    expect(visibilityLabels.length).toBeGreaterThan(0);
+    expect(screen.getByText("2 days")).toBeInTheDocument();
+    expect(screen.getByText("3 days")).toBeInTheDocument();
+    expect(screen.getByText("Approval required")).toBeInTheDocument();
   });
+
+  test("displays blueprint metadata only when configured", async () => {
+    server.use(
+      http.get(`${getConfig().ApiUrl}/leaseTemplates`, () => {
+        return HttpResponse.json({
+          status: "success",
+          data: {
+            result: [
+              {
+                ...mockBasicLeaseTemplate,
+                blueprintName: "Hackathon",
+              },
+              {
+                ...mockAdvancedLeaseTemplate,
+                blueprintName: undefined,
+              },
+            ],
+            nextPageIdentifier: null,
+          },
+        } as ApiResponse<ApiPaginatedResult<LeaseTemplateView>>);
+      }),
+    );
+
+    renderComponent();
+
+    expect(await screen.findByText("Hackathon")).toBeInTheDocument();
+    expect(screen.getAllByText("Blueprint")).toHaveLength(1);
+  });
+
+  test.each(["mouse", "Enter", "Space"])(
+    "shows a truncated description using %s without selecting the card",
+    async (activation) => {
+      const longDescription = "Narrow card description ".repeat(6).trim();
+      const longDescriptionTemplate = {
+        ...mockBasicLeaseTemplate,
+        name: "Long description template",
+        description: longDescription,
+      };
+      const clientHeightSpy = vi
+        .spyOn(HTMLElement.prototype, "clientHeight", "get")
+        .mockImplementation(function (this: HTMLElement) {
+          return this.textContent === longDescription ? 80 : 0;
+        });
+      const scrollHeightSpy = vi
+        .spyOn(HTMLElement.prototype, "scrollHeight", "get")
+        .mockImplementation(function (this: HTMLElement) {
+          return this.textContent === longDescription ? 120 : 0;
+        });
+
+      server.use(
+        http.get(`${getConfig().ApiUrl}/leaseTemplates`, () => {
+          return HttpResponse.json({
+            status: "success",
+            data: {
+              result: [longDescriptionTemplate, mockAdvancedLeaseTemplate],
+              nextPageIdentifier: null,
+            },
+          } as ApiResponse<ApiPaginatedResult<LeaseTemplateView>>);
+        }),
+      );
+
+      renderComponent();
+      const user = userEvent.setup();
+      const description = await screen.findByText(longDescription);
+
+      expect(description.style.webkitLineClamp).toBe("4");
+      expect(description).toHaveStyle({ overflow: "hidden" });
+
+      const descriptionButton = await screen.findByRole("button", {
+        name: "View full description for Long description template",
+      });
+      if (activation === "mouse") {
+        await user.click(descriptionButton);
+      } else {
+        descriptionButton.focus();
+        await user.keyboard(activation === "Enter" ? "{Enter}" : " ");
+      }
+
+      const modal = createWrapper().findModal();
+      expect(modal?.isVisible()).toBe(true);
+      expect(modal?.findHeader().getElement()).toHaveTextContent(
+        "Long description template description",
+      );
+      expect(modal?.findContent().getElement()).toHaveTextContent(
+        longDescription,
+      );
+      expect(createWrapper().findCards()?.findSelectedItems()).toHaveLength(0);
+
+      clientHeightSpy.mockRestore();
+      scrollHeightSpy.mockRestore();
+    },
+  );
 
   test("filters templates when searching by name", async () => {
     const searchableTemplates = [
@@ -336,8 +445,8 @@ describe("TemplateSelectionForm", () => {
   });
 
   test("resets to page 1 when search term changes", async () => {
-    // Create enough templates to trigger pagination
-    const manyTemplates = Array.from({ length: 15 }, (_, i) => ({
+    // 13 is the fewest templates that produce a second page (12 per page)
+    const manyTemplates = Array.from({ length: 13 }, (_, i) => ({
       ...mockBasicLeaseTemplate,
       uuid: templateUuid(i),
       name: `Template ${i + 1}`,
@@ -372,7 +481,8 @@ describe("TemplateSelectionForm", () => {
 
     // Now search for something
     const searchInput = screen.getByPlaceholderText("Search by template name");
-    await user.type(searchInput, "Template 1");
+    // One change event, not one re-filter per typed character
+    fireEvent.change(searchInput, { target: { value: "Template 1" } });
 
     // Should reset to page 1 and show filtered results
     await waitFor(() => {

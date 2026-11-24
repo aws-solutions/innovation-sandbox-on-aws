@@ -6,6 +6,7 @@ import {
   PersistedSandboxAccount,
   PersistedSandboxAccountSchema,
 } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account.js";
+import type { LeaseUserSandboxSpacesUsage } from "@amzn/innovation-sandbox-commons/data/sandbox-spaces-usage/sandbox-spaces-usage-store.js";
 import { CleanAccountRequest } from "@amzn/innovation-sandbox-commons/events/clean-account-request.js";
 import {
   getLeaseTerminatedReason,
@@ -27,6 +28,7 @@ import {
   mockedLeaseStore,
   mockedOrganizationsTaggingService,
   mockedOrgsService,
+  mockedSandboxSpacesUsageStore,
 } from "@amzn/innovation-sandbox-commons/test/mocking/common-mocks.js";
 import { createMockOf } from "@amzn/innovation-sandbox-commons/test/mocking/mock-utils.js";
 import { datetimeAsString } from "@amzn/innovation-sandbox-commons/utils/time-utils.js";
@@ -49,6 +51,7 @@ function createMockContext() {
     eventBridgeClient: mockedIsbEventBridge(),
     blueprintStore: mockedBlueprintStore(),
     blueprintDeploymentService: mockedBlueprintDeploymentService(),
+    sandboxSpacesUsageStore: mockedSandboxSpacesUsageStore(),
     logger: createMockOf(Logger),
     tracer: new Tracer(),
     globalConfig: mockGlobalConfig(),
@@ -128,6 +131,7 @@ describe("InnovationSandbox.terminateLease()", () => {
       ttl: Math.floor(currentDateTime.plus({ days: 30 }).valueOf() / 1000),
       status: "ManuallyTerminated",
       endDate: currentDateTime.toISO(),
+      lifecycleDispatch: null,
     });
 
     // Acquires lock with TERMINATE intent (no desiredAssignments — processor handles clearing)
@@ -154,7 +158,7 @@ describe("InnovationSandbox.terminateLease()", () => {
       }),
     );
 
-    // No synchronous revokeAllUserAccess — handled async by Step Function
+    // No synchronous IDC access revocation — handled async by Step Function
 
     expect(mockContext.eventBridgeClient.sendIsbEvents).toHaveBeenCalledWith(
       mockContext.tracer,
@@ -202,6 +206,7 @@ describe("InnovationSandbox.terminateLease()", () => {
       ttl: Math.floor(currentDateTime.plus({ days: 30 }).valueOf() / 1000),
       status: "Expired",
       endDate: currentDateTime.toISO(),
+      lifecycleDispatch: null,
     });
 
     // No assignment records → backward compat path
@@ -252,8 +257,226 @@ describe("InnovationSandbox.terminateLease()", () => {
         maxDurationHours: lease.leaseDurationInHours,
         actualDurationHours: 48,
         reasonForTermination: "ManuallyTerminated",
+        // No Sandbox Spaces usage recorded on the lease.
+        agentSpend: 0,
+        budgetExceededBy: undefined,
       },
     );
+  });
+
+  test("reports the budget check that terminated the lease and the lease's agent spend", async () => {
+    const lease = generateSchemaData(PersistedMonitoredLeaseSchema, {
+      status: "Active",
+      awsAccountId: mockLeaseAccount.awsAccountId,
+      userEmail: mockUser.email,
+    });
+    mockContext.sandboxSpacesUsageStore.listLeaseUserUsage.mockResolvedValueOnce(
+      {
+        usage: [
+          { sandboxSpacesEstimatedTokenCostAccrued: 1.25 },
+          { sandboxSpacesEstimatedTokenCostAccrued: 2.5 },
+        ] as LeaseUserSandboxSpacesUsage[],
+      },
+    );
+
+    await InnovationSandbox.terminateLease(
+      {
+        lease,
+        expiredStatus: "BudgetExceeded",
+        budgetExceededBy: "TOKEN_POLL",
+        budgetTotalSpend: 160,
+      },
+      mockContext,
+    );
+
+    expect(
+      mockContext.sandboxSpacesUsageStore.listLeaseUserUsage,
+    ).toHaveBeenCalledWith(lease.uuid);
+    expect(mockContext.logger.info).toHaveBeenCalledWith(
+      expect.stringContaining("terminated: BudgetExceeded"),
+      expect.objectContaining({
+        logDetailType: "LeaseTerminated",
+        // Billed resource cost only: agent inference is already on the bill.
+        actualSpend: lease.totalCostAccrued,
+        // Summed across users; an attribution figure, not added to actualSpend.
+        agentSpend: 3.75,
+        budgetExceededBy: "TOKEN_POLL",
+        budgetTotalSpend: 160,
+      }),
+    );
+  });
+
+  test("reports the token poll's total as totalSpend on the LeaseTerminated event when the bill is lower", async () => {
+    const lease = generateSchemaData(PersistedMonitoredLeaseSchema, {
+      status: "Active",
+      awsAccountId: mockLeaseAccount.awsAccountId,
+      userEmail: mockUser.email,
+      maxSpend: 20,
+      // A new lease: nothing is on the bill yet.
+      totalCostAccrued: 0,
+    });
+
+    await InnovationSandbox.terminateLease(
+      {
+        lease,
+        expiredStatus: "BudgetExceeded",
+        budgetExceededBy: "TOKEN_POLL",
+        budgetTotalSpend: 20,
+      },
+      mockContext,
+    );
+
+    expect(mockContext.eventBridgeClient.sendIsbEvents).toHaveBeenCalledWith(
+      mockContext.tracer,
+      new CleanAccountRequest({
+        accountId: lease.awsAccountId,
+        reason: "LEASE_TERMINATION",
+      }),
+      new LeaseTerminatedEvent({
+        leaseId: {
+          userEmail: lease.userEmail,
+          uuid: lease.uuid,
+        },
+        accountId: lease.awsAccountId,
+        reason: { type: "BudgetExceeded", budget: 20, totalSpend: 20 },
+      }),
+    );
+  });
+
+  test("reports agent spend on an ordinary termination without adding it to actualSpend", async () => {
+    const lease = generateSchemaData(PersistedMonitoredLeaseSchema, {
+      status: "Active",
+      awsAccountId: mockLeaseAccount.awsAccountId,
+      userEmail: mockUser.email,
+      totalCostAccrued: 150,
+      leaseDurationInHours: 24,
+    });
+    mockContext.sandboxSpacesUsageStore.listLeaseUserUsage.mockResolvedValueOnce(
+      {
+        usage: [
+          { sandboxSpacesEstimatedTokenCostAccrued: 12.5 },
+        ] as LeaseUserSandboxSpacesUsage[],
+      },
+    );
+
+    await InnovationSandbox.terminateLease(
+      { lease, expiredStatus: "Expired" },
+      mockContext,
+    );
+
+    expect(mockContext.logger.info).toHaveBeenCalledWith(
+      expect.stringContaining("terminated: Expired"),
+      expect.objectContaining({
+        logDetailType: "LeaseTerminated",
+        // The agent's inference is billed to the sandbox account, so it is
+        // already in totalCostAccrued; adding the estimate would double-count.
+        actualSpend: 150,
+        agentSpend: 12.5,
+        budgetExceededBy: undefined,
+        budgetTotalSpend: undefined,
+      }),
+    );
+  });
+
+  test("keeps the budget check's total when the Sandbox Spaces usage read fails", async () => {
+    const lease = generateSchemaData(PersistedMonitoredLeaseSchema, {
+      status: "Active",
+      awsAccountId: mockLeaseAccount.awsAccountId,
+      userEmail: mockUser.email,
+      totalCostAccrued: 90,
+    });
+    mockContext.sandboxSpacesUsageStore.listLeaseUserUsage.mockRejectedValueOnce(
+      new Error("read failed"),
+    );
+
+    await InnovationSandbox.terminateLease(
+      {
+        lease,
+        expiredStatus: "BudgetExceeded",
+        budgetExceededBy: "TOKEN_POLL",
+        // Includes live Bedrock token cost not yet on the bill.
+        budgetTotalSpend: 101,
+      },
+      mockContext,
+    );
+
+    const [, terminatedLog] = mockContext.logger.info.mock.calls.find(
+      ([message]) => String(message).includes("terminated: BudgetExceeded"),
+    )!;
+    expect(terminatedLog).toMatchObject({
+      logDetailType: "LeaseTerminated",
+      actualSpend: 90,
+      budgetExceededBy: "TOKEN_POLL",
+      budgetTotalSpend: 101,
+    });
+    expect(
+      (terminatedLog as Record<string, unknown>).agentSpend,
+    ).toBeUndefined();
+  });
+
+  test.each([
+    [
+      "some usage records are unreadable",
+      () =>
+        mockContext.sandboxSpacesUsageStore.listLeaseUserUsage.mockResolvedValueOnce(
+          {
+            usage: [
+              { sandboxSpacesEstimatedTokenCostAccrued: 1 },
+            ] as LeaseUserSandboxSpacesUsage[],
+            error: "1 malformed record",
+          },
+        ),
+    ],
+    [
+      "the usage read fails",
+      () =>
+        mockContext.sandboxSpacesUsageStore.listLeaseUserUsage.mockRejectedValueOnce(
+          new Error("read failed"),
+        ),
+    ],
+  ])("terminates and omits agent spend when %s", async (_case, arrange) => {
+    const lease = generateSchemaData(PersistedMonitoredLeaseSchema, {
+      status: "Active",
+      awsAccountId: mockLeaseAccount.awsAccountId,
+      userEmail: mockUser.email,
+    });
+    arrange();
+
+    await InnovationSandbox.terminateLease(
+      { lease, expiredStatus: "ManuallyTerminated" },
+      mockContext,
+    );
+
+    expect(mockContext.leaseStore.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        uuid: lease.uuid,
+        status: "ManuallyTerminated",
+      }),
+    );
+    const [, terminatedLog] = mockContext.logger.info.mock.calls.find(
+      ([message]) => String(message).includes("terminated: ManuallyTerminated"),
+    )!;
+    // A partial sum is never reported as the lease's agent spend.
+    expect(
+      (terminatedLog as Record<string, unknown>).agentSpend,
+    ).toBeUndefined();
+  });
+
+  test("stamps TTL on every lease-scoped Sandbox Spaces usage item", async () => {
+    const lease = generateSchemaData(PersistedMonitoredLeaseSchema, {
+      status: "Active",
+      awsAccountId: mockLeaseAccount.awsAccountId,
+      userEmail: mockUser.email,
+    });
+
+    await InnovationSandbox.terminateLease(
+      { lease, expiredStatus: "ManuallyTerminated" },
+      mockContext,
+    );
+
+    expect(
+      mockContext.sandboxSpacesUsageStore.stampLeaseTtl,
+    ).toHaveBeenCalledWith(lease.uuid, expect.any(Number));
   });
 
   test("writes the Status tag as CleanUp after the OU move when autoCleanup is true", async () => {
@@ -366,5 +589,66 @@ describe("InnovationSandbox.terminateLease()", () => {
     // Lock was acquired but NOT released (critical intent holds lock)
     expect(mockContext.leaseStore.acquireLock).toHaveBeenCalled();
     expect(mockContext.leaseStore.releaseLock).not.toHaveBeenCalled();
+  });
+
+  test("records the TERMINATE dispatch last, after the final events", async () => {
+    const lease = generateSchemaData(PersistedMonitoredLeaseSchema, {
+      rateLimits: [],
+      status: "Active",
+      awsAccountId: mockLeaseAccount.awsAccountId,
+      userEmail: mockUser.email,
+    });
+
+    await InnovationSandbox.terminateLease(
+      { lease, expiredStatus: "ManuallyTerminated" },
+      mockContext,
+    );
+
+    expect(mockContext.leaseStore.recordLifecycleDispatch).toHaveBeenCalledWith(
+      {
+        leaseId: lease.uuid,
+        userEmail: lease.userEmail,
+        intent: "TERMINATE",
+      },
+    );
+    expect(
+      vi.mocked(mockContext.leaseStore.recordLifecycleDispatch).mock
+        .invocationCallOrder[0],
+    ).toBeGreaterThan(
+      vi
+        .mocked(mockContext.eventBridgeClient.sendIsbEvent)
+        .mock.invocationCallOrder.at(-1)!,
+    );
+  });
+
+  test("does not record the dispatch when the final events fail", async () => {
+    // The lifecycle manager then sees a terminated lease with no marker and
+    // leaves the retry for the DLQ instead of treating it as done.
+    const lease = generateSchemaData(PersistedMonitoredLeaseSchema, {
+      rateLimits: [],
+      status: "Active",
+      awsAccountId: mockLeaseAccount.awsAccountId,
+      userEmail: mockUser.email,
+    });
+    mockContext.eventBridgeClient.sendIsbEvent.mockRejectedValue(
+      new Error("EventBridge throttled"),
+    );
+
+    await expect(
+      InnovationSandbox.terminateLease(
+        { lease, expiredStatus: "ManuallyTerminated" },
+        mockContext,
+      ),
+    ).rejects.toThrow("EventBridge throttled");
+
+    expect(mockContext.leaseStore.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: "ManuallyTerminated",
+        lifecycleDispatch: null,
+      }),
+    );
+    expect(
+      mockContext.leaseStore.recordLifecycleDispatch,
+    ).not.toHaveBeenCalled();
   });
 });

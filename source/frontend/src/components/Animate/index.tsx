@@ -40,7 +40,7 @@ export default function Animate({
   isHidden,
   animationType,
   children,
-}: AnimateProps) {
+}: Readonly<AnimateProps>) {
   // default animation = fade in
   const type = animationType
     ? AnimationTypes[animationType]

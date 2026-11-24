@@ -17,6 +17,7 @@ import {
   InnovationSandbox,
   M2mAssigneeNotAllowedError,
 } from "@amzn/innovation-sandbox-commons/innovation-sandbox.js";
+import { IneligibleLeaseOwnerError } from "@amzn/innovation-sandbox-commons/isb-services/lease-assignment/index.js";
 import { IsbEventBridgeClient } from "@amzn/innovation-sandbox-commons/sdk-clients/event-bridge-client.js";
 import { generateSchemaData } from "@amzn/innovation-sandbox-commons/test/generate-schema-data.js";
 import {
@@ -60,7 +61,9 @@ const currentDateTime = DateTime.fromISO("2024-12-20T08:45:00.000Z", {
   zone: "utc",
 }) as DateTime<true>;
 
-const mockUser = generateSchemaData(IdcIdentitySchema);
+const mockUser = generateSchemaData(IdcIdentitySchema, {
+  roles: ["User"],
+});
 
 describe("InnovationSandbox.approveLease()", () => {
   let mockContext: ReturnType<typeof createMockContext>;
@@ -75,7 +78,7 @@ describe("InnovationSandbox.approveLease()", () => {
   beforeEach(() => {
     mockContext = createMockContext();
 
-    mockContext.idcService.getUserFromEmail.mockImplementation(
+    mockContext.idcService.getIsbMemberFromEmail.mockImplementation(
       async (email) => {
         if (email === mockUser.email) {
           return mockUser;
@@ -233,6 +236,26 @@ describe("InnovationSandbox.approveLease()", () => {
     );
   });
 
+  test("rejects when the lease owner is not an ISB member", async () => {
+    const leaseToApprove = generateSchemaData(PersistedPendingLeaseSchema, {
+      status: "PendingApproval",
+      userEmail: mockUser.email,
+      blueprintId: null,
+      blueprintName: null,
+    });
+    mockContext.idcService.getIsbMemberFromEmail.mockResolvedValue(undefined);
+
+    await expect(
+      InnovationSandbox.approveLease(
+        {
+          lease: leaseToApprove,
+          approver: "HappyManager@managers.com",
+        },
+        mockContext,
+      ),
+    ).rejects.toThrow(new IneligibleLeaseOwnerError(leaseToApprove.userEmail));
+  });
+
   test.each([
     {
       scenario: "self-requested lease",
@@ -298,7 +321,7 @@ describe("InnovationSandbox.approveLease()", () => {
       ),
     ).rejects.toThrow(M2mAssigneeNotAllowedError);
 
-    expect(mockContext.idcService.getUserFromEmail).not.toHaveBeenCalled();
+    expect(mockContext.idcService.getIsbMemberFromEmail).not.toHaveBeenCalled();
     expect(mockContext.leaseStore.update).not.toHaveBeenCalled();
     expect(mockContext.logger.error).toHaveBeenCalledWith(
       expect.stringContaining("IDC-grant code path"),

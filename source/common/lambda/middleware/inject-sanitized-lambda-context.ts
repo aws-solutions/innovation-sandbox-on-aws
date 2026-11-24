@@ -1,19 +1,65 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { BaseApiLambdaEnvironment } from "@amzn/innovation-sandbox-commons/lambda/environments/base-api-lambda-environment.js";
-import { IsbApiContext } from "@amzn/innovation-sandbox-commons/lambda/middleware/api-middleware-bundle.js";
+import type { BaseApiLambdaEnvironment } from "@amzn/innovation-sandbox-commons/lambda/environments/base-api-lambda-environment.js";
+import type { IsbApiContext } from "@amzn/innovation-sandbox-commons/lambda/middleware/api-middleware-bundle.js";
 import { IDENTITY_HEADER } from "@amzn/innovation-sandbox-shared/utils/auth-utils.js";
-import { MiddlewareFn } from "@aws-lambda-powertools/commons/types";
 import { injectLambdaContext } from "@aws-lambda-powertools/logger/middleware";
 import { MiddlewareObj } from "@middy/core";
-import { APIGatewayProxyEvent, APIGatewayProxyResult } from "aws-lambda";
+import {
+  APIGatewayProxyEvent,
+  APIGatewayProxyResult,
+  Context,
+} from "aws-lambda";
 
 const SENSITIVE_HEADERS = new Set([
   "authorization",
   "x-amz-security-token",
   IDENTITY_HEADER,
 ]);
+const REDACTED_TEXT = "[REDACTED]";
+
+interface ApiGatewayEventSanitizerOptions {
+  queryStringParameterAllowlist?: readonly string[];
+}
+
+interface LambdaContextOptions {
+  logEvent?: boolean;
+  resetKeys?: boolean;
+}
+
+/**
+ * Logs a sanitized event clone, then restores the original event before the
+ * remaining middleware and handler run.
+ */
+export function injectLambdaContextWithEventSanitizer<
+  TEvent,
+  TResult,
+  TContext extends Context,
+>(
+  logger: any,
+  sanitizeEvent: (event: TEvent) => TEvent,
+  options?: LambdaContextOptions,
+): MiddlewareObj<TEvent, TResult, Error, TContext> {
+  const contextInjector = injectLambdaContext(logger, {
+    logEvent: true,
+    resetKeys: true,
+    ...options,
+  });
+
+  return {
+    ...contextInjector,
+    before: async (request) => {
+      const originalEvent = request.event;
+      request.event = sanitizeEvent(originalEvent);
+      try {
+        await contextInjector.before?.(request);
+      } finally {
+        request.event = originalEvent;
+      }
+    },
+  };
+}
 
 /**
  * Combined middleware that sanitizes API Gateway events before logging and injects Lambda context.
@@ -24,46 +70,32 @@ export function injectSanitizedLambdaContext<
   T extends BaseApiLambdaEnvironment,
 >(
   logger: any,
-  options?: { logEvent?: boolean; resetKeys?: boolean },
+  options?: LambdaContextOptions,
 ): MiddlewareObj<
   APIGatewayProxyEvent,
   APIGatewayProxyResult,
   Error,
   IsbApiContext<T>
 > {
-  const sanitizer = eventLoggingSanitizer<T>();
-  const contextInjector = injectLambdaContext(logger, {
-    logEvent: true,
-    resetKeys: true,
-    ...options,
-  });
-
-  return {
-    ...contextInjector,
-    before: (request) => {
-      // First sanitize the event
-      if (sanitizer.before) {
-        sanitizer.before(request);
-      }
-      // Then inject the context (which will log the sanitized event)
-      if (contextInjector.before) {
-        contextInjector.before(request);
-      }
-    },
-  };
+  return injectLambdaContextWithEventSanitizer(
+    logger,
+    sanitizeApiGatewayEvent,
+    options,
+  );
 }
 
 /**
- * Sanitizes API Gateway events by removing sensitive information like authorization headers
- * before logging to prevent security vulnerabilities.
+ * Returns a cloned API Gateway event with sensitive headers redacted. Callers
+ * can additionally allowlist the query parameters that are safe to log; every
+ * other query-string value is then redacted.
  */
-function sanitizeApiGatewayEvent(
-  event: APIGatewayProxyEvent,
-): APIGatewayProxyEvent {
+export function sanitizeApiGatewayEvent<T>(
+  event: T,
+  options: ApiGatewayEventSanitizerOptions = {},
+): T {
   // Deep clone the event to avoid mutating the original
-  const sanitizedEvent = JSON.parse(
-    JSON.stringify(event),
-  ) as APIGatewayProxyEvent;
+  const sanitizedEvent = structuredClone(event);
+  const sanitizedRecord = sanitizedEvent as Record<string, unknown>;
 
   const headerLocations = [
     "headers",
@@ -73,9 +105,28 @@ function sanitizeApiGatewayEvent(
   ] as const;
 
   for (const key of headerLocations) {
-    const headers = (sanitizedEvent as any)[key];
+    const headers = sanitizedRecord[key];
     if (headers) {
-      (sanitizedEvent as any)[key] = sanitizeHeaders(headers);
+      sanitizedRecord[key] = sanitizeValues(
+        headers as Record<string, string | string[]>,
+        (name) => SENSITIVE_HEADERS.has(name.toLowerCase()),
+      );
+    }
+  }
+
+  if (options.queryStringParameterAllowlist) {
+    const allowlist = new Set(options.queryStringParameterAllowlist);
+    for (const key of [
+      "queryStringParameters",
+      "multiValueQueryStringParameters",
+    ] as const) {
+      const queryParameters = sanitizedRecord[key];
+      if (queryParameters) {
+        sanitizedRecord[key] = sanitizeValues(
+          queryParameters as Record<string, string | string[]>,
+          (name) => !allowlist.has(name),
+        );
+      }
     }
   }
 
@@ -83,57 +134,24 @@ function sanitizeApiGatewayEvent(
 }
 
 /**
- * Generic header sanitization function that automatically handles both single and multi-value headers
+ * Redacts selected values while preserving the shape of single- and
+ * multi-value API Gateway maps.
  */
-function sanitizeHeaders(
-  headers: Record<string, string | string[]>,
+function sanitizeValues(
+  values: Record<string, string | string[]>,
+  shouldRedact: (name: string) => boolean,
 ): Record<string, string | string[]> {
-  const sanitized = { ...headers };
-
-  const REDACTED_TEXT = "[REDACTED]";
+  const sanitized = { ...values };
 
   for (const [key, value] of Object.entries(sanitized)) {
-    if (SENSITIVE_HEADERS.has(key.toLowerCase())) {
+    if (shouldRedact(key)) {
       if (Array.isArray(value)) {
-        // Handle array of strings (multiValueHeaders)
         sanitized[key] = value.map(() => REDACTED_TEXT);
       } else {
-        // Handle single string (headers)
         sanitized[key] = REDACTED_TEXT;
       }
     }
   }
 
   return sanitized;
-}
-
-/**
- * Middy middleware that sanitizes API Gateway events before logging and restores them afterward.
- * This prevents sensitive authorization headers from being logged by AWS Lambda Powertools.
- */
-export function eventLoggingSanitizer<
-  T extends BaseApiLambdaEnvironment,
->(): MiddlewareObj<
-  APIGatewayProxyEvent,
-  APIGatewayProxyResult,
-  Error,
-  IsbApiContext<T>
-> {
-  const sanitizeEventBefore: MiddlewareFn<
-    APIGatewayProxyEvent,
-    APIGatewayProxyResult,
-    Error,
-    IsbApiContext<T>
-  > = (request): void => {
-    const originalEvent = request.event;
-    const sanitizedEvent = sanitizeApiGatewayEvent(originalEvent);
-
-    (request as any)._originalEvent = originalEvent;
-
-    request.event = sanitizedEvent;
-  };
-
-  return {
-    before: sanitizeEventBefore,
-  };
 }

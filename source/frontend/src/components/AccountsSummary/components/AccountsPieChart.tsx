@@ -6,12 +6,9 @@ import { useMemo } from "react";
 
 import { convertAccountsToSummary } from "@amzn/innovation-sandbox-frontend/components/AccountsSummary/helpers";
 import { SandboxAccountView } from "@amzn/innovation-sandbox-frontend/domains/accounts/model";
-import { SandboxAccountStatus } from "@amzn/innovation-sandbox-shared/types/sandbox-account";
 
 interface AccountsPieChartProps {
   accounts: SandboxAccountView[];
-  filter?: SandboxAccountStatus;
-  onClick?: (status?: SandboxAccountStatus) => void;
 }
 
 export const AccountsPieChart = ({ accounts }: AccountsPieChartProps) => {

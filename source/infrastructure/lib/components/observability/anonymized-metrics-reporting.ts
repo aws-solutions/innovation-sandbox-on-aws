@@ -1,5 +1,6 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
+import { ITopic } from "aws-cdk-lib/aws-sns";
 import { Construct } from "constructs";
 
 import { DeploymentSummaryLambda } from "@amzn/innovation-sandbox-infrastructure/components/observability/deployment-summary-lambda";
@@ -15,6 +16,9 @@ export type AnonymizedMetricsProps = {
   orgManagementAccountId: string;
   isStableTaggingEnabled: string;
   wafWebAclName: string;
+  notificationIntegrationTopic: ITopic;
+  /** Empty uses hub-account SES sending. */
+  sesIdentityArn: string;
 };
 
 export class AnonymizedMetricsReporting extends Construct {

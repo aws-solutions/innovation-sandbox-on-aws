@@ -30,8 +30,12 @@ export {
   GROUP_MEMBERSHIP_SK,
   GROUP_PK_PREFIX,
   LEASE_SK_PREFIX,
+  PERMISSION_SET_SK_INFIX,
   USER_PK_PREFIX,
+  assignmentSk,
   groupPk,
   leaseSk,
+  parseAssignmentSk,
+  principalPk,
   userPk,
 } from "@amzn/innovation-sandbox-commons/data/principal/principal-dynamodb-keys.js";

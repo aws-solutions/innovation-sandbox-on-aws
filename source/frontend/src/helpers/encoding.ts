@@ -18,7 +18,27 @@ export function base64EncodeCompositeKey(key: Record<string, unknown>): string {
   const bytes = new TextEncoder().encode(jsonStr);
   const binaryStr = Array.from(bytes, (b) => String.fromCodePoint(b)).join("");
   return btoa(binaryStr)
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replaceAll("=", "");
+}
+
+export function base64DecodeCompositeKey(
+  value: string,
+): Record<string, unknown> | undefined {
+  try {
+    const base64 = value
+      .replaceAll("-", "+")
+      .replaceAll("_", "/")
+      .padEnd(Math.ceil(value.length / 4) * 4, "=");
+    const bytes = Uint8Array.from(atob(base64), (character) =>
+      character.codePointAt(0)!,
+    );
+    const decoded = JSON.parse(new TextDecoder().decode(bytes));
+    return decoded && typeof decoded === "object" && !Array.isArray(decoded)
+      ? decoded
+      : undefined;
+  } catch {
+    return undefined;
+  }
 }

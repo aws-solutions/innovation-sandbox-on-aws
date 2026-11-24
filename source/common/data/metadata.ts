@@ -37,7 +37,7 @@ export function createVersionRangeSchema(
  * @returns Metadata schema with version validation
  */
 export function createMetadataSchemaWithVersionValidation(
-  versionSchema: z.ZodSchema<number>,
+  versionSchema: z.ZodType<number>,
 ) {
   return z.object({
     createdTime: z.iso.datetime().optional(),
@@ -51,9 +51,7 @@ export function createMetadataSchemaWithVersionValidation(
  * @param versionSchema Zod schema that defines valid version range/values
  * @returns ItemWithMetadata schema with version validation
  */
-export function createItemWithMetadataSchema(
-  versionSchema: z.ZodSchema<number>,
-) {
+export function createItemWithMetadataSchema(versionSchema: z.ZodType<number>) {
   return z.object({
     meta: createMetadataSchemaWithVersionValidation(versionSchema).optional(),
   });
@@ -66,7 +64,7 @@ export function createItemWithMetadataSchema(
  */
 export function checkSchemaVersion<T extends ItemWithMetadata>(
   item: T,
-  versionSchema: z.ZodSchema<number>,
+  versionSchema: z.ZodType<number>,
 ): void {
   if (item.meta?.schemaVersion) {
     const result = versionSchema.safeParse(item.meta.schemaVersion);

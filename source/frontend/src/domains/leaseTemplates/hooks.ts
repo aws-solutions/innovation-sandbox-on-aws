@@ -2,11 +2,28 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMemo } from "react";
 
 import { LeaseTemplateView } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/model";
+import { useEnabledCatalogModels } from "@amzn/innovation-sandbox-frontend/domains/sandbox-agent/queries";
 
 import { getLeaseTemplateService } from "./service";
 import { CreateLeaseTemplateRequest } from "./types";
+
+export const useEnabledModelIds = (
+  sandboxSpacesSetting: boolean | undefined,
+): string[] | undefined => {
+  const catalog = useEnabledCatalogModels({
+    enabled: sandboxSpacesSetting === true,
+  });
+  return useMemo(
+    () =>
+      catalog.isSuccess
+        ? catalog.data.map((model) => model.modelId)
+        : undefined,
+    [catalog.isSuccess, catalog.data],
+  );
+};
 
 export const useGetLeaseTemplates = () => {
   return useQuery({

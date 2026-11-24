@@ -4,12 +4,12 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { DateTime } from "luxon";
 import { useForm } from "react-hook-form";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
 import DateTimeField from "@amzn/innovation-sandbox-frontend/components/FormFields/DateTimeField";
-import { DateTime } from "luxon";
 
 const TestSchema = z.object({
   expirationDate: z.iso.datetime(),

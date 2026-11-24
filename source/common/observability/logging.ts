@@ -1,11 +1,13 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 import { PersistedBlueprintWithStackSets } from "@amzn/innovation-sandbox-commons/data/blueprint/blueprint.js";
-import { PersistedLease } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
 import { PersistedSandboxAccount } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account.js";
 import { SubscribableLog } from "@amzn/innovation-sandbox-commons/observability/log-types.js";
 import { IsbAccountTagSuffix } from "@amzn/innovation-sandbox-commons/utils/isb-account-tags.js";
-import { isMonitoredLease } from "@amzn/innovation-sandbox-shared/types/lease.js";
+import {
+  isMonitoredLease,
+  type Lease,
+} from "@amzn/innovation-sandbox-shared/types/lease.js";
 import { Logger } from "@aws-lambda-powertools/logger";
 import { ConstraintViolationException } from "@aws-sdk/client-organizations";
 import { diff, IChange } from "json-diff-ts";
@@ -46,7 +48,7 @@ export function searchableAccountProperties(
   };
 }
 
-export function searchableLeaseProperties(lease: PersistedLease) {
+export function searchableLeaseProperties(lease: Lease) {
   const baseProps = {
     endUser: lease.userEmail,
     leaseId: lease.uuid,
@@ -189,6 +191,38 @@ export namespace LogPatterns {
   export const EmailSendingError: LogPattern = {
     patternName: "EmailSendingError",
     pattern: "Failed to send email",
+  };
+  export const NotificationFailed: LogPattern = {
+    patternName: "NotificationFailed",
+    pattern: "Notification Delivery Failed",
+  };
+  export const NotificationNoChannelEnabled: LogPattern = {
+    patternName: "NotificationNoChannelEnabled",
+    pattern: "Notification No Channel Enabled",
+  };
+  export const ObservabilityLinkMissing: LogPattern = {
+    patternName: "ObservabilityLinkMissing",
+    pattern: "Observability Link Missing",
+  };
+  export const ObservabilityRegionUnreadable: LogPattern = {
+    patternName: "ObservabilityRegionUnreadable",
+    pattern: "Observability Region Unreadable",
+  };
+  export const LeaseScanSkipped: LogPattern = {
+    patternName: "LeaseScanSkipped",
+    pattern: "Lease Scan Skipped",
+  };
+  export const BedrockTokensUnattributed: LogPattern = {
+    patternName: "BedrockTokensUnattributed",
+    pattern: "Bedrock Tokens Unattributed",
+  };
+  export const BedrockUsageTypeUnclassified: LogPattern = {
+    patternName: "BedrockUsageTypeUnclassified",
+    pattern: "Bedrock Usage Type Unclassified",
+  };
+  export const BedrockTokensUnpriced: LogPattern = {
+    patternName: "BedrockTokensUnpriced",
+    pattern: "Bedrock Tokens Unpriced",
   };
 }
 

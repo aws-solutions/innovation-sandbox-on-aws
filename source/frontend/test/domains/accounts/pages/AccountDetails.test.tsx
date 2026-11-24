@@ -169,7 +169,7 @@ describe("AccountDetails", () => {
     expect(ejectButton).not.toBeDisabled();
   });
 
-  test("eject modal requires typing 'eject' to enable submit", async () => {
+  test("eject modal warns about cleanup and requires typing 'eject' to enable submit", async () => {
     const user = userEvent.setup();
     const account = createSandboxAccount({ status: "Available" });
     setupAccountApi(account);
@@ -185,6 +185,10 @@ describe("AccountDetails", () => {
     await waitFor(() => {
       expect(screen.getByPlaceholderText("eject")).toBeInTheDocument();
     });
+
+    const modal = screen.getByRole("dialog");
+    expect(modal).toHaveTextContent(/does not run account cleanup/i);
+    expect(modal).toHaveTextContent(/continue to incur charges/i);
 
     // Submit button should be disabled initially
     const submitButton = screen.getByRole("button", { name: "Eject" });

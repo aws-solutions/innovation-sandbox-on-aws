@@ -36,6 +36,7 @@ describe("SandboxOuService", () => {
   let service: SandboxOuService;
 
   const mockAccountPoolConfig = {
+    organizationId: "o-a1b2c3d4e5",
     sandboxOuId: "ou-sandbox-12345678",
     availableOuId: "ou-available-12345678",
     activeOuId: "ou-active-12345678",

@@ -22,19 +22,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// Plain ESM scripts without type declarations; each @ts-expect-error suppresses
-// the missing-types diagnostic on that import.
-// @ts-expect-error
 import { main } from "../scripts/generate.mjs";
-// @ts-expect-error
+import { serverDomains } from "../scripts/lib/domains.mjs";
 import {
   clearProjection,
   inputHash,
+  isModelUpToDate,
+  isOpenapiUpToDate,
   isUpToDate,
   outputFingerprint,
   walk,
 } from "../scripts/lib/fingerprint.mjs";
-// @ts-expect-error
 import {
   assertGradleVersionsAgree,
   assertGradleWrapperIntegrity,
@@ -46,12 +44,11 @@ import {
   underBrazil,
   usesBrazilGradle,
 } from "../scripts/lib/gradle.mjs";
-// @ts-expect-error
 import { acquireLock, onExit } from "../scripts/lib/lifecycle.mjs";
-// @ts-expect-error
 import {
   assertManifestMatchesBootstrap,
   publish,
+  publishServer,
   rewriteManifest,
   validateServerManifest,
 } from "../scripts/lib/publish.mjs";
@@ -146,6 +143,34 @@ function fakeServerProjection(dir: string, files: Record<string, string>) {
   };
   writeFileSync(manifestPath, JSON.stringify(manifest));
 }
+
+describe("serverDomains", () => {
+  it("derives a sorted domain list from server projections only", () => {
+    writeFileSync(
+      join(tmp, "smithy-build.json"),
+      JSON.stringify({
+        projections: {
+          "server-leases": {},
+          aggregate: {},
+          "server-accounts": {},
+        },
+      }),
+    );
+
+    expect(serverDomains(tmp)).toEqual(["accounts", "leases"]);
+  });
+
+  it("rejects a server projection with a path-unsafe domain", () => {
+    writeFileSync(
+      join(tmp, "smithy-build.json"),
+      JSON.stringify({ projections: { "server-../leases": {} } }),
+    );
+
+    expect(() => serverDomains(tmp)).toThrow(
+      'invalid server projection name "server-../leases"',
+    );
+  });
+});
 
 describe("walk", () => {
   it("lists files recursively in a stable order", () => {
@@ -331,6 +356,49 @@ describe("publish", () => {
 
     const leftovers = walk(tmp).filter((f: string) => f.includes(".staging-"));
     expect(leftovers).toEqual([]);
+  });
+});
+
+describe("publishServer diagnostics", () => {
+  const root = () => join(tmp, "projections");
+  const target = () => join(tmp, "server");
+
+  function writeCommittedManifest(contents = "{}") {
+    mkdirSync(target(), { recursive: true });
+    writeFileSync(join(target(), "package.json"), contents);
+  }
+
+  it("rejects an empty server-domain list", () => {
+    expect(() => publishServer([], root(), target())).toThrow(
+      /no server domains/,
+    );
+  });
+
+  it("reports an unreadable committed server manifest", () => {
+    writeCommittedManifest("{ truncated");
+
+    expect(() => publishServer(["leases"], root(), target())).toThrow(
+      /could not read the committed server manifest/,
+    );
+  });
+
+  it("reports a server projection with no generated sources", () => {
+    writeCommittedManifest();
+
+    expect(() => publishServer(["leases"], root(), target())).toThrow(
+      /expected generated server sources for leases/,
+    );
+  });
+
+  it("reports an unreadable generated server manifest", () => {
+    writeCommittedManifest();
+    const generated = join(root(), "server-leases/typescript-ssdk-codegen");
+    mkdirSync(join(generated, "src"), { recursive: true });
+    writeFileSync(join(generated, "package.json"), "{ truncated");
+
+    expect(() => publishServer(["leases"], root(), target())).toThrow(
+      /could not read generated server manifest for leases/,
+    );
   });
 });
 
@@ -1332,6 +1400,26 @@ describe("isUpToDate", () => {
     // publish() stamps only after the copy completes, so a run interrupted in
     // between leaves the cache cold.
     expect(isUpToDate("hash-1", join(tmp, "stamp.json"), dir)).toBe(false);
+  });
+});
+
+describe("generated artifact cache stamps", () => {
+  it("treats a malformed model stamp as stale", () => {
+    const stamp = join(tmp, "stamp.json");
+    writeFileSync(stamp, "{ truncated");
+
+    expect(isModelUpToDate("hash-1", stamp, join(tmp, "model.json"))).toBe(
+      false,
+    );
+  });
+
+  it("treats a malformed OpenAPI stamp as stale", () => {
+    const stamp = join(tmp, "stamp.json");
+    writeFileSync(stamp, "{ truncated");
+
+    expect(isOpenapiUpToDate("hash-1", stamp, join(tmp, "openapi.json"))).toBe(
+      false,
+    );
   });
 });
 

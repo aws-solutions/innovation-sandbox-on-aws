@@ -7,14 +7,56 @@
       "Action": ["*"],
       "Resource": [
         "arn:aws:iam::*:role/InnovationSandbox-${namespace}*",
+        "arn:aws:iam::*:role/*/InnovationSandbox-${namespace}*",
         "arn:aws:iam::*:role/AWSReservedSSO*",
+        "arn:aws:iam::*:role/*/AWSReservedSSO*",
+        "arn:aws:iam::*:role/SandboxAgentRole-${namespace}",
+        "arn:aws:iam::*:role/*/SandboxAgentRole-${namespace}",
         "arn:aws:*:*:*:*Isb-${namespace}*",
         "arn:aws:iam::*:role/stacksets-exec-*",
+        "arn:aws:iam::*:role/*/stacksets-exec-*",
         "arn:aws:iam::*:saml-provider/*AWSSSO*"
       ],
       "Condition": {
         "ArnNotLike": {
           "aws:PrincipalARN": [
+            "arn:aws:iam::*:role/InnovationSandbox-${namespace}*",
+            "arn:aws:iam::*:role/aws-reserved/sso.amazonaws.com/*AWSReservedSSO_${namespace}_IsbAdmins*",
+            "arn:aws:iam::*:role/stacksets-exec-*",
+            "arn:aws:iam::*:role/AWSControlTowerExecution"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "ProtectOrganizationAdministrativeAccessRole",
+      "Effect": "Deny",
+      "Action": [
+        "iam:AddRoleToInstanceProfile",
+        "iam:AttachRolePolicy",
+        "iam:CreateRole",
+        "iam:DeleteRole",
+        "iam:DeleteRolePermissionsBoundary",
+        "iam:DeleteRolePolicy",
+        "iam:DetachRolePolicy",
+        "iam:PassRole",
+        "iam:PutRolePermissionsBoundary",
+        "iam:PutRolePolicy",
+        "iam:RemoveRoleFromInstanceProfile",
+        "iam:TagRole",
+        "iam:UntagRole",
+        "iam:UpdateAssumeRolePolicy",
+        "iam:UpdateRole",
+        "iam:UpdateRoleDescription"
+      ],
+      "Resource": [
+        "arn:aws:iam::*:role/OrganizationAccountAccessRole",
+        "arn:aws:iam::*:role/*/OrganizationAccountAccessRole"
+      ],
+      "Condition": {
+        "ArnNotLike": {
+          "aws:PrincipalARN": [
+            "arn:aws:iam::*:role/OrganizationAccountAccessRole",
             "arn:aws:iam::*:role/InnovationSandbox-${namespace}*",
             "arn:aws:iam::*:role/aws-reserved/sso.amazonaws.com/*AWSReservedSSO_${namespace}_IsbAdmins*",
             "arn:aws:iam::*:role/stacksets-exec-*",
@@ -83,6 +125,7 @@
         "arn:aws:logs:*:*:log-group:*aws-controltower*",
         "arn:aws:sns:*:*:aws-controltower-*",
         "arn:aws:iam::*:role/aws-controltower-*",
+        "arn:aws:iam::*:role/*/aws-controltower-*",
         "arn:aws:iam::*:role/*AWSControlTower*"
       ],
       "Effect": "Deny",

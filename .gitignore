@@ -2,7 +2,7 @@ node_modules/
 dist/
 coverage/
 bom.json
-.env
+*.env
 build
 git-info
 *.tsbuildinfo
@@ -22,6 +22,7 @@ tmp/
 temp/
 .temp_*/
 .test-reports
+test-runs/
 .patch-artifacts/
 scratch/
 scripts/m2m/internal/smithy-c2j-workspace/
@@ -66,3 +67,11 @@ source/api-client/dist-*/
 source/api-client/tsconfig*.json
 source/api-server/domains/
 source/api-server/dist-*/
+
+# SolNexus persistent memory (workspace-local, never committed)
+.solnexus/
+# Agent task notes and reports (local only)
+.agents/
+
+# Kiro Crew CLI settings (local only)
+.kiro/settings/

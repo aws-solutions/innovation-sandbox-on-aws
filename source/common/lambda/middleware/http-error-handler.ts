@@ -1,6 +1,7 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+import { ValidationException } from "@amzn/innovation-sandbox-commons/data/global-config/global-config-utils.js";
 import { JSendData } from "@amzn/innovation-sandbox-commons/types/isb-types.js";
 import { MiddlewareFn } from "@aws-lambda-powertools/commons/types";
 import { MiddlewareObj } from "@middy/core";
@@ -103,6 +104,11 @@ const errorMappings: Record<
   ZodError: {
     statusCode: 400,
     message: "Invalid Request.",
+    errorType: "ValidationError",
+  },
+  InvalidPageIdentifierError: {
+    statusCode: 400,
+    message: "The page identifier is invalid for this request.",
     errorType: "ValidationError",
   },
 };
@@ -209,6 +215,16 @@ export function createHttpJSendError(props: {
         }
       : {},
   );
+}
+
+export function throwValidationErrorAs400(error: unknown): never {
+  if (error instanceof ValidationException) {
+    throw createHttpJSendError({
+      statusCode: 400,
+      data: { errors: [{ field: error.field, message: error.message }] },
+    });
+  }
+  throw error;
 }
 
 export function createHttpJSendValidationError(zodErrors: ZodError) {

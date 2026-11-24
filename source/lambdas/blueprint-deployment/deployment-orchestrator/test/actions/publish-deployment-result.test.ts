@@ -170,7 +170,7 @@ describe("publish-deployment-result action", () => {
     });
 
     it("should publish event even when blueprint not found (no validation)", async () => {
-      const lease = generateSchemaData(PersistedMonitoredLeaseSchema);
+      const lease = generateSchemaData(PersistedMonitoredLeaseSchema, {});
 
       vi.spyOn(DynamoLeaseStore.prototype, "get").mockResolvedValue({
         result: lease,

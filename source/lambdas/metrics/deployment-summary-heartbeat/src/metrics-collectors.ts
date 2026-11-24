@@ -10,17 +10,40 @@ import {
   CloudFormationClient,
   GetTemplateSummaryCommand,
 } from "@aws-sdk/client-cloudformation";
+import {
+  CloudWatchClient,
+  GetMetricDataCommand,
+} from "@aws-sdk/client-cloudwatch";
+import { GetTopicAttributesCommand, SNSClient } from "@aws-sdk/client-sns";
 
 import { AccountPoolConfig } from "@amzn/innovation-sandbox-commons/data/account-pool-stack-config/account-pool-stack-config.js";
 import { BlueprintStore } from "@amzn/innovation-sandbox-commons/data/blueprint/blueprint-store.js";
 import { PersistedLeaseTemplate } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template.js";
+import { LeaseStore } from "@amzn/innovation-sandbox-commons/data/lease/lease-store.js";
+import { PersistedLease } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
 import { PrincipalStore } from "@amzn/innovation-sandbox-commons/data/principal/principal-store.js";
+import { PersistedAssignment } from "@amzn/innovation-sandbox-commons/data/principal/principal.js";
 import {
   collect,
   stream,
 } from "@amzn/innovation-sandbox-commons/data/utils.js";
 import { SandboxOuService } from "@amzn/innovation-sandbox-commons/isb-services/sandbox-ou-service.js";
+import {
+  NOTIFICATION_CHANNEL_DIMENSION,
+  NOTIFICATION_CHANNELS,
+  NOTIFICATION_FAILED_METRIC,
+  NOTIFICATION_ISB_NAMESPACE_DIMENSION,
+  NOTIFICATION_METRIC_NAMESPACE,
+  NotificationChannel,
+} from "@amzn/innovation-sandbox-commons/observability/notification-metrics.js";
 import { getCloudFormationTemplateServices } from "@amzn/innovation-sandbox-commons/utils/stack-set-parser.js";
+import { resolveBedrockTokenMonitoringEnabled } from "@amzn/innovation-sandbox-shared/types/configuration.js";
+
+import {
+  ONE_DAY_SECONDS,
+  previousUtcDayWindow,
+  sumMetricDataValues,
+} from "./daily-metric-window.js";
 
 export async function summarizeAccountPool(orgsService: SandboxOuService) {
   return {
@@ -191,7 +214,7 @@ export async function summarizeBlueprints(
 
 export async function summarizeMultiUserLeases(
   leaseTemplates: PersistedLeaseTemplate[],
-  principalStore: PrincipalStore,
+  assignments: PersistedAssignment[],
 ): Promise<{
   numTemplatesWithSharing: number;
   numLeasesWithAssignments: number;
@@ -203,12 +226,6 @@ export async function summarizeMultiUserLeases(
   const numTemplatesWithSharing = leaseTemplates.filter(
     (template) => template.allowOwnerToShareLease === true,
   ).length;
-
-  const assignments = await collect(
-    stream(principalStore, principalStore.listAllAssignments, {
-      pageSize: 1000,
-    }),
-  );
 
   let totalUserAssignments = 0;
   let totalGroupAssignments = 0;
@@ -246,4 +263,249 @@ export async function summarizeMultiUserLeases(
     avgAssignmentsPerLease,
     maxAssignmentsPerLease,
   };
+}
+
+export interface PermissionProfileMetrics {
+  numTaggedPermissionSets: number;
+  numAssignmentsWithCustomPermissionSet: number;
+  numLeasesWithCustomPermissionSet: number;
+  maxUniquePermissionSetsPerLease: number;
+  avgUniquePermissionSetsPerLease: number;
+  maxAllowedPermissionSetsPerTemplate: number;
+  avgAllowedPermissionSetsPerTemplate: number;
+  maxAllowedPermissionSetsPerLease: number;
+  avgAllowedPermissionSetsPerLease: number;
+}
+
+function summarizeCounts(values: number[]): { max: number; average: number } {
+  if (values.length === 0) {
+    return { max: 0, average: 0 };
+  }
+
+  return {
+    max: Math.max(...values),
+    average:
+      Math.round(
+        (values.reduce((sum, value) => sum + value, 0) / values.length) * 100,
+      ) / 100,
+  };
+}
+
+export async function summarizePermissionProfiles(
+  leaseTemplates: PersistedLeaseTemplate[],
+  assignments: PersistedAssignment[],
+  activeLeases: PersistedLease[],
+  leaseStore: Pick<LeaseStore, "findByStatus">,
+  principalStore: Pick<PrincipalStore, "getPermissionSetCacheItems">,
+  builtInPermissionSetArn: string,
+): Promise<PermissionProfileMetrics> {
+  const [frozenLeases, permissionSetCache] = await Promise.all([
+    collect(
+      stream(leaseStore, leaseStore.findByStatus, {
+        status: "Frozen",
+        pageSize: 1000,
+      }),
+    ),
+    principalStore.getPermissionSetCacheItems(),
+  ]);
+
+  const monitoredLeases: PersistedLease[] = [...activeLeases, ...frozenLeases];
+  const monitoredLeaseIds = new Set(monitoredLeases.map((lease) => lease.uuid));
+  const assignmentsByLease = new Map<string, PersistedAssignment[]>();
+  let numAssignmentsWithCustomPermissionSet = 0;
+
+  for (const assignment of assignments) {
+    const isCustom =
+      assignment.permissionSetArn !== undefined &&
+      assignment.permissionSetArn !== builtInPermissionSetArn;
+
+    if (isCustom) {
+      numAssignmentsWithCustomPermissionSet++;
+    }
+
+    if (!monitoredLeaseIds.has(assignment.leaseId)) {
+      continue;
+    }
+
+    const leaseAssignments = assignmentsByLease.get(assignment.leaseId) ?? [];
+    leaseAssignments.push(assignment);
+    assignmentsByLease.set(assignment.leaseId, leaseAssignments);
+  }
+
+  const permissionSetsByLease = monitoredLeases.map((lease) => {
+    const desiredAssignments = lease.desiredAssignments;
+    // Lease-scoped metrics intentionally measure configured feature adoption,
+    // not the eventually consistent IDC state. Desired assignments remain
+    // authoritative while Active grants converge and while Frozen assignments
+    // are revoked. Confirmed records are only a fallback for legacy leases
+    // where desiredAssignments is absent; an explicitly empty array is final.
+    const effectivePermissionSetArns =
+      desiredAssignments === undefined
+        ? (assignmentsByLease.get(lease.uuid) ?? []).map(
+            (assignment) =>
+              assignment.permissionSetArn ?? builtInPermissionSetArn,
+          )
+        : desiredAssignments.map(
+            (assignment) =>
+              assignment.permissionSetArn ??
+              lease.defaultPermissionSetArn ??
+              builtInPermissionSetArn,
+          );
+
+    return new Set(effectivePermissionSetArns);
+  });
+  const uniquePermissionSetCounts = permissionSetsByLease.map(
+    (permissionSets) => permissionSets.size,
+  );
+  const leasesWithCustomPermissionSet = permissionSetsByLease.filter(
+    (permissionSets) =>
+      [...permissionSets].some(
+        (permissionSetArn) => permissionSetArn !== builtInPermissionSetArn,
+      ),
+  );
+  const templateAllowedPermissionSetCounts = leaseTemplates.map(
+    (template) => template.allowedPermissionSetArns?.length ?? 0,
+  );
+  const leaseAllowedPermissionSetCounts = monitoredLeases.map(
+    (lease) => lease.allowedPermissionSetArns?.length ?? 0,
+  );
+  const uniquePermissionSets = summarizeCounts(uniquePermissionSetCounts);
+  const templateAllowedPermissionSets = summarizeCounts(
+    templateAllowedPermissionSetCounts,
+  );
+  const leaseAllowedPermissionSets = summarizeCounts(
+    leaseAllowedPermissionSetCounts,
+  );
+
+  return {
+    numTaggedPermissionSets: permissionSetCache.length,
+    numAssignmentsWithCustomPermissionSet,
+    numLeasesWithCustomPermissionSet: leasesWithCustomPermissionSet.length,
+    maxUniquePermissionSetsPerLease: uniquePermissionSets.max,
+    avgUniquePermissionSetsPerLease: uniquePermissionSets.average,
+    maxAllowedPermissionSetsPerTemplate: templateAllowedPermissionSets.max,
+    avgAllowedPermissionSetsPerTemplate: templateAllowedPermissionSets.average,
+    maxAllowedPermissionSetsPerLease: leaseAllowedPermissionSets.max,
+    avgAllowedPermissionSetsPerLease: leaseAllowedPermissionSets.average,
+  };
+}
+
+/**
+ * Adoption of predictive budget controls: the templates that opt in and the
+ * active leases carrying the opt-in. Fleet-wide accuracy and breach aggregates
+ * are not read here; the cost history table has no index for a fleet-wide
+ * read, so they wait on a data source.
+ */
+export function summarizePredictiveBudget(
+  leaseTemplates: PersistedLeaseTemplate[],
+  activeLeases: PersistedLease[],
+): {
+  enabledTemplates: number;
+  enabledActiveLeases: number;
+  rateLimitTemplates: number;
+  rateLimitActiveLeases: number;
+} {
+  const enabledTemplates = leaseTemplates.filter(
+    (template) => template.predictiveBudgetEnabled === true,
+  );
+  const enabledActiveLeases = activeLeases.filter(
+    (lease) => lease.predictiveBudgetEnabled === true,
+  );
+  return {
+    enabledTemplates: enabledTemplates.length,
+    enabledActiveLeases: enabledActiveLeases.length,
+    rateLimitTemplates: enabledTemplates.filter(hasRateLimits).length,
+    rateLimitActiveLeases: enabledActiveLeases.filter(hasRateLimits).length,
+  };
+}
+
+function hasRateLimits(item: { rateLimits?: unknown[] }): boolean {
+  return (item.rateLimits?.length ?? 0) > 0;
+}
+
+/**
+ * Adoption of Bedrock token monitoring. A template counts when the leases it
+ * creates would have monitoring on.
+ */
+export function summarizeBedrockTokenMonitoring(
+  leaseTemplates: PersistedLeaseTemplate[],
+  activeLeases: PersistedLease[],
+): { enabledTemplates: number; enabledActiveLeases: number } {
+  const enabledTemplates = leaseTemplates.filter((template) =>
+    resolveBedrockTokenMonitoringEnabled({
+      configured: template.bedrockTokenMonitoringEnabled,
+      sandboxSpacesEnabled: template.sandboxSpacesEnabled,
+    }),
+  ).length;
+  const enabledActiveLeases = activeLeases.filter(
+    (lease) => lease.bedrockTokenMonitoringEnabled === true,
+  ).length;
+  return { enabledTemplates, enabledActiveLeases };
+}
+
+export interface NotificationFailureSummary {
+  /** Failed audience dispatch attempts by channel during the previous UTC day. */
+  failuresSes: number;
+  failuresSns: number;
+}
+
+export async function getNotificationSnsSubscriptionCount(
+  sns: SNSClient,
+  topicArn: string,
+): Promise<number> {
+  const topicAttributes = await sns.send(
+    new GetTopicAttributesCommand({ TopicArn: topicArn }),
+  );
+  return Number(topicAttributes.Attributes?.SubscriptionsConfirmed ?? 0);
+}
+
+export async function summarizeNotificationFailures(
+  cloudWatch: CloudWatchClient,
+  isbNamespace: string,
+): Promise<NotificationFailureSummary> {
+  const { startTime, endTime } = previousUtcDayWindow();
+  const queryId = (channel: NotificationChannel) => channel.toLowerCase();
+
+  const metricData = await cloudWatch.send(
+    new GetMetricDataCommand({
+      StartTime: startTime,
+      EndTime: endTime,
+      MetricDataQueries: NOTIFICATION_CHANNELS.map((channel) => ({
+        Id: queryId(channel),
+        MetricStat: {
+          Metric: {
+            Namespace: NOTIFICATION_METRIC_NAMESPACE,
+            MetricName: NOTIFICATION_FAILED_METRIC,
+            Dimensions: [
+              {
+                Name: NOTIFICATION_ISB_NAMESPACE_DIMENSION,
+                Value: isbNamespace,
+              },
+              { Name: NOTIFICATION_CHANNEL_DIMENSION, Value: channel },
+            ],
+          },
+          Period: ONE_DAY_SECONDS,
+          Stat: "Sum",
+        },
+      })),
+    }),
+  );
+
+  return {
+    failuresSes: sumMetricDataValues(metricData, queryId("SES")),
+    failuresSns: sumMetricDataValues(metricData, queryId("SNS")),
+  };
+}
+
+/**
+ * Adoption of Sandbox Spaces: the active leases whose template snapshot has it
+ * enabled. Read against the global `sandboxSpacesEnabled` switch, which gates it.
+ */
+export function summarizeSandboxSpaces(activeLeases: PersistedLease[]): {
+  enabledActiveLeases: number;
+} {
+  const enabledActiveLeases = activeLeases.filter(
+    (lease) => lease.sandboxSpacesEnabled,
+  ).length;
+  return { enabledActiveLeases };
 }

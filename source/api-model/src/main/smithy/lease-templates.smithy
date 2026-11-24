@@ -109,6 +109,9 @@ operation ListLeaseTemplates {
             costReportGroup: "Engineering"
             blueprintId: "12345678-90ab-4cde-8f12-34567890abcd"
             allowOwnerToShareLease: false
+            predictiveBudgetEnabled: false
+            bedrockTokenMonitoringEnabled: false
+            sandboxSpacesEnabled: false
         }
         output: {
             status: "success"
@@ -137,6 +140,9 @@ operation ListLeaseTemplates {
                 blueprintId: "12345678-90ab-4cde-8f12-34567890abcd"
                 blueprintName: "Web-Application-Blueprint"
                 allowOwnerToShareLease: false
+                predictiveBudgetEnabled: false
+                bedrockTokenMonitoringEnabled: false
+                sandboxSpacesEnabled: false
                 meta: { createdTime: "2023-05-01T12:00:00Z", lastEditTime: "2023-05-01T12:00:00Z", schemaVersion: 1 }
             }
         }
@@ -198,6 +204,16 @@ operation GetLeaseTemplate {
 /// `blueprintName` are server-owned and are not part of the writable input;
 /// supplying them is rejected as an unknown member. `createdBy` is preserved
 /// from the existing template on write.
+///
+/// Omitting `predictiveBudgetEnabled` keeps the stored value. A sent
+/// `rateLimits` list replaces the stored list; a non-empty list requires
+/// `predictiveBudgetEnabled`, and an empty list is always accepted. Omitting
+/// `rateLimits` keeps the stored list while `predictiveBudgetEnabled` is true
+/// and clears it otherwise. A `PREDICTED` budget threshold likewise requires
+/// `predictiveBudgetEnabled`.
+///
+/// The write is conditioned on the template as read for validation; if it
+/// changed in between, the update fails with ConflictError and is not applied.
 @http(method: "PUT", uri: "/leaseTemplates/{leaseTemplateId}", code: 200)
 @idempotent
 @tags(["leaseTemplates"])
@@ -227,6 +243,9 @@ operation GetLeaseTemplate {
             costReportGroup: "Engineering"
             blueprintId: "12345678-90ab-4cde-8f12-34567890abcd"
             allowOwnerToShareLease: false
+            predictiveBudgetEnabled: false
+            bedrockTokenMonitoringEnabled: false
+            sandboxSpacesEnabled: false
             meta: { createdTime: "2023-05-01T12:00:00Z", lastEditTime: "2023-05-01T12:00:00Z", schemaVersion: 1 }
         }
         output: {
@@ -256,13 +275,16 @@ operation GetLeaseTemplate {
                 blueprintId: "12345678-90ab-4cde-8f12-34567890abcd"
                 blueprintName: "Web-Application-Blueprint"
                 allowOwnerToShareLease: false
+                predictiveBudgetEnabled: false
+                bedrockTokenMonitoringEnabled: false
+                sandboxSpacesEnabled: false
                 meta: { createdTime: "2023-05-01T12:00:00Z", lastEditTime: "2023-05-01T12:00:00Z", schemaVersion: 1 }
             }
         }
     }
 ])
 operation UpdateLeaseTemplate {
-    input := with [LeaseTemplateWritableMixin] {
+    input := with [LeaseTemplateWritableBaseMixin] {
         /// Lease template UUID. The API Gateway path segment is named
         /// `leaseTemplateName`, but the value is the template's UUID, not its
         /// display name.
@@ -277,6 +299,18 @@ operation UpdateLeaseTemplate {
         /// `lastEditTime`, so a client performing a read-modify-write must echo it
         /// back.
         meta: Metadata
+
+        /// Permission set assigned when an assignment does not specify an override.
+        defaultPermissionSetArn: PermissionSetArn
+
+        /// Permission sets available for assignment overrides. The default is
+        /// implicitly allowed and this list is capped at 20 entries.
+        allowedPermissionSetArns: PermissionSetArnList
+
+        /// Spend-rate limits, each with its own action. A non-empty list
+        /// requires `predictiveBudgetEnabled`. When sent, it replaces the stored
+        /// list. See the operation for omission rules.
+        rateLimits: RateLimitList
     }
 
     output := {
@@ -289,6 +323,7 @@ operation UpdateLeaseTemplate {
 
     errors: [
         NotFoundError
+        ConflictError
         UnsupportedMediaTypeError
     ]
 }
@@ -339,6 +374,11 @@ list LeaseTemplateList {
     member: LeaseTemplate
 }
 
+@length(max: 20)
+list PermissionSetArnList {
+    member: PermissionSetArn
+}
+
 // These fields are `Double`, not integral: the persistence schema constrains
 // them with `z.number().gt(0)` and does not require whole numbers, so an
 // integral type would fail to deserialize a 1.5-hour value.
@@ -377,7 +417,7 @@ structure LeaseTemplateConfigMixin {
 /// `uuid`, `createdBy` and `blueprintName` are deliberately absent — they are
 /// server-owned.
 @mixin
-structure LeaseTemplateWritableMixin with [LeaseTemplateConfigMixin] {
+structure LeaseTemplateWritableBaseMixin with [LeaseTemplateConfigMixin] {
     @required
     @length(min: 1, max: 50)
     name: String
@@ -393,6 +433,50 @@ structure LeaseTemplateWritableMixin with [LeaseTemplateConfigMixin] {
     blueprintId: String
 
     allowOwnerToShareLease: Boolean
+
+    /// Opt-in: spend rates, cost projection, predicted-cost thresholds and caps.
+    predictiveBudgetEnabled: Boolean
+
+    /// Opt-in: monitored Bedrock token cost tracking. Must be true when
+    /// `sandboxSpacesEnabled` is true.
+    bedrockTokenMonitoringEnabled: Boolean
+
+    /// Whether leases created from this template have Sandbox Spaces turned on.
+    /// `true` requires `bedrockTokenMonitoringEnabled`; otherwise the request
+    /// is rejected with 400.
+    sandboxSpacesEnabled: Boolean
+
+    /// Sandbox Spaces: subset of the globally enabled model IDs this template
+    /// permits. Unset inherits the global enabled set.
+    allowedModelIds: AgentModelIdList
+
+    /// Sandbox Spaces: model preselected for new chats on leases from this
+    /// template. Must be enabled and, when a subset is set, one of allowedModelIds.
+    defaultModelId: String
+}
+
+/// Sandbox Spaces model-id subset permitted by a lease template (capped at 100).
+@length(max: 100)
+list AgentModelIdList {
+    member: String
+}
+
+// Kept separate from the base mixin so update-input fields that predate
+// permission profiles retain their generated member order.
+/// Client-writable lease-template fields, including optional permission-profile
+/// ARN configuration.
+@mixin
+structure LeaseTemplateWritableMixin with [LeaseTemplateWritableBaseMixin] {
+    /// Permission set assigned when an assignment does not specify an override.
+    defaultPermissionSetArn: PermissionSetArn
+
+    /// Permission sets available for assignment overrides. The default is
+    /// implicitly allowed and this list is capped at 20 entries.
+    allowedPermissionSetArns: PermissionSetArnList
+
+    /// Spend-rate limits, each with its own action. A non-empty list
+    /// requires `predictiveBudgetEnabled`.
+    rateLimits: RateLimitList
 }
 
 structure LeaseTemplate with [LeaseTemplateConfigMixin] {
@@ -428,7 +512,32 @@ structure LeaseTemplate with [LeaseTemplateConfigMixin] {
     @required
     allowOwnerToShareLease: Boolean
 
+    @required
+    predictiveBudgetEnabled: Boolean
+
+    @required
+    bedrockTokenMonitoringEnabled: Boolean
+
+    /// Snapshot used to determine Sandbox Spaces availability.
+    sandboxSpacesEnabled: Boolean
+
+    /// Sandbox Spaces: subset of globally enabled model IDs this template permits.
+    allowedModelIds: AgentModelIdList
+
+    /// Sandbox Spaces default model preselected for new chats.
+    defaultModelId: String
+
     meta: Metadata
+
+    /// Backend-hydrated metadata for the default permission set.
+    defaultPermissionSet: PermissionSetReference
+
+    /// Backend-hydrated metadata for the effective allowed set, including the
+    /// default. Missing cache entries remain represented as UNAVAILABLE.
+    allowedPermissionSets: PermissionSetReferenceList
+
+    /// Spend-rate limits, each with its own action.
+    rateLimits: RateLimitList
 }
 
 // `schemaVersion` is a persistence concern, but the pre-Smithy API currently
@@ -453,6 +562,8 @@ structure Metadata {
 }
 
 structure BudgetThreshold {
+    /// Must be less than maxSpend when maxSpend is set (on a lease, its value
+    /// after the update).
     @required
     // No `@range`: the pre-Smithy `.gt(0)` is not expressible with the inclusive-only
     // `@range` (`min: 1` rejects `0 < v < 1`, `min: 0` accepts `0`). Zod enforces it.
@@ -460,6 +571,39 @@ structure BudgetThreshold {
 
     @required
     action: ThresholdAction
+
+    /// Whether the threshold fires on reported spend or on projected spend.
+    /// Absent means REPORTED.
+    /// PREDICTED requires predictiveBudgetEnabled (on a lease, its value after
+    /// the update).
+    triggerOn: BudgetTriggerSource
+}
+
+enum BudgetTriggerSource {
+    REPORTED = "REPORTED"
+    PREDICTED = "PREDICTED"
+}
+
+/// One spend-rate limit: the measured rate of `basis` reaching `rate` (USD per
+/// hour or per day) takes `action`. The rate must be greater than zero, and a
+/// list may not repeat a (basis, rate) pair; both rules are enforced by the
+/// service rather than by a schema constraint.
+structure RateLimitEntry {
+    @required
+    basis: RateBasis
+
+    // No `@range`: `.gt(0)` is not expressible with the inclusive-only `@range`.
+    /// Spend-rate threshold in USD per the period selected by basis.
+    @required
+    rate: Double
+
+    @required
+    action: ThresholdAction
+}
+
+@length(max: 10)
+list RateLimitList {
+    member: RateLimitEntry
 }
 
 list BudgetThresholdList {

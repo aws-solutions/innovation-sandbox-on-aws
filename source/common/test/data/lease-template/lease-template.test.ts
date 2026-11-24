@@ -11,7 +11,12 @@ import {
 import type { Visibility } from "@amzn/innovation-sandbox-shared/types/lease-template.js";
 
 const VALID_UUID = "00000000-0000-4000-8000-000000000001";
+const DEFAULT_PERMISSION_SET_ARN =
+  "arn:aws:sso:::permissionSet/ins-1234567890abcdef/ps-0000000000000001";
 const NOW = "2024-01-01T00:00:00Z";
+
+const permissionSetArn = (index: number) =>
+  `arn:aws:sso:::permissionSet/ins-1234567890abcdef/ps-${index.toString().padStart(16, "0")}`;
 
 function validTemplate(
   overrides: Partial<PersistedLeaseTemplate> = {},
@@ -27,6 +32,9 @@ function validTemplate(
     blueprintId: "00000000-0000-4000-8000-000000000002",
     blueprintName: "My Blueprint",
     allowOwnerToShareLease: false,
+    predictiveBudgetEnabled: false,
+    bedrockTokenMonitoringEnabled: false,
+    sandboxSpacesEnabled: true,
     maxSpend: 500,
     leaseDurationInHours: 48,
     budgetThresholds: [{ dollarsSpent: 100, action: "ALERT" }],
@@ -258,6 +266,161 @@ describe("PersistedLeaseTemplateSchema", () => {
       };
       const result = PersistedLeaseTemplateSchema.parse(legacyRecord);
       expect(result.allowOwnerToShareLease).toBe(false);
+    });
+  });
+
+  describe("allowedModelIds (Sandbox Spaces)", () => {
+    it("should accept an array of model ids", () => {
+      expect(
+        PersistedLeaseTemplateSchema.safeParse(
+          validTemplate({
+            allowedModelIds: [
+              "global.anthropic.claude-sonnet-4-6",
+              "us.anthropic.claude-sonnet-4-6",
+            ],
+          }),
+        ).success,
+      ).toBe(true);
+    });
+
+    it("should be omittable (undefined inherits the global set)", () => {
+      const { allowedModelIds: _, ...rest } = validTemplate();
+      const result = PersistedLeaseTemplateSchema.parse(rest);
+      expect(result.allowedModelIds).toBeUndefined();
+    });
+
+    it("should reject a non-string member", () => {
+      expect(
+        PersistedLeaseTemplateSchema.safeParse(
+          validTemplate({ allowedModelIds: [123 as any] }),
+        ).success,
+      ).toBe(false);
+    });
+  });
+
+  describe("defaultModelId (Sandbox Spaces)", () => {
+    it("should accept a model id", () => {
+      expect(
+        PersistedLeaseTemplateSchema.safeParse(
+          validTemplate({
+            allowedModelIds: ["global.anthropic.claude-sonnet-4-6"],
+            defaultModelId: "global.anthropic.claude-sonnet-4-6",
+          }),
+        ).success,
+      ).toBe(true);
+    });
+
+    it("should be omittable (undefined means no preselection)", () => {
+      const { defaultModelId: _, ...rest } = validTemplate();
+      const result = PersistedLeaseTemplateSchema.parse(rest);
+      expect(result.defaultModelId).toBeUndefined();
+    });
+
+    it("should reject an empty string", () => {
+      expect(
+        PersistedLeaseTemplateSchema.safeParse(
+          validTemplate({ defaultModelId: "" }),
+        ).success,
+      ).toBe(false);
+    });
+  });
+
+  describe("permission profiles", () => {
+    it("should accept a template without permission profile fields", () => {
+      const template = validTemplate({
+        meta: {
+          schemaVersion: 4,
+          createdTime: NOW,
+          lastEditTime: NOW,
+        },
+      });
+
+      const result = PersistedLeaseTemplateSchema.safeParse(template);
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.defaultPermissionSetArn).toBeUndefined();
+        expect(result.data.allowedPermissionSetArns).toBeUndefined();
+      }
+    });
+
+    it("should accept a populated permission profile configuration", () => {
+      const allowedPermissionSetArns = [
+        DEFAULT_PERMISSION_SET_ARN,
+        "arn:aws:sso:::permissionSet/ins-1234567890abcdef/ps-0000000000000002",
+      ];
+
+      const result = PersistedLeaseTemplateSchema.safeParse(
+        validTemplate({
+          defaultPermissionSetArn: DEFAULT_PERMISSION_SET_ARN,
+          allowedPermissionSetArns,
+        }),
+      );
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.defaultPermissionSetArn).toBe(
+          DEFAULT_PERMISSION_SET_ARN,
+        );
+        expect(result.data.allowedPermissionSetArns).toEqual(
+          allowedPermissionSetArns,
+        );
+      }
+    });
+
+    it("should accept 20 allowed permission sets and reject 21", () => {
+      const permissionSetArns = Array.from({ length: 21 }, (_, index) =>
+        permissionSetArn(index),
+      );
+
+      expect(
+        PersistedLeaseTemplateSchema.safeParse(
+          validTemplate({
+            allowedPermissionSetArns: permissionSetArns.slice(0, 20),
+          }),
+        ).success,
+      ).toBe(true);
+      expect(
+        PersistedLeaseTemplateSchema.safeParse(
+          validTemplate({ allowedPermissionSetArns: permissionSetArns }),
+        ).success,
+      ).toBe(false);
+    });
+
+    it("should reject malformed permission set ARNs", () => {
+      expect(
+        PersistedLeaseTemplateSchema.safeParse(
+          validTemplate({ defaultPermissionSetArn: "not-an-arn" }),
+        ).success,
+      ).toBe(false);
+      expect(
+        PersistedLeaseTemplateSchema.safeParse(
+          validTemplate({
+            allowedPermissionSetArns: [
+              "arn:aws:iam::123456789012:role/not-a-permission-set",
+            ],
+          }),
+        ).success,
+      ).toBe(false);
+    });
+  });
+
+  describe("sandboxSpacesEnabled", () => {
+    it("should default existing templates to false", () => {
+      const { sandboxSpacesEnabled: _, ...existingTemplate } = validTemplate();
+      expect(
+        PersistedLeaseTemplateSchema.parse(existingTemplate)
+          .sandboxSpacesEnabled,
+      ).toBe(false);
+    });
+
+    it("should reject a string value", () => {
+      expect(
+        PersistedLeaseTemplateSchema.safeParse({
+          ...validTemplate(),
+          sandboxSpacesEnabled: "ENABLED",
+        }).success,
+      ).toBe(false);
     });
   });
 

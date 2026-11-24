@@ -81,10 +81,10 @@ export default [
         "warn",
         {
           groups: [
-            ["^\\u0000(?!\\.)"],
-            ["^(?!@amzn)(@?\\w.*)"],
+            [String.raw`^\u0000(?!\.)`],
+            [String.raw`^(?!@amzn)(@?\w.*)`],
             ["^@amzn"],
-            ["^\\u0000\\."],
+            [String.raw`^\u0000\.`],
           ],
         },
       ],

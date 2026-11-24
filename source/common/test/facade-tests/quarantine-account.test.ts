@@ -24,6 +24,7 @@ import {
   mockedLeaseStore,
   mockedOrganizationsTaggingService,
   mockedOrgsService,
+  mockedSandboxSpacesUsageStore,
 } from "@amzn/innovation-sandbox-commons/test/mocking/common-mocks.js";
 import { createMockOf } from "@amzn/innovation-sandbox-commons/test/mocking/mock-utils.js";
 import {
@@ -45,6 +46,7 @@ function createMockContext() {
     eventBridgeClient: mockedIsbEventBridge(),
     blueprintStore: mockedBlueprintStore(),
     blueprintDeploymentService: mockedBlueprintDeploymentService(),
+    sandboxSpacesUsageStore: mockedSandboxSpacesUsageStore(),
     logger: createMockOf(Logger),
     tracer: new Tracer(),
     globalConfig: mockGlobalConfig(),
@@ -180,6 +182,7 @@ describe("InnovationSandbox.quarantineAccount()", () => {
       ttl: Math.floor(currentDateTime.plus({ days: 30 }).valueOf() / 1000),
       status: "AccountQuarantined",
       endDate: currentDateTime.toISO(),
+      lifecycleDispatch: null,
     } satisfies Partial<PersistedLease>);
 
     expect(mockContext.eventBridgeClient.sendIsbEvent).toHaveBeenCalledWith(

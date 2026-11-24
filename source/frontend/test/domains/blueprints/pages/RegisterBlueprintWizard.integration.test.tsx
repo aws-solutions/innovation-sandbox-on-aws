@@ -4,6 +4,7 @@
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
+import { BrowserRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { RegisterBlueprintWizard } from "@amzn/innovation-sandbox-frontend/domains/blueprints/pages/RegisterBlueprintWizard";
@@ -11,8 +12,6 @@ import { getConfig } from "@amzn/innovation-sandbox-frontend/helpers/config";
 import { createConfiguration } from "@amzn/innovation-sandbox-frontend/mocks/factories/configurationFactory";
 import { server } from "@amzn/innovation-sandbox-frontend/mocks/server";
 import { renderWithQueryClient } from "@amzn/innovation-sandbox-frontend/setupTests";
-
-import { BrowserRouter } from "react-router-dom";
 
 const mockNavigate = vi.fn();
 
@@ -703,6 +702,124 @@ describe("RegisterBlueprintWizard Integration", () => {
       expect(capturedRequest.maxConcurrentPercentage).toBeDefined();
       expect(capturedRequest.failureTolerancePercentage).toBeDefined();
       expect(capturedRequest.concurrencyMode).toBeDefined();
+    });
+  });
+
+  describe("Tag keys", () => {
+    let capturedRequest: any = null;
+
+    beforeEach(() => {
+      capturedRequest = null;
+      server.use(
+        http.get(`${getConfig().ApiUrl}/blueprints/stacksets`, () => {
+          return HttpResponse.json({
+            status: "success",
+            data: {
+              result: [
+                {
+                  stackSetName: "test-stackset",
+                  stackSetId: "test-stackset:abc123",
+                  status: "ACTIVE",
+                  permissionModel: "SELF_MANAGED",
+                },
+              ],
+            },
+          });
+        }),
+        http.get(`${getConfig().ApiUrl}/configurations`, () => {
+          return HttpResponse.json({
+            status: "success",
+            data: createConfiguration({ isbManagedRegions: ["us-east-1"] }),
+          });
+        }),
+        http.post(`${getConfig().ApiUrl}/blueprints`, async ({ request }) => {
+          capturedRequest = await request.json();
+          return HttpResponse.json({
+            status: "success",
+            data: {
+              blueprintId: "650e8400-e29b-41d4-a716-446655440001",
+              name: "Test-Blueprint",
+            },
+          });
+        }),
+      );
+    });
+
+    const fillStepOneAndClickNext = async (
+      user: ReturnType<typeof userEvent.setup>,
+      tagKeys: string[],
+    ) => {
+      renderWithQueryClient(
+        <BrowserRouter>
+          <RegisterBlueprintWizard />
+        </BrowserRouter>,
+      );
+
+      await waitFor(() => {
+        expect(
+          screen.getByPlaceholderText("Enter blueprint name"),
+        ).toBeInTheDocument();
+      });
+      await user.type(
+        screen.getByPlaceholderText("Enter blueprint name"),
+        "Test-Blueprint",
+      );
+
+      for (const key of tagKeys) {
+        await user.click(screen.getByRole("button", { name: /add tag/i }));
+        const keyInputs = screen.getAllByPlaceholderText(
+          "e.g., Environment, Cost-Center, Project",
+        );
+        await user.type(keyInputs[keyInputs.length - 1], key);
+      }
+
+      await user.click(screen.getByRole("button", { name: /Next/i }));
+    };
+
+    it("should prevent forward navigation from step 1 when a tag key is only spaces", async () => {
+      const user = userEvent.setup();
+
+      await fillStepOneAndClickNext(user, ["   "]);
+
+      await waitFor(() => {
+        expect(screen.getByText("Tag key is required")).toBeInTheDocument();
+      });
+      expect(screen.queryByText("Available StackSets")).not.toBeInTheDocument();
+    });
+
+    it("should register tag keys without leading and trailing spaces", async () => {
+      const user = userEvent.setup();
+
+      await fillStepOneAndClickNext(user, [" owner "]);
+
+      await waitFor(() => {
+        expect(screen.getByText("test-stackset")).toBeInTheDocument();
+      });
+      await user.click(screen.getByText("test-stackset"));
+      await user.click(screen.getByRole("button", { name: /Next/i }));
+
+      await waitFor(() => {
+        expect(
+          screen.getByRole("button", { name: /Add all regions/i }),
+        ).toBeInTheDocument();
+      });
+      await user.click(
+        screen.getByRole("button", { name: /Add all regions/i }),
+      );
+      await user.click(screen.getByRole("button", { name: /Next/i }));
+
+      await waitFor(() => {
+        expect(
+          screen.getByRole("button", { name: /Register Blueprint/i }),
+        ).toBeInTheDocument();
+      });
+      await user.click(
+        screen.getByRole("button", { name: /Register Blueprint/i }),
+      );
+
+      await waitFor(() => {
+        expect(capturedRequest?.tags).toEqual({ owner: "" });
+      });
     });
   });
 });

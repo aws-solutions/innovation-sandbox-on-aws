@@ -25,10 +25,10 @@ import {
 import { StepsProps } from "@cloudscape-design/components/steps";
 import { useState } from "react";
 
+import { TimePopover } from "@amzn/innovation-sandbox-frontend/components/TimePopover";
 import {
   formatDuration,
   formatReason,
-  renderTimePopover,
 } from "@amzn/innovation-sandbox-frontend/domains/accounts/components/cleanup-report-helpers";
 import {
   compareResourceTypeRows,
@@ -58,25 +58,29 @@ function parseResourceName(arn: string): string {
   return lastSlash >= 0 ? resource.substring(lastSlash + 1) : resource;
 }
 
+function CleanupReportStatus({
+  status,
+}: Readonly<{ status: CleanupReportView["status"] }>) {
+  if (status === "IN_PROGRESS")
+    return <StatusIndicator type="in-progress">In progress</StatusIndicator>;
+  if (status === "COMPLETED")
+    return <StatusIndicator type="success">Completed</StatusIndicator>;
+  return <StatusIndicator type="error">Failed</StatusIndicator>;
+}
+
 function buildSummaryItems(report: CleanupReportView) {
   const items: Array<{ label: string; value: string | React.ReactNode }> = [];
 
-  items.push({
-    label: "Status",
-    value:
-      report.status === "IN_PROGRESS" ? (
-        <StatusIndicator type="in-progress">In progress</StatusIndicator>
-      ) : report.status === "COMPLETED" ? (
-        <StatusIndicator type="success">Completed</StatusIndicator>
-      ) : (
-        <StatusIndicator type="error">Failed</StatusIndicator>
-      ),
-  });
-
-  items.push({
-    label: "Cleanup reason",
-    value: formatReason(report.reasonForCleanup),
-  });
+  items.push(
+    {
+      label: "Status",
+      value: <CleanupReportStatus status={report.status} />,
+    },
+    {
+      label: "Cleanup reason",
+      value: formatReason(report.reasonForCleanup),
+    },
+  );
 
   if (report.initiatedBy) {
     items.push({
@@ -87,13 +91,13 @@ function buildSummaryItems(report: CleanupReportView) {
 
   items.push({
     label: "Started",
-    value: renderTimePopover(report.startedAt),
+    value: <TimePopover time={report.startedAt} />,
   });
 
   if (report.completedAt) {
     items.push({
       label: "Completed",
-      value: renderTimePopover(report.completedAt),
+      value: <TimePopover time={report.completedAt} />,
     });
   }
 
@@ -383,8 +387,7 @@ const ResourceSummaryWidget = ({
   const cooldownStep = isCoolingDown
     ? report.steps.find((s) => s.name === "account-cooldown")
     : undefined;
-  const cooldownHours = cooldownStep?.meta?.cooldownDurationHours as
-    number | undefined;
+  const cooldownHours = cooldownStep?.meta?.cooldownDurationHours;
 
   const cooldownBanner = isCoolingDown ? (
     <Box textAlign="center" padding={{ vertical: "s" }}>
@@ -514,7 +517,7 @@ const ResourceSummaryWidget = ({
         <ExpandableSection
           variant="footer"
           defaultExpanded={isFailure}
-          header="Resource type details"
+          headerText="Resource type details"
         >
           <ResourceTypeTable rows={typeRows} warnOnly={isValidationWarning} />
         </ExpandableSection>
@@ -540,6 +543,10 @@ const PostCleanupValidation = ({ report }: { report: CleanupReportView }) => {
     resourceSummary.ignoredResourcesTotalCount ??
     resourceSummary.beforeCleanup?.ignoredCount ??
     0;
+  const resourceLabel = remainingTotalCount === 1 ? "resource" : "resources";
+  const validationOutcome = warnOnly
+    ? "validation not enforced"
+    : "account quarantined";
 
   return (
     <Container
@@ -548,7 +555,7 @@ const PostCleanupValidation = ({ report }: { report: CleanupReportView }) => {
           variant="h2"
           description={
             hasRemaining
-              ? `${remainingTotalCount} resource${remainingTotalCount === 1 ? "" : "s"} remain after cleanup — ${warnOnly ? "validation not enforced" : "account quarantined"}`
+              ? `${remainingTotalCount} ${resourceLabel} remain after cleanup — ${validationOutcome}`
               : "All resources successfully cleaned up"
           }
         >
@@ -568,7 +575,7 @@ const PostCleanupValidation = ({ report }: { report: CleanupReportView }) => {
         <ExpandableSection
           variant="footer"
           defaultExpanded={false}
-          header={
+          headerText={
             <SpaceBetween direction="horizontal" size="xs">
               <Box variant="awsui-key-label">Filtered resources</Box>
               <Box color="text-body-secondary">{filteredTotalCount}</Box>
@@ -598,7 +605,7 @@ const PostCleanupValidation = ({ report }: { report: CleanupReportView }) => {
         <ExpandableSection
           variant="footer"
           defaultExpanded={hasRemaining}
-          header={
+          headerText={
             <SpaceBetween direction="horizontal" size="xs">
               <Box variant="awsui-key-label">Remaining resources</Box>
               {hasRemaining ? (
@@ -636,6 +643,20 @@ const PostCleanupValidation = ({ report }: { report: CleanupReportView }) => {
 // Paginated Tables
 // =============================================================================
 
+function resourceTypeStatusCell(warnOnly: boolean) {
+  return function ResourceTypeStatusCell(row: ResourceTypeRow) {
+    if (row.after === null)
+      return <StatusIndicator type="in-progress">Deleting</StatusIndicator>;
+    if (row.hasRemaining)
+      return (
+        <StatusIndicator type={warnOnly ? "warning" : "error"}>
+          {row.after} remaining
+        </StatusIndicator>
+      );
+    return <StatusIndicator type="success">Deleted</StatusIndicator>;
+  };
+}
+
 const ResourceTypeTable = ({
   rows,
   warnOnly = false,
@@ -667,22 +688,12 @@ const ResourceTypeTable = ({
         {
           id: "after",
           header: "After",
-          cell: (row: ResourceTypeRow) =>
-            row.after === null ? "-" : row.after,
+          cell: (row: ResourceTypeRow) => row.after ?? "-",
         },
         {
           id: "status",
           header: "Status",
-          cell: (row: ResourceTypeRow) =>
-            row.after === null ? (
-              <StatusIndicator type="in-progress">Deleting</StatusIndicator>
-            ) : row.hasRemaining ? (
-              <StatusIndicator type={warnOnly ? "warning" : "error"}>
-                {row.after} remaining
-              </StatusIndicator>
-            ) : (
-              <StatusIndicator type="success">Deleted</StatusIndicator>
-            ),
+          cell: resourceTypeStatusCell(warnOnly),
         },
       ]}
       items={items}

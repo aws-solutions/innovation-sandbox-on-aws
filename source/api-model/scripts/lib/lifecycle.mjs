@@ -5,6 +5,14 @@ import { closeSync, mkdirSync, openSync, unlinkSync } from "node:fs";
 import { buildDir, lockFile } from "./paths.mjs";
 
 /**
+ * @typedef {object} ProcessLike
+ * @property {number} pid
+ * @property {(event: string, listener: () => void) => unknown} once
+ * @property {(event: string, listener: () => void) => unknown} removeListener
+ * @property {(pid: number, signal: string) => unknown} kill
+ */
+
+/**
  * Makes cleanup idempotent and signal-safe. try/finally does not run when the
  * process is killed, so an interrupted Brazil build would otherwise leave the
  * wrapper properties stripped of their pinned checksum and the lock file
@@ -14,6 +22,9 @@ import { buildDir, lockFile } from "./paths.mjs";
  * re-raises there too, so a throwing `cleanup` can never leave the process with
  * dangling handlers or a swallowed signal — the normal-path caller still sees
  * the cleanup error propagate.
+ *
+ * @param {() => void} cleanup
+ * @param {ProcessLike} [proc]
  */
 export function onExit(cleanup, proc = process) {
   let done = false;

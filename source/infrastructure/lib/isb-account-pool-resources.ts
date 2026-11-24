@@ -28,9 +28,11 @@ import { ParameterTier } from "aws-cdk-lib/aws-ssm";
 import { Construct } from "constructs";
 
 import { TokenSafeAccountPoolConfig } from "@amzn/innovation-sandbox-commons/data/account-pool-stack-config/account-pool-stack-config.js";
+import { STACKSETS_DELEGATED_ADMIN_SERVICE_PRINCIPAL } from "@amzn/innovation-sandbox-commons/data/observability-sink-config/observability-sink-config.js";
 import { sharedAccountPoolSsmParamName } from "@amzn/innovation-sandbox-commons/types/isb-types.js";
 import { isbAccountTagKeys } from "@amzn/innovation-sandbox-commons/utils/isb-account-tags.js";
 import { CostAllocationTagActivator } from "@amzn/innovation-sandbox-infrastructure/components/custom-resources/cost-allocation-tag-activator";
+import { OrganizationIntegrations } from "@amzn/innovation-sandbox-infrastructure/components/custom-resources/organization-integrations";
 import {
   getInnovationSandboxAwsNukeSupportedServicesScp,
   getInnovationSandboxLimitRegionsScp,
@@ -49,7 +51,7 @@ import {
   getOrgMgtRoleName,
 } from "@amzn/innovation-sandbox-infrastructure/helpers/isb-roles";
 import { IsbSandboxAccountStack } from "@amzn/innovation-sandbox-infrastructure/isb-sandbox-account-stack";
-import path from "path";
+import path from "node:path";
 
 /*
 When adding new OUs/SCPs in a backwards compatible fashion, increment the current schema version and list all
@@ -63,6 +65,7 @@ const supportedSchemas = ["1"];
 export interface IsbAccountPoolResourcesProps {
   readonly namespace: string;
   readonly parentOuId: string;
+  readonly accountPoolOuName: string;
   readonly hubAccountId: string;
   readonly isbManagedRegions: string[];
   readonly additionalAllowedServices: string[];
@@ -73,304 +76,350 @@ export interface IsbAccountPoolResourcesProps {
   readonly synthesizer?: IStackSynthesizer;
 }
 
-export class IsbAccountPoolResources {
-  constructor(scope: Construct, props: IsbAccountPoolResourcesProps) {
-    // Organizational Units
-    const sandboxOu = new CfnOrganizationalUnit(
-      scope,
-      "InnovationSandboxAccountPoolOu",
-      {
-        name: `${props.namespace}_InnovationSandboxAccountPool`,
-        parentId: props.parentOuId,
-      },
+export function addIsbAccountPoolResources(
+  scope: Construct,
+  props: IsbAccountPoolResourcesProps,
+) {
+  // Organizational Units
+  const sandboxOu = new CfnOrganizationalUnit(
+    scope,
+    "InnovationSandboxAccountPoolOu",
+    {
+      name: props.accountPoolOuName,
+      parentId: props.parentOuId,
+    },
+  );
+
+  const availableOu = new CfnOrganizationalUnit(scope, "AvailableOu", {
+    name: "Available",
+    parentId: sandboxOu.attrId,
+  });
+
+  const activeOu = new CfnOrganizationalUnit(scope, "ActiveOu", {
+    name: "Active",
+    parentId: sandboxOu.attrId,
+  });
+
+  const cleanUpOu = new CfnOrganizationalUnit(scope, "CleanUpOu", {
+    name: "CleanUp",
+    parentId: sandboxOu.attrId,
+  });
+
+  const quarantineOu = new CfnOrganizationalUnit(scope, "QuarantineOu", {
+    name: "Quarantine",
+    parentId: sandboxOu.attrId,
+  });
+
+  const entryOu = new CfnOrganizationalUnit(scope, "EntryOu", {
+    name: "Entry",
+    parentId: sandboxOu.attrId,
+  });
+
+  const exitOu = new CfnOrganizationalUnit(scope, "ExitOu", {
+    name: "Exit",
+    parentId: sandboxOu.attrId,
+  });
+
+  const frozenOu = new CfnOrganizationalUnit(scope, "FrozenOu", {
+    name: "Frozen",
+    parentId: sandboxOu.attrId,
+  });
+
+  const organizationId = Fn.select(1, Fn.split("/", sandboxOu.attrArn));
+
+  // Service Control Policies (SCPs)
+  const scpDirectoryPath = getSolutionContext(scope.node).scpDirectoryPath;
+
+  const allowedServicesScpContent =
+    getInnovationSandboxAwsNukeSupportedServicesScp(
+      props.namespace,
+      props.additionalAllowedServices,
+      props.hasAdditionalAllowedServices.logicalId,
+      props.additionalPrincipalExceptions,
+      props.hasAdditionalPrincipalExceptions.logicalId,
+      scpDirectoryPath,
     );
 
-    const availableOu = new CfnOrganizationalUnit(scope, "AvailableOu", {
-      name: "Available",
-      parentId: sandboxOu.attrId,
-    });
+  new CfnPolicy(scope, "InnovationSandboxAwsNukeSupportedServicesScp", {
+    name: `${props.namespace}-InnovationSandboxAwsNukeSupportedServicesScp`,
+    description:
+      "Service Control Policy (SCP) to allow only services supported by AWS Nuke clean workflow. ",
+    type: "SERVICE_CONTROL_POLICY",
+    content: allowedServicesScpContent,
+    targetIds: [sandboxOu.attrId],
+  });
 
-    const activeOu = new CfnOrganizationalUnit(scope, "ActiveOu", {
-      name: "Active",
-      parentId: sandboxOu.attrId,
-    });
+  const restrictionScp = getInnovationSandboxRestrictionsScp({
+    namespace: props.namespace,
+    scpDirectoryPath,
+    additionalPrincipalExceptions: props.additionalPrincipalExceptions,
+    hasAdditionalPrincipalExceptionsConditionId:
+      props.hasAdditionalPrincipalExceptions.logicalId,
+  });
 
-    const cleanUpOu = new CfnOrganizationalUnit(scope, "CleanUpOu", {
-      name: "CleanUp",
-      parentId: sandboxOu.attrId,
-    });
+  new CfnPolicy(scope, "InnovationSandboxRestrictionsScp", {
+    name: `${props.namespace}-InnovationSandboxRestrictionsScp`,
+    description:
+      "Service Control Policy (SCP) to add restrictions for security, isolation, cost and operations related resources.",
+    type: "SERVICE_CONTROL_POLICY",
+    content: restrictionScp.toJSON(),
+    targetIds: [sandboxOu.attrId],
+  });
 
-    const quarantineOu = new CfnOrganizationalUnit(scope, "QuarantineOu", {
-      name: "Quarantine",
-      parentId: sandboxOu.attrId,
-    });
+  const protectionScp = getInnovationSandboxProtectScp({
+    namespace: props.namespace,
+    isbManagedRegions: props.isbManagedRegions,
+    scpDirectoryPath,
+  });
 
-    const entryOu = new CfnOrganizationalUnit(scope, "EntryOu", {
-      name: "Entry",
-      parentId: sandboxOu.attrId,
-    });
+  new CfnPolicy(scope, "InnovationSandboxProtectISBScp", {
+    name: `${props.namespace}-InnovationSandboxProtectISBResourcesScp`,
+    description:
+      "Service Control Policy (SCP) for Innovation Sandbox to protect ISB control plane resources.",
+    type: "SERVICE_CONTROL_POLICY",
+    content: protectionScp.toJSON(),
+    targetIds: [sandboxOu.attrId],
+  });
 
-    const exitOu = new CfnOrganizationalUnit(scope, "ExitOu", {
-      name: "Exit",
-      parentId: sandboxOu.attrId,
-    });
+  const limitRegionsScp = getInnovationSandboxLimitRegionsScp({
+    namespace: props.namespace,
+    isbManagedRegions: props.isbManagedRegions,
+    scpDirectoryPath,
+    additionalPrincipalExceptions: props.additionalPrincipalExceptions,
+    hasAdditionalPrincipalExceptionsConditionId:
+      props.hasAdditionalPrincipalExceptions.logicalId,
+    bedrockInferenceProfilePatterns:
+      props.bedrockInferenceProfilePatterns.valueAsList,
+    hasBedrockInferenceProfilePatternsConditionId:
+      props.bedrockInferenceProfilePatterns.hasValuesCondition.logicalId,
+  });
 
-    const frozenOu = new CfnOrganizationalUnit(scope, "FrozenOu", {
-      name: "Frozen",
-      parentId: sandboxOu.attrId,
-    });
+  new CfnPolicy(scope, "InnovationSandboxLimitRegionsScp", {
+    name: `${props.namespace}-InnovationSandboxLimitRegionsScp`,
+    description:
+      "Service Control Policy (SCP) for Innovation Sandbox to limit use of AWS Regions.",
+    type: "SERVICE_CONTROL_POLICY",
+    content: limitRegionsScp.toJSON(),
+    targetIds: [sandboxOu.attrId],
+  });
 
-    const organizationId = Fn.select(1, Fn.split("/", sandboxOu.attrArn));
+  const writeProtectionScp = getInnovationSandboxWriteProtectionScp({
+    namespace: props.namespace,
+    scpDirectoryPath,
+    additionalPrincipalExceptions: props.additionalPrincipalExceptions,
+    hasAdditionalPrincipalExceptionsConditionId:
+      props.hasAdditionalPrincipalExceptions.logicalId,
+  });
 
-    // Service Control Policies (SCPs)
-    const scpDirectoryPath = getSolutionContext(scope.node).scpDirectoryPath;
+  new CfnPolicy(scope, "InnovationSandboxWriteProtectionScp", {
+    name: `${props.namespace}-InnovationSandboxWriteProtectionScp`,
+    description:
+      "Service Control Policy (SCP) for Innovation Sandbox to restrict all resource to create or modify actions.",
+    type: "SERVICE_CONTROL_POLICY",
+    content: writeProtectionScp.toJSON(),
+    targetIds: [
+      availableOu.attrId,
+      cleanUpOu.attrId,
+      quarantineOu.attrId,
+      entryOu.attrId,
+      exitOu.attrId,
+    ],
+  });
 
-    const allowedServicesScpContent =
-      getInnovationSandboxAwsNukeSupportedServicesScp(
-        props.namespace,
-        props.additionalAllowedServices,
-        props.hasAdditionalAllowedServices.logicalId,
-        props.additionalPrincipalExceptions,
-        props.hasAdditionalPrincipalExceptions.logicalId,
-        scpDirectoryPath,
-      );
-
-    new CfnPolicy(scope, "InnovationSandboxAwsNukeSupportedServicesScp", {
-      name: `${props.namespace}-InnovationSandboxAwsNukeSupportedServicesScp`,
-      description:
-        "Service Control Policy (SCP) to allow only services supported by AWS Nuke clean workflow. ",
-      type: "SERVICE_CONTROL_POLICY",
-      content: allowedServicesScpContent,
-      targetIds: [sandboxOu.attrId],
-    });
-
-    const restrictionScp = getInnovationSandboxRestrictionsScp({
-      namespace: props.namespace,
-      scpDirectoryPath,
-      additionalPrincipalExceptions: props.additionalPrincipalExceptions,
-      hasAdditionalPrincipalExceptionsConditionId:
-        props.hasAdditionalPrincipalExceptions.logicalId,
-    });
-
-    new CfnPolicy(scope, "InnovationSandboxRestrictionsScp", {
-      name: `${props.namespace}-InnovationSandboxRestrictionsScp`,
-      description:
-        "Service Control Policy (SCP) to add restrictions for security, isolation, cost and operations related resources.",
-      type: "SERVICE_CONTROL_POLICY",
-      content: restrictionScp.toJSON(),
-      targetIds: [sandboxOu.attrId],
-    });
-
-    const protectionScp = getInnovationSandboxProtectScp({
-      namespace: props.namespace,
-      isbManagedRegions: props.isbManagedRegions,
-      scpDirectoryPath,
-    });
-
-    new CfnPolicy(scope, "InnovationSandboxProtectISBScp", {
-      name: `${props.namespace}-InnovationSandboxProtectISBResourcesScp`,
-      description:
-        "Service Control Policy (SCP) for Innovation Sandbox to protect ISB control plane resources.",
-      type: "SERVICE_CONTROL_POLICY",
-      content: protectionScp.toJSON(),
-      targetIds: [sandboxOu.attrId],
-    });
-
-    const limitRegionsScp = getInnovationSandboxLimitRegionsScp({
-      namespace: props.namespace,
-      isbManagedRegions: props.isbManagedRegions,
-      scpDirectoryPath,
-      additionalPrincipalExceptions: props.additionalPrincipalExceptions,
-      hasAdditionalPrincipalExceptionsConditionId:
-        props.hasAdditionalPrincipalExceptions.logicalId,
-      bedrockInferenceProfilePatterns:
-        props.bedrockInferenceProfilePatterns.valueAsList,
-      hasBedrockInferenceProfilePatternsConditionId:
-        props.bedrockInferenceProfilePatterns.hasValuesCondition.logicalId,
-    });
-
-    new CfnPolicy(scope, "InnovationSandboxLimitRegionsScp", {
-      name: `${props.namespace}-InnovationSandboxLimitRegionsScp`,
-      description:
-        "Service Control Policy (SCP) for Innovation Sandbox to limit use of AWS Regions.",
-      type: "SERVICE_CONTROL_POLICY",
-      content: limitRegionsScp.toJSON(),
-      targetIds: [sandboxOu.attrId],
-    });
-
-    const writeProtectionScp = getInnovationSandboxWriteProtectionScp({
-      namespace: props.namespace,
-      scpDirectoryPath,
-      additionalPrincipalExceptions: props.additionalPrincipalExceptions,
-      hasAdditionalPrincipalExceptionsConditionId:
-        props.hasAdditionalPrincipalExceptions.logicalId,
-    });
-
-    new CfnPolicy(scope, "InnovationSandboxWriteProtectionScp", {
-      name: `${props.namespace}-InnovationSandboxWriteProtectionScp`,
-      description:
-        "Service Control Policy (SCP) for Innovation Sandbox to restrict all resource to create or modify actions.",
-      type: "SERVICE_CONTROL_POLICY",
-      content: writeProtectionScp.toJSON(),
-      targetIds: [
-        availableOu.attrId,
-        cleanUpOu.attrId,
-        quarantineOu.attrId,
-        entryOu.attrId,
-        exitOu.attrId,
-      ],
-    });
-
-    const orgMgtRole = new Role(scope, "OrgMgtRole", {
-      roleName: getOrgMgtRoleName(props.namespace),
-      description:
-        "Role to be assumed for operations on the org management account",
-      assumedBy: new PrincipalWithConditions(
-        new AccountPrincipal(props.hubAccountId),
-        {
-          ArnEquals: {
-            "aws:PrincipalArn": Stack.of(scope).formatArn({
-              service: "iam",
-              resource: "role",
-              region: "",
-              account: props.hubAccountId,
-              resourceName: getIntermediateRoleName(props.namespace),
-            }),
-          },
+  const orgMgtRole = new Role(scope, "OrgMgtRole", {
+    roleName: getOrgMgtRoleName(props.namespace),
+    description:
+      "Role to be assumed for operations on the org management account",
+    assumedBy: new PrincipalWithConditions(
+      new AccountPrincipal(props.hubAccountId),
+      {
+        ArnEquals: {
+          "aws:PrincipalArn": Stack.of(scope).formatArn({
+            service: "iam",
+            resource: "role",
+            region: "",
+            account: props.hubAccountId,
+            resourceName: getIntermediateRoleName(props.namespace),
+          }),
         },
-      ),
-    });
-
-    orgMgtRole.attachInlinePolicy(
-      new Policy(scope, "OrganizationsPolicy", {
-        statements: [
-          new PolicyStatement({
-            actions: [
-              "organizations:ListOrganizationalUnitsForParent",
-              "organizations:ListAccountsForParent",
-            ],
-            resources: [
-              sandboxOu.attrArn,
-              availableOu.attrArn,
-              activeOu.attrArn,
-              cleanUpOu.attrArn,
-              quarantineOu.attrArn,
-              entryOu.attrArn,
-              exitOu.attrArn,
-              frozenOu.attrArn,
-            ],
-          }),
-          new PolicyStatement({
-            actions: ["organizations:MoveAccount"],
-            resources: [
-              availableOu.attrArn,
-              activeOu.attrArn,
-              cleanUpOu.attrArn,
-              quarantineOu.attrArn,
-              entryOu.attrArn,
-              exitOu.attrArn,
-              frozenOu.attrArn,
-              Stack.of(scope).formatArn({
-                service: "organizations",
-                region: "",
-                resource: "account",
-                arnFormat: ArnFormat.SLASH_RESOURCE_NAME,
-                resourceName: `${organizationId}/*`,
-              }),
-              Stack.of(scope).formatArn({
-                service: "organizations",
-                region: "",
-                resource: "root",
-                arnFormat: ArnFormat.SLASH_RESOURCE_NAME,
-                resourceName: `${organizationId}/*`,
-              }),
-            ],
-          }),
-          new PolicyStatement({
-            actions: ["organizations:DescribeAccount"],
-            resources: [
-              Stack.of(scope).formatArn({
-                service: "organizations",
-                region: "",
-                resource: "account",
-                arnFormat: ArnFormat.SLASH_RESOURCE_NAME,
-                resourceName: `${organizationId}/*`,
-              }),
-            ],
-          }),
-          new PolicyStatement({
-            actions: [
-              "organizations:TagResource",
-              "organizations:UntagResource",
-            ],
-            resources: [
-              // Accounts only — ISB never tags OUs, policies, or roots.
-              Stack.of(scope).formatArn({
-                service: "organizations",
-                region: "",
-                resource: "account",
-                arnFormat: ArnFormat.SLASH_RESOURCE_NAME,
-                resourceName: `${organizationId}/*`,
-              }),
-            ],
-            conditions: {
-              "ForAllValues:StringEquals": {
-                "aws:TagKeys": isbAccountTagKeys(props.namespace),
-              },
-            },
-          }),
-        ],
-      }),
-    );
-    orgMgtRole.attachInlinePolicy(
-      new Policy(scope, "CostExplorerPolicy", {
-        statements: [
-          new PolicyStatement({
-            actions: [
-              "ce:GetCostAndUsage",
-              "ce:UpdateCostAllocationTagsStatus",
-              "ce:ListCostAllocationTags",
-            ],
-            resources: ["*"], // We cannot use a custom billing view to effectively constrain this permission
-          }),
-        ],
-      }),
-    );
-    addCfnGuardSuppression(orgMgtRole, ["CFN_NO_EXPLICIT_RESOURCE_NAMES"]);
-
-    const ssmParamAccountPoolConfiguration = new aws_ssm.StringParameter(
-      scope,
-      "AccountPoolConfiguration",
-      {
-        parameterName: sharedAccountPoolSsmParamName(props.namespace),
-        description: "The Account pool configuration for Innovation Sandbox",
-        stringValue: JSON.stringify({
-          sandboxOuId: sandboxOu.attrId,
-          availableOuId: availableOu.attrId,
-          activeOuId: activeOu.attrId,
-          frozenOuId: frozenOu.attrId,
-          cleanupOuId: cleanUpOu.attrId,
-          quarantineOuId: quarantineOu.attrId,
-          entryOuId: entryOu.attrId,
-          exitOuId: exitOu.attrId,
-          solutionVersion: getContextFromMapping(scope, "version"),
-          supportedSchemas: JSON.stringify(supportedSchemas),
-          isbManagedRegions: Fn.join(",", props.isbManagedRegions),
-          additionalAllowedServices: Fn.join(
-            ",",
-            props.additionalAllowedServices,
-          ),
-          bedrockInferenceProfilePatterns: Fn.join(
-            ",",
-            props.bedrockInferenceProfilePatterns.valueAsList,
-          ),
-        } satisfies TokenSafeAccountPoolConfig),
-        tier: ParameterTier.ADVANCED,
-        simpleName: true,
       },
-    );
+    ),
+  });
 
-    new aws_ram.CfnResourceShare(scope, "AccountPoolConfigParameterShare", {
+  orgMgtRole.attachInlinePolicy(
+    new Policy(scope, "OrganizationsPolicy", {
+      statements: [
+        new PolicyStatement({
+          actions: [
+            "organizations:ListOrganizationalUnitsForParent",
+            "organizations:ListAccountsForParent",
+          ],
+          resources: [
+            sandboxOu.attrArn,
+            availableOu.attrArn,
+            activeOu.attrArn,
+            cleanUpOu.attrArn,
+            quarantineOu.attrArn,
+            entryOu.attrArn,
+            exitOu.attrArn,
+            frozenOu.attrArn,
+          ],
+        }),
+        // The observability sink custom resource in the hub walks the pool
+        // OU's parents to build its path and, from a member-account hub,
+        // registers the hub as StackSets delegated administrator.
+        new PolicyStatement({
+          actions: ["organizations:ListDelegatedAdministrators"],
+          resources: ["*"], // no resource-level permissions for this action
+          conditions: {
+            StringEquals: {
+              "organizations:ServicePrincipal":
+                STACKSETS_DELEGATED_ADMIN_SERVICE_PRINCIPAL,
+            },
+          },
+        }),
+        new PolicyStatement({
+          actions: ["organizations:ListParents"],
+          resources: [
+            Stack.of(scope).formatArn({
+              service: "organizations",
+              region: "",
+              resource: "ou",
+              arnFormat: ArnFormat.SLASH_RESOURCE_NAME,
+              resourceName: `${organizationId}/*`,
+            }),
+          ],
+        }),
+        new PolicyStatement({
+          actions: ["organizations:RegisterDelegatedAdministrator"],
+          resources: [
+            Stack.of(scope).formatArn({
+              service: "organizations",
+              region: "",
+              resource: "account",
+              arnFormat: ArnFormat.SLASH_RESOURCE_NAME,
+              resourceName: `${organizationId}/${props.hubAccountId}`,
+            }),
+          ],
+          conditions: {
+            StringEquals: {
+              "organizations:ServicePrincipal":
+                STACKSETS_DELEGATED_ADMIN_SERVICE_PRINCIPAL,
+            },
+          },
+        }),
+        new PolicyStatement({
+          actions: ["organizations:MoveAccount"],
+          resources: [
+            availableOu.attrArn,
+            activeOu.attrArn,
+            cleanUpOu.attrArn,
+            quarantineOu.attrArn,
+            entryOu.attrArn,
+            exitOu.attrArn,
+            frozenOu.attrArn,
+            Stack.of(scope).formatArn({
+              service: "organizations",
+              region: "",
+              resource: "account",
+              arnFormat: ArnFormat.SLASH_RESOURCE_NAME,
+              resourceName: `${organizationId}/*`,
+            }),
+            Stack.of(scope).formatArn({
+              service: "organizations",
+              region: "",
+              resource: "root",
+              arnFormat: ArnFormat.SLASH_RESOURCE_NAME,
+              resourceName: `${organizationId}/*`,
+            }),
+          ],
+        }),
+        new PolicyStatement({
+          actions: ["organizations:DescribeAccount"],
+          resources: [
+            Stack.of(scope).formatArn({
+              service: "organizations",
+              region: "",
+              resource: "account",
+              arnFormat: ArnFormat.SLASH_RESOURCE_NAME,
+              resourceName: `${organizationId}/*`,
+            }),
+          ],
+        }),
+        new PolicyStatement({
+          actions: ["organizations:TagResource", "organizations:UntagResource"],
+          resources: [
+            // Accounts only — ISB never tags OUs, policies, or roots.
+            Stack.of(scope).formatArn({
+              service: "organizations",
+              region: "",
+              resource: "account",
+              arnFormat: ArnFormat.SLASH_RESOURCE_NAME,
+              resourceName: `${organizationId}/*`,
+            }),
+          ],
+          conditions: {
+            "ForAllValues:StringEquals": {
+              "aws:TagKeys": isbAccountTagKeys(props.namespace),
+            },
+          },
+        }),
+      ],
+    }),
+  );
+  orgMgtRole.attachInlinePolicy(
+    new Policy(scope, "CostExplorerPolicy", {
+      statements: [
+        new PolicyStatement({
+          actions: [
+            "ce:GetCostAndUsage",
+            "ce:UpdateCostAllocationTagsStatus",
+            "ce:ListCostAllocationTags",
+          ],
+          resources: ["*"], // We cannot use a custom billing view to effectively constrain this permission
+        }),
+      ],
+    }),
+  );
+  addCfnGuardSuppression(orgMgtRole, ["CFN_NO_EXPLICIT_RESOURCE_NAMES"]);
+
+  const ssmParamAccountPoolConfiguration = new aws_ssm.StringParameter(
+    scope,
+    "AccountPoolConfiguration",
+    {
+      parameterName: sharedAccountPoolSsmParamName(props.namespace),
+      description: "The Account pool configuration for Innovation Sandbox",
+      stringValue: JSON.stringify({
+        organizationId,
+        sandboxOuId: sandboxOu.attrId,
+        availableOuId: availableOu.attrId,
+        activeOuId: activeOu.attrId,
+        frozenOuId: frozenOu.attrId,
+        cleanupOuId: cleanUpOu.attrId,
+        quarantineOuId: quarantineOu.attrId,
+        entryOuId: entryOu.attrId,
+        exitOuId: exitOu.attrId,
+        solutionVersion: getContextFromMapping(scope, "version"),
+        supportedSchemas: JSON.stringify(supportedSchemas),
+        isbManagedRegions: Fn.join(",", props.isbManagedRegions),
+        additionalAllowedServices: Fn.join(
+          ",",
+          props.additionalAllowedServices,
+        ),
+        bedrockInferenceProfilePatterns: Fn.join(
+          ",",
+          props.bedrockInferenceProfilePatterns.valueAsList,
+        ),
+      } satisfies TokenSafeAccountPoolConfig),
+      tier: ParameterTier.ADVANCED,
+      simpleName: true,
+    },
+  );
+
+  const configShare = new aws_ram.CfnResourceShare(
+    scope,
+    "AccountPoolConfigParameterShare",
+    {
       name: `Isb-${props.namespace}-AccountPoolConfigShare`,
       principals: [props.hubAccountId],
       resourceArns: [ssmParamAccountPoolConfiguration.parameterArn],
@@ -378,69 +427,80 @@ export class IsbAccountPoolResources {
       permissionArns: [
         "arn:aws:ram::aws:permission/AWSRAMDefaultPermissionSSMParameterReadOnly",
       ],
-    });
-    const outdir = App.of(scope)!.outdir;
-    const sandboxAccountStackApp = new App({ outdir, autoSynth: false });
-    const context = getSolutionContext(sandboxAccountStackApp.node);
-    const sandboxAccountStack = new IsbSandboxAccountStack(
-      sandboxAccountStackApp,
-      "InnovationSandbox-SandboxAccount",
+    },
+  );
+  const outdir = App.of(scope)!.outdir;
+  const sandboxAccountStackApp = new App({ outdir, autoSynth: false });
+  const context = getSolutionContext(sandboxAccountStackApp.node);
+  const sandboxAccountStack = new IsbSandboxAccountStack(
+    sandboxAccountStackApp,
+    "InnovationSandbox-SandboxAccount",
+    {
+      description: `(${context.solutionId}-SandboxAccount) ${context.solutionName} ${context.version}`,
+      synthesizer: props.synthesizer,
+    },
+  );
+  sandboxAccountStackApp.synth();
+
+  const sandboxAccountTemplateAsset = new Asset(
+    scope,
+    "SandboxAccountTemplateAsset",
+    {
+      path: path.join(outdir, sandboxAccountStack.templateFile),
+    },
+  );
+
+  const stackSet = new CfnStackSet(scope, "IsbStackSet", {
+    stackSetName: `Isb-${props.namespace}-SandboxAccountResources`,
+    permissionModel: "SERVICE_MANAGED",
+    capabilities: ["CAPABILITY_NAMED_IAM"],
+    description: "StackSet for Innovation Sandbox",
+    autoDeployment: {
+      enabled: true,
+      retainStacksOnAccountRemoval: false,
+    },
+    stackInstancesGroup: [
       {
-        description: `(${context.solutionId}-SandboxAccount) ${context.solutionName} ${context.version}`,
-        synthesizer: props.synthesizer,
+        deploymentTargets: {
+          organizationalUnitIds: [sandboxOu.attrId],
+        },
+        regions: [Stack.of(scope).region],
       },
-    );
-    sandboxAccountStackApp.synth();
-
-    const sandboxAccountTemplateAsset = new Asset(
-      scope,
-      "SandboxAccountTemplateAsset",
+    ],
+    parameters: [
       {
-        path: path.join(outdir, sandboxAccountStack.templateFile),
+        parameterKey: "Namespace",
+        parameterValue: props.namespace,
       },
-    );
+      {
+        parameterKey: "HubAccountId",
+        parameterValue: props.hubAccountId,
+      },
+    ],
+    operationPreferences: {
+      concurrencyMode: "SOFT_FAILURE_TOLERANCE",
+      failureTolerancePercentage: 100,
+      maxConcurrentPercentage: 100,
+      regionConcurrencyType: "PARALLEL",
+    },
+    managedExecution: {
+      Active: true,
+    },
+    templateUrl: sandboxAccountTemplateAsset.httpUrl,
+  });
 
-    new CfnStackSet(scope, "IsbStackSet", {
-      stackSetName: `Isb-${props.namespace}-SandboxAccountResources`,
-      permissionModel: "SERVICE_MANAGED",
-      capabilities: ["CAPABILITY_NAMED_IAM"],
-      description: "StackSet for Innovation Sandbox",
-      autoDeployment: {
-        enabled: true,
-        retainStacksOnAccountRemoval: false,
-      },
-      stackInstancesGroup: [
-        {
-          deploymentTargets: {
-            organizationalUnitIds: [sandboxOu.attrId],
-          },
-          regions: [Stack.of(scope).region],
-        },
-      ],
-      parameters: [
-        {
-          parameterKey: "Namespace",
-          parameterValue: props.namespace,
-        },
-        {
-          parameterKey: "HubAccountId",
-          parameterValue: props.hubAccountId,
-        },
-      ],
-      operationPreferences: {
-        concurrencyMode: "SOFT_FAILURE_TOLERANCE",
-        failureTolerancePercentage: 100,
-        maxConcurrentPercentage: 100,
-        regionConcurrencyType: "PARALLEL",
-      },
-      managedExecution: {
-        Active: true,
-      },
-      templateUrl: sandboxAccountTemplateAsset.httpUrl,
-    });
+  new CostAllocationTagActivator(scope, "CostAllocationTagActivator", {
+    namespace: props.namespace,
+  });
 
-    new CostAllocationTagActivator(scope, "CostAllocationTagActivator", {
-      namespace: props.namespace,
-    });
-  }
+  // A service-managed StackSet needs trusted access with Organizations and
+  // the config share needs RAM sharing within the organization, neither of
+  // which a fresh organization has.
+  const integrations = new OrganizationIntegrations(
+    scope,
+    "OrganizationIntegrations",
+    { namespace: props.namespace },
+  );
+  stackSet.node.addDependency(integrations.customResource);
+  configShare.node.addDependency(integrations.customResource);
 }

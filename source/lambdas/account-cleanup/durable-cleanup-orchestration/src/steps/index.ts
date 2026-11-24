@@ -8,7 +8,6 @@ export {
 export { runAccountCooldown } from "./account-cooldown.js";
 export { acquireAccountLock } from "./acquire-account-lock.js";
 export { cleanupAccountAccess } from "./cleanup-account-access.js";
-export type { CleanupAccountAccessResult } from "./cleanup-account-access.js";
 export {
   enumerateResources,
   enumerateResourcesAfterCleanup,

@@ -45,6 +45,12 @@ export class SsmIdcStackConfigStore extends IdcStackConfigStore {
       maxAge: this.maxAge,
     });
 
-    return IdcConfigSchema.parse(rawConfig);
+    const parsed = IdcConfigSchema.safeParse(rawConfig);
+    if (!parsed.success) {
+      throw new Error("IDC stack configuration is invalid.", {
+        cause: parsed.error,
+      });
+    }
+    return parsed.data;
   }
 }

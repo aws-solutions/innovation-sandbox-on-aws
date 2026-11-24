@@ -5,10 +5,10 @@ import { FormField, Input } from "@cloudscape-design/components";
 import type { FormFieldProps } from "@cloudscape-design/components/form-field";
 import type { InputProps } from "@cloudscape-design/components/input";
 import {
-  useController,
-  UseControllerProps,
   type FieldPath,
   type FieldValues,
+  useController,
+  UseControllerProps,
 } from "react-hook-form";
 
 export interface InputFieldProps<
@@ -44,7 +44,7 @@ export default function InputField<
   inputProps,
   min,
   max,
-}: InputFieldProps<TFieldValues, TName>) {
+}: Readonly<InputFieldProps<TFieldValues, TName>>) {
   const {
     field: {
       onBlur: onFieldBlur,
@@ -72,8 +72,8 @@ export default function InputField<
   const boundsAttributes =
     type === "number" && (min !== undefined || max !== undefined)
       ? {
-          ...(min !== undefined ? { min } : {}),
-          ...(max !== undefined ? { max } : {}),
+          ...(min === undefined ? {} : { min }),
+          ...(max === undefined ? {} : { max }),
           ...nativeInputAttributes,
         }
       : nativeInputAttributes;

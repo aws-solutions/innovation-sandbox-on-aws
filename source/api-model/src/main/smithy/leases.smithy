@@ -4,7 +4,7 @@ namespace com.amazon.isb
 
 use aws.protocols#restJson1
 
-// Per-domain service for the leases Lambda. It binds only this domain's eleven
+// Per-domain service for the leases Lambda. It binds only this domain's twelve
 // operations, so the generated `LeasesApiService` types the Lambda's handler to
 // exactly these — while the aggregate `IsbApi` (main.smithy) binds the same
 // operations for the shared client/OpenAPI.
@@ -34,9 +34,8 @@ use aws.protocols#restJson1
 //      `acquiredAt`/`expiresAt`, `LeaseMetadata` times, `AssignmentView.addedDate`).
 //      The handler returns persisted strings through `JSON.stringify`; the frontend
 //      reads them directly. `DynamoLeaseStore.update` carries a `meta.lastEditTime`
-//      conditional, but the PATCH path never passes `expected`, so there is no API
-//      concurrency dependency on a byte-faithful echo today (the same latent trap as
-//      leaseTemplates — but leases chose `String` for byte-faithful passthrough).
+//      conditional against its server-read snapshot. Assignment PUT compares the
+//      state used for validation, independently of monitoring metadata timestamps.
 //   4. `maxResults` on the list operations is parsed by the generated
 //      `restJson1` deserializer (`strictParseInt32`): a plain decimal integer only.
 //      The pre-Smithy `z.coerce.number()` also accepted a leading `+`, leading
@@ -81,6 +80,10 @@ service LeasesApi {
         UnfreezeLease
         GetLeaseAssignments
         UpdateLeaseAssignments
+        GetLeaseCostSummary
+        GetLeaseCostHistory
+        GetLeaseBedrockTokenHistory
+        GetLeaseBreachHistory
     ]
     errors: [
         ValidationError
@@ -238,6 +241,45 @@ structure LeaseFields {
 
     allowOwnerToShareLease: Boolean
 
+    /// Predictive budget controls opt-in. Copied from the template at creation
+    /// and replaceable through `UpdateLease`.
+    predictiveBudgetEnabled: Boolean
+
+    /// Bedrock token monitoring opt-in. Saved at creation as the template's
+    /// preference, or true when the template enables Sandbox Spaces, and
+    /// replaceable through `UpdateLease`.
+    bedrockTokenMonitoringEnabled: Boolean
+
+    /// Snapshot of the source template's Sandbox Spaces on/off setting.
+    sandboxSpacesEnabled: Boolean
+
+    /// Snapshot of the template's Sandbox Spaces model subset — the lease's own
+    /// copy, so a later template edit never changes enforcement under a running
+    /// lease.
+    allowedModelIds: AgentModelIdList
+
+    /// Snapshot of the template's Sandbox Spaces default model, preselected first
+    /// when a chat opens under this lease.
+    defaultModelId: String
+
+    /// Predicted spend now, in USD, as of the last threshold check. The next
+    /// check compares against it. Lease Monitoring and Token Poll exclude
+    /// Sandbox Spaces estimated token cost.
+    lastPredictedSpend: Double
+
+    /// Spend so far, in USD, as of the last threshold check, with the
+    /// monitored Bedrock token cost in place of the billed Bedrock part
+    /// where token monitoring is on, never below the billed total. The next
+    /// check compares against it. Lease Monitoring and Token Poll exclude
+    /// Sandbox Spaces estimated token cost.
+    lastEvaluatedSpend: Double
+
+    /// Most recently evaluated hourly spend rate.
+    lastEvaluatedHourlySpendRate: Double
+
+    /// Most recently evaluated daily spend rate.
+    lastEvaluatedDailySpendRate: Double
+
     /// Declarative desired principal assignments (owner + shared users/groups),
     /// each optionally enriched with display metadata for the assignments UI.
     desiredAssignments: DesiredAssignmentWithDisplayList
@@ -293,15 +335,65 @@ structure LeaseFields {
     ttl: Long
 }
 
+// The hydrated members are repeated on each public projection so they append
+// after every pre-existing member. Moving them into LeaseFields would insert
+// them before LeaseWithId/SharedLease's local members and trigger Smithy's
+// ChangedMemberOrder compatibility check.
 /// The public lease projection. Body-returning writes (`RequestLease`,
 /// `UpdateLease`) emit this WITHOUT `leaseId`; read paths emit `LeaseWithId`.
-structure Lease with [LeaseFields] {}
+structure Lease with [LeaseFields] {
+    /// Backend-hydrated metadata for the default permission set.
+    defaultPermissionSet: PermissionSetReference
+
+    /// Backend-hydrated metadata for the effective allowed set, including the
+    /// default. Missing cache entries remain represented as UNAVAILABLE.
+    allowedPermissionSets: PermissionSetReferenceList
+
+    /// Spend-rate limits stored on this lease, each with its own action. Copied
+    /// from the template at creation and replaceable through `UpdateLease`.
+    /// Evaluated only while `predictiveBudgetEnabled` is true.
+    rateLimits: RateLimitList
+}
 
 /// A `Lease` that carries the `leaseId` (base64url composite key). Returned by
-/// `GetLease` and `UnfreezeLease` and as the `ListLeases` result items.
+/// `GetLease`, `UnfreezeLease`, and as the `ListLeases` result items.
 structure LeaseWithId with [LeaseFields] {
     @required
     leaseId: LeaseId
+
+    /// Backend-hydrated metadata for the default permission set.
+    defaultPermissionSet: PermissionSetReference
+
+    /// Backend-hydrated metadata for the effective allowed set, including the
+    /// default. Missing cache entries remain represented as UNAVAILABLE.
+    allowedPermissionSets: PermissionSetReferenceList
+
+    /// Enabled catalog narrowed to this lease's allowed models. Set by
+    /// `GetLease` and `UnfreezeLease` when Sandbox Spaces is enabled globally
+    /// and on the lease, resolved on each read so disabling a model takes
+    /// effect on the next fetch. Unset otherwise and on list responses.
+    selectableModels: SelectableModelList
+
+    /// Spend-rate limits stored on this lease, each with its own action. Copied
+    /// from the template at creation and replaceable through `UpdateLease`.
+    /// Evaluated only while `predictiveBudgetEnabled` is true.
+    rateLimits: RateLimitList
+}
+
+/// One model a lease user may select for a Sandbox Space turn.
+structure SelectableModel {
+    @required
+    modelId: String
+
+    @required
+    displayName: String
+
+    @required
+    provider: String
+}
+
+list SelectableModelList {
+    member: SelectableModel
 }
 
 // Mirrors the `SharedLease` service type.
@@ -317,6 +409,24 @@ structure SharedLease with [LeaseFields] {
     /// The IDC group display name that granted access, present only for
     /// `group` access.
     sourceGroupName: String
+
+    /// Backend-hydrated metadata for the default permission set.
+    defaultPermissionSet: PermissionSetReference
+
+    /// Backend-hydrated metadata for the effective allowed set, including the
+    /// default. Missing cache entries remain represented as UNAVAILABLE.
+    allowedPermissionSets: PermissionSetReferenceList
+
+    /// Enabled catalog narrowed to this lease's allowed models. Set by
+    /// `GetLease` and `UnfreezeLease` when Sandbox Spaces is enabled globally
+    /// and on the lease, resolved on each read so disabling a model takes
+    /// effect on the next fetch. Unset otherwise and on list responses.
+    selectableModels: SelectableModelList
+
+    /// Spend-rate limits stored on this lease, each with its own action. Copied
+    /// from the template at creation and replaceable through `UpdateLease`.
+    /// Evaluated only while `predictiveBudgetEnabled` is true.
+    rateLimits: RateLimitList
 }
 
 // `schemaVersion` is intentionally dropped from the wire (deviation #2); timestamps
@@ -370,6 +480,9 @@ structure DesiredAssignment {
 
     @required
     principalType: PrincipalType
+
+    /// Permission set selected for this principal. Absent callers use the lease default.
+    permissionSetArn: PermissionSetArn
 }
 
 list DesiredAssignmentList {
@@ -389,6 +502,8 @@ structure DesiredAssignmentWithDisplay {
 
     // `@sensitive` (`OwnerEmail`).
     email: OwnerEmail
+
+    permissionSetArn: PermissionSetArn
 }
 
 list DesiredAssignmentWithDisplayList {
@@ -437,6 +552,11 @@ structure AssignmentView {
 
     @required
     syncStatus: AssignmentSyncStatus
+
+    /// Backend-hydrated permission set details. Legacy ARN-less records resolve
+    /// to the immutable built-in user permission set.
+    @required
+    permissionSet: PermissionSetReference
 }
 
 list AssignmentViewList {
@@ -449,6 +569,294 @@ structure LeaseAssignmentsView {
     assignments: AssignmentViewList
 
     operationInProgress: LeaseLockIntent
+}
+
+// ---------------------------------------------------------------------------
+// Cost history view (server TypeScript contract — model-only, no Zod schema)
+// ---------------------------------------------------------------------------
+// Mirrors `cost-history-api.types.ts`, the one definition the producer and the
+// frontend both import. Timestamps are raw `String` (deviation #3), and the
+// contract's `T | null` members are plain optional members (deviation #7), so the
+// serializer omits them. Every rate-derived figure below is absent in a lease's
+// first reporting interval, and for the life of one that never opted into
+// prediction.
+/// The window a rate is measured over.
+enum RateBasis {
+    HOURLY
+    DAILY
+}
+
+/// What crossed a threshold: reported spend, projected spend, a spend rate, or time
+/// remaining. `MAX_SPEND` is the lease's maximum spend and `EXPIRY` its end, which
+/// both terminate the lease.
+enum BreachTriggeredBy {
+    REPORTED
+    PREDICTED
+    RATE
+    MAX_SPEND
+    DURATION
+    EXPIRY
+}
+
+/// What a breach did. `TERMINATE` is recorded only on a `MAX_SPEND` or `EXPIRY` breach.
+enum BreachAction {
+    ALERT
+    FREEZE_ACCOUNT
+    TERMINATE
+}
+
+/// Which schedule evaluated a breach: `LEASE_MONITORING` or `TOKEN_POLL`.
+/// Only the token poll records the monitored Bedrock token cost.
+enum BreachEvaluatedBy {
+    LEASE_MONITORING
+    TOKEN_POLL
+}
+
+/// The kind of insight computed for a breach's notification.
+enum InsightKind {
+    COMPOSITION
+    CHANGE
+    NEW_ENTRANT
+}
+
+/// Cumulative cost keyed by Cost Explorer service name.
+map ServiceBreakdown {
+    key: String
+    value: Double
+}
+
+/// One row of the paginated reported series.
+structure CostHistoryResultRow {
+    @required
+    timestamp: String
+
+    @required
+    billedCostAccrued: Double
+
+    /// The projection standing when this row re-based it. Absent where no rate
+    /// existed then.
+    predictedCostAtRefresh: Double
+
+    /// Absent where the deployment collects no breakdown, or on a fallback-served
+    /// lease — which is not the same as an empty breakdown.
+    serviceBreakdown: ServiceBreakdown
+}
+
+list CostHistoryResultRowList {
+    member: CostHistoryResultRow
+}
+
+/// One Bedrock token reading, flattened per region per model. `monitoredBedrockTokenCost` is
+/// lease-wide as of `timestamp`, so it repeats across the rows sharing one and
+/// summing it across rows double-counts. It prices only the tokens attributed to
+/// a model, each at the rate when it was counted; a token with no rate adds
+/// nothing. It is absent only on older rows saved unpriced.
+structure TokenSeriesRow {
+    @required
+    timestamp: String
+
+    @required
+    region: String
+
+    /// The Bedrock ModelId, or "unattributed" for counts that could not be matched
+    /// to a model; those counts are never priced into `monitoredBedrockTokenCost`.
+    @required
+    modelId: String
+
+    @required
+    input: Double
+
+    @required
+    output: Double
+
+    @required
+    cacheRead: Double
+
+    @required
+    cacheWrite: Double
+
+    monitoredBedrockTokenCost: Double
+}
+
+list TokenSeriesRowList {
+    member: TokenSeriesRow
+}
+
+/// The insight sent in a breach's notification, stored verbatim.
+structure BreachInsight {
+    @required
+    kind: InsightKind
+
+    @required
+    service: String
+
+    @required
+    amount: Double
+
+    /// `COMPOSITION` only: the service's share of the spend figure used for
+    /// the threshold comparison.
+    shareOfComparedSpend: Double
+
+    /// `CHANGE` only; signed, so a fall is negative.
+    changePercent: Double
+}
+
+/// A threshold that fired, from the stored breach records.
+structure BreachEntry {
+    @required
+    timestamp: String
+
+    @required
+    triggeredBy: BreachTriggeredBy
+
+    @required
+    action: BreachAction
+
+    /// The dollar threshold crossed. Absent on a `RATE`, `DURATION` or `EXPIRY` breach.
+    thresholdDollars: Double
+
+    /// The cap exceeded and its basis, on a `RATE` breach.
+    thresholdRate: Double
+
+    thresholdRateBasis: RateBasis
+
+    /// The hours before the lease's end, on a `DURATION` breach.
+    thresholdHoursRemaining: Double
+
+    @required
+    billedCostAtFire: Double
+
+    predictedCostAtFire: Double
+
+    /// The rate in force when the threshold fired, and its basis. Absent on a `MAX_SPEND`,
+    /// `DURATION` or `EXPIRY` breach, and where no rate was in force.
+    rateAtFire: Double
+
+    rateSourceAtFire: RateBasis
+
+    @required
+    evaluatedBy: BreachEvaluatedBy
+
+    /// Spend at the time of the breach where the evaluator compared a figure
+    /// other than the bill alone. Null on a `LEASE_MONITORING` breach. On a
+    /// `TOKEN_POLL` breach, the spend with the monitored Bedrock token
+    /// cost substituted for the billed Bedrock slice, never below the billed
+    /// total.
+    evaluatedSpendAtFire: Double
+
+    /// The monitored Bedrock term substituted into `evaluatedSpendAtFire`,
+    /// before its floor at the billed total. Absent on a `LEASE_MONITORING`
+    /// breach, and on a `TOKEN_POLL` breach where none was substituted: no
+    /// priced token row yet, or no billed Bedrock slice to replace.
+    monitoredBedrockTokenCostAtFire: Double
+
+    insight: BreachInsight
+}
+
+list BreachEntryList {
+    member: BreachEntry
+}
+
+/// One newest-observation per-service figure with its change since the prior
+/// observation.
+structure CurrentServiceEntry {
+    @required
+    service: String
+
+    @required
+    amount: Double
+
+    /// The service's share of `billedCostAccrued`.
+    @required
+    shareOfBilledCost: Double
+
+    /// Absent until a second observation exists to difference against.
+    changePercent: Double
+}
+
+list CurrentServiceEntryList {
+    member: CurrentServiceEntry
+}
+
+/// Lease-level headline figures, computed from the newest data. Everything here
+/// describes the instant given by `lastCheckedAt`, so it can be up to an hour old.
+structure CostHistoryCurrent {
+    @required
+    billedCostAccrued: Double
+
+    /// Never absent: with no rate it falls back to the figure the projection is
+    /// anchored on, the lease's `lastEvaluatedSpend` where Bedrock token monitoring
+    /// is on and that is present, and the reported total otherwise.
+    @required
+    predictedCost: Double
+
+    hourlyRate: Double
+
+    dailyRate: Double
+
+    /// The measurement window behind each rate, in hours — the only thing that
+    /// stops a rate extrapolated from a short window being read as established.
+    /// Absent exactly when the matching rate is.
+    hourlyRateWindowHours: Double
+
+    dailyRateWindowHours: Double
+
+    rateSource: RateBasis
+
+    /// Absent when the lease has no `maxSpend`, or the rate is zero or unavailable.
+    hoursToBudgetExhaustion: Double
+
+    @required
+    latestPeriodStart: String
+
+    @required
+    lastReportedAt: String
+
+    @required
+    lastCheckedAt: String
+
+    /// Newest per-service figures. Empty means no share can be expressed (no
+    /// breakdown collected, a fallback-served lease, a breakdown covering only part
+    /// of the reported total, or a non-positive `billedCostAccrued`), NOT that nothing was
+    /// spent. Where non-empty, shares sum to 1.00 because the smallest is a residual.
+    @required
+    services: CurrentServiceEntryList
+}
+
+/// The cost-summary payload.
+structure CostSummaryData {
+    /// Absent when no reading is available, which is not the same as a lease with
+    /// no spend.
+    current: CostHistoryCurrent
+}
+
+/// The cost-history payload, newest-first, so a client differencing it walks
+/// backwards.
+structure CostHistoryData {
+    /// The paginated reported series.
+    @required
+    result: CostHistoryResultRowList
+
+    nextPageIdentifier: ContinuationToken
+}
+
+/// The Bedrock token-history payload, newest-first, so a client differencing it
+/// walks backwards.
+structure BedrockTokenHistoryData {
+    /// The paginated token series, one entry per reading per region and model.
+    @required
+    result: TokenSeriesRowList
+
+    nextPageIdentifier: ContinuationToken
+}
+
+/// The breach-history payload, newest-first.
+structure BreachHistoryData {
+    /// The paginated thresholds that fired.
+    @required
+    result: BreachEntryList
+
+    nextPageIdentifier: ContinuationToken
 }
 
 // ---------------------------------------------------------------------------
@@ -618,17 +1026,179 @@ operation GetLeaseAssignments {
     ]
 }
 
+/// Get a lease's headline cost figures from its newest reading. `current` is absent
+/// when no reading is available.
+/// Authorization is the same as `GetLease` — Admin/Manager may read any lease, any
+/// other caller only one they own or are assigned to, 403 even when the lease does
+/// not exist so existence is not leaked. 404 for an authorized caller.
+@http(method: "GET", uri: "/leases/{leaseId}/costSummary", code: 200)
+@readonly
+@tags(["leases"])
+operation GetLeaseCostSummary {
+    input := {
+        @required
+        @httpLabel
+        leaseId: LeaseId
+    }
+
+    output := {
+        @required
+        status: JSendStatus
+
+        @required
+        data: CostSummaryData
+    }
+
+    errors: [
+        NotFoundError
+    ]
+}
+
+/// The input every lease history operation takes: the lease, a page, and an
+/// optional time range.
+@mixin
+structure LeaseHistoryPageInputMixin {
+    @required
+    @httpLabel
+    leaseId: LeaseId
+
+    @httpQuery("pageIdentifier")
+    pageIdentifier: ContinuationToken
+
+    @httpQuery("maxResults")
+    @range(min: 1, max: 100)
+    maxResults: Integer
+
+    /// Inclusive lower bound on row timestamps, as an ISO 8601 instant.
+    /// Any offset is accepted and normalized to UTC.
+    // `String` rather than `@timestamp`, as every timestamp in this model is.
+    @httpQuery("afterTimestamp")
+    afterTimestamp: String
+
+    /// Exclusive upper bound, same spelling as `afterTimestamp`. Must be later
+    /// than it.
+    @httpQuery("beforeTimestamp")
+    beforeTimestamp: String
+}
+
+/// Get a lease's reported cost series, newest-first.
+/// Authorization is the same as `GetLease` — Admin/Manager may read any lease, any
+/// other caller only one they own or are assigned to, 403 even when the lease does
+/// not exist so existence is not leaked. 404 for an authorized caller.
+///
+/// A page can return fewer than `maxResults` readings, or none, and still include a
+/// `nextPageIdentifier`. Keep requesting pages until `nextPageIdentifier` is absent.
+@http(method: "GET", uri: "/leases/{leaseId}/costHistory", code: 200)
+@readonly
+@tags(["leases"])
+// pageIdentifier/nextPageIdentifier: the pre-Smithy list operations' wire names, taken for consistency (not renamed to nextToken).
+@paginated(
+    inputToken: "pageIdentifier"
+    pageSize: "maxResults"
+    outputToken: "data.nextPageIdentifier"
+    items: "data.result"
+)
+operation GetLeaseCostHistory {
+    input := with [LeaseHistoryPageInputMixin] {}
+
+    output := {
+        @required
+        status: JSendStatus
+
+        @required
+        data: CostHistoryData
+    }
+
+    errors: [
+        NotFoundError
+    ]
+}
+
+/// Get a lease's Bedrock token series, newest-first: one entry per reading per
+/// region and model, with `maxResults` counting readings.
+/// Authorization is the same as `GetLease` — Admin/Manager may read any lease, any
+/// other caller only one they own or are assigned to, 403 even when the lease does
+/// not exist so existence is not leaked. 404 for an authorized caller.
+///
+/// A range's first change is measured from the reading before it: read it with
+/// `beforeTimestamp` set to the range start and `maxResults` 1, as a single request,
+/// not through a paginator (with the AWS CLI, `--no-paginate`). An empty page with a
+/// `nextPageIdentifier` means that reading could not be read.
+///
+/// A page can return fewer than `maxResults` readings, or none, and still include a
+/// `nextPageIdentifier`; it also ends early at a size limit. Keep requesting pages
+/// until `nextPageIdentifier` is absent.
+@http(method: "GET", uri: "/leases/{leaseId}/bedrockTokenHistory", code: 200)
+@readonly
+@tags(["leases"])
+// pageIdentifier/nextPageIdentifier: the pre-Smithy list operations' wire names, taken for consistency (not renamed to nextToken).
+@paginated(
+    inputToken: "pageIdentifier"
+    pageSize: "maxResults"
+    outputToken: "data.nextPageIdentifier"
+    items: "data.result"
+)
+operation GetLeaseBedrockTokenHistory {
+    input := with [LeaseHistoryPageInputMixin] {}
+
+    output := {
+        @required
+        status: JSendStatus
+
+        @required
+        data: BedrockTokenHistoryData
+    }
+
+    errors: [
+        NotFoundError
+    ]
+}
+
+/// Get a lease's breach history: the thresholds that fired, newest-first.
+/// Authorization is the same as `GetLease` — Admin/Manager may read any lease, any
+/// other caller only one they own or are assigned to, 403 even when the lease does
+/// not exist so existence is not leaked. 404 for an authorized caller.
+///
+/// A page can return fewer than `maxResults` breaches, or none, and still include a
+/// `nextPageIdentifier`. Keep requesting pages until `nextPageIdentifier` is absent.
+@http(method: "GET", uri: "/leases/{leaseId}/breachHistory", code: 200)
+@readonly
+@tags(["leases"])
+// pageIdentifier/nextPageIdentifier: the pre-Smithy list operations' wire names, taken for consistency (not renamed to nextToken).
+@paginated(
+    inputToken: "pageIdentifier"
+    pageSize: "maxResults"
+    outputToken: "data.nextPageIdentifier"
+    items: "data.result"
+)
+operation GetLeaseBreachHistory {
+    input := with [LeaseHistoryPageInputMixin] {}
+
+    output := {
+        @required
+        status: JSendStatus
+
+        @required
+        data: BreachHistoryData
+    }
+
+    errors: [
+        NotFoundError
+    ]
+}
+
 // ---------------------------------------------------------------------------
 // Lease request & update (body-bearing writes; keep a strict Zod re-parse)
 // ---------------------------------------------------------------------------
 // The pre-Smithy handler returns the raw `newLease`. The request body is re-parsed
 // by Zod for unknown-key rejection, the per-principal-uniqueness rule, and refined
-// formats (see `zod-validation-supplements.md`). Cap constant:
-// `MAX_USER_MANAGED_ASSIGNMENTS`.
+// formats (see `zod-validation-supplements.md`). Cap constant: `MAX_ASSIGNMENTS`.
 /// Request a new lease from a template. Returns the created lease (201) WITHOUT a
 /// `leaseId`. A cross-user (on-behalf) request is Admin/Manager only. `assignments`
-/// is capped at 19. New group-to-lease associations are rejected when
-/// `leases.groupAssignmentMode` is `NONE`; user assignments remain allowed.
+/// accepts up to 20 principals with one permission set each, but the final
+/// desired state is capped at 20 total including the required owner. New
+/// group-to-lease associations are rejected when `leases.groupAssignmentMode`
+/// is `NONE`; user assignments remain allowed.
 ///
 /// Retry: NOT `@idempotent`. Requesting a lease allocates an account and publishes
 /// events; a retried request creates a second lease.
@@ -674,7 +1244,7 @@ operation RequestLease {
 
         comments: String
 
-        @length(max: 19)
+        @length(max: 20)
         assignments: DesiredAssignmentList
     }
 
@@ -699,9 +1269,9 @@ operation RequestLease {
 // are enforced by the Zod re-parse.
 /// Update a monitored (active) lease. PATCH semantics: every body member is
 /// optional. Returns the updated lease (200) WITHOUT a `leaseId`. The nullable
-/// members (`maxSpend`, `expirationDate`, `costReportGroup`) accept an explicit
-/// `null` to CLEAR the value. Non-monitored leases are rejected 400
-/// (`ValidationError`); a missing lease is 404.
+/// members (`maxSpend`, `expirationDate`, `costReportGroup`, and `rateLimits`)
+/// accept an explicit `null` to CLEAR the value. Non-monitored leases are
+/// rejected 400 (`ValidationError`); a missing lease is 404.
 @http(method: "PATCH", uri: "/leases/{leaseId}", code: 200)
 @tags(["leases"])
 @examples([
@@ -759,6 +1329,40 @@ operation UpdateLease {
         costReportGroup: String
 
         allowOwnerToShareLease: Boolean
+
+        /// Replace the lease's default permission set.
+        defaultPermissionSetArn: PermissionSetArn
+
+        /// Replace the permission sets available for assignment overrides.
+        allowedPermissionSetArns: PermissionSetArnList
+
+        /// Turn Sandbox Spaces on or off for this lease.
+        sandboxSpacesEnabled: Boolean
+
+        /// Replace the lease's Sandbox Spaces model subset. Clearable: an explicit
+        /// null inherits every enabled catalog model.
+        allowedModelIds: AgentModelIdList
+
+        /// Replace the model preselected when a chat opens. Clearable with null.
+        defaultModelId: String
+
+        /// Replace the spend-rate limits. Clearable: the edit forms send an
+        /// explicit null, which the client re-injects into the body (the
+        /// serializer omits nulls). An empty list also clears. A non-empty list
+        /// requires predictive budget controls on. Omitting it in a request
+        /// that sets `predictiveBudgetEnabled` to false clears the stored limits.
+        rateLimits: RateLimitList
+
+        /// Turn predictive budget controls on or off. Turning them on requires
+        /// `allowPredictiveBudgetControls`. While they are off, a `PREDICTED`
+        /// budget threshold or a non-empty `rateLimits` list is rejected.
+        predictiveBudgetEnabled: Boolean
+
+        /// Turn Bedrock token monitoring on or off. Turning it on requires
+        /// `allowBedrockTokenMonitoring` or `sandboxSpacesEnabled` true. Must be
+        /// true while `sandboxSpacesEnabled` is true. Send false in a request that
+        /// turns `sandboxSpacesEnabled` off while `allowBedrockTokenMonitoring` is off.
+        bedrockTokenMonitoringEnabled: Boolean
     }
 
     output := {
@@ -772,6 +1376,7 @@ operation UpdateLease {
     errors: [
         ValidationError
         NotFoundError
+        ConflictError
     ]
 }
 
@@ -898,12 +1503,14 @@ operation UnfreezeLease {
     ]
 }
 
-// Cap constant: `MAX_USER_MANAGED_ASSIGNMENTS`. The body is re-parsed by Zod for
+// Cap constant: `MAX_ASSIGNMENTS`. The body is re-parsed by Zod for
 // unknown-key rejection and per-principal uniqueness.
-/// Replace a lease's desired principal assignments (declarative). Accepted
+/// Replace a lease's desired principal assignments (declarative). Each
+/// principal selects exactly one permission set. Accepted
 /// asynchronously: success is 202 with `{ desiredCount }` — the assignment worker
 /// reconciles out of band. `@idempotent`: PUT sets the desired set, so a retry
-/// converges to the same state. `assignments` is capped at 19. Owner callers require
+/// converges to the same state. `assignments` is capped at 20 principals, including
+/// the lease owner. Owner callers require
 /// lease sharing enabled globally and on the lease (else 403). When group assignment
 /// mode is `NONE`, existing group-to-lease associations may remain or be removed,
 /// but new associations are rejected. 404 when missing; 409 when the lease is not
@@ -936,7 +1543,7 @@ operation UpdateLeaseAssignments {
         leaseId: LeaseId
 
         @required
-        @length(max: 19)
+        @length(max: 20)
         assignments: DesiredAssignmentList
     }
 

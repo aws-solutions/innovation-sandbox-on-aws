@@ -2,18 +2,31 @@
 title: General
 ---
 
-Each group of settings has its own **Save** button, so you can update one group at a time. Admins can edit settings; managers can only view them. Tabs with never-saved settings show a badge with the count, so you can find and complete initial setup.
+Manage maintenance mode and the terms users accept when requesting a lease. View configuration set at deployment time.
 
-### [Maintenance Mode](/settings#maintenance)
+Administrators can edit settings. Managers can view them.
 
-Turn maintenance mode on when you want to deploy, modify, delete, or upgrade the solution. While ON, managers and sandbox users temporarily lose access to the UI; Admins keep full access. New deployments start with Maintenance mode ON, so managers and sandbox users cannot access the UI until an Admin saves this setting OFF.
+## [Maintenance mode](/settings#setting-maintenance-enabled)
+
+Turn on **Maintenance mode** while updating the deployment. Managers and users lose access to Innovation Sandbox, but administrators retain access. Existing sandbox accounts keep running.
+
+New deployments start with maintenance mode on. To give managers and users access, turn it off and choose **Save changes**.
 
 For more information, see [Managing maintenance mode](https://docs.aws.amazon.com/solutions/latest/innovation-sandbox-on-aws/administrator-guide.html#maintenance-mode) in the implementation guide.
 
-### [Terms of Service](/settings#terms-of-service)
+## [Terms of service](/settings#setting-termsOfService-content)
 
-The terms a user must agree to before requesting a lease.
+Enter the conditions users must accept before requesting a sandbox account in **Terms of service content**.
 
-### [Notification](/settings#notification)
+## Deployment settings
 
-The email address notifications are sent from. Leave it empty to disable email notifications.
+These values are configured at deployment time and cannot be changed on this page:
+
+- **Solution version**: The installed version of Innovation Sandbox.
+- **AWS access portal URL**: The sign-in portal for accessing AWS accounts.
+- **Innovation Sandbox managed regions**: The AWS Regions managed by the solution.
+- **Bedrock inference profile patterns**: The configured patterns for Amazon Bedrock cross-Region inference.
+
+## Reviewing defaults
+
+An information icon marks a section whose default settings need review. Review the values and choose **Save changes**, even if you keep the defaults.

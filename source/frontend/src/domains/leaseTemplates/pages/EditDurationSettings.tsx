@@ -91,7 +91,7 @@ export const EditDurationSettings = () => {
       reset({
         maxDurationEnabled: !!leaseTemplate.leaseDurationInHours,
         leaseDurationInHours: leaseTemplate.leaseDurationInHours,
-        durationThresholds: leaseTemplate.durationThresholds,
+        durationThresholds: leaseTemplate.durationThresholds ?? [],
       });
     }
   }, [leaseTemplate, reset]);
@@ -179,6 +179,7 @@ export const EditDurationSettings = () => {
               <DurationSettingsForm
                 requireMaxDuration={requireMaxDuration}
                 globalMaxDurationHours={globalMaxDurationHours}
+                predictiveBudgetEnabled={leaseTemplate.predictiveBudgetEnabled}
               />
             </Container>
 

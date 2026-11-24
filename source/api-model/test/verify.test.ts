@@ -13,11 +13,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// Plain ESM scripts without type declarations; each @ts-expect-error suppresses
-// the missing-types diagnostic on that import.
-// @ts-expect-error
-import { gradleCommand } from "../scripts/lib/gradle.mjs";
-// @ts-expect-error
 import {
   evaluateCompatibility,
   loadExceptions,
@@ -26,7 +21,7 @@ import {
   parseDiffEvents,
   verifyCompatibility,
 } from "../scripts/lib/compatibility.mjs";
-// @ts-expect-error
+import { gradleCommand } from "../scripts/lib/gradle.mjs";
 import { parseArguments as parseCompatibilityArgs } from "../scripts/verify-compatibility.mjs";
 
 let tmp: string;

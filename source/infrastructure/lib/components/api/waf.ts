@@ -142,12 +142,15 @@ export class Waf extends Construct {
               vendorName: "AWS",
               excludedRules: [
                 {
+                  // Valid JSON bodies can exceed 8 KB; terms of service allows 10,000 characters.
                   name: "SizeRestrictions_BODY",
                 },
                 {
+                  // Opaque continuation tokens have no 2 KB contract limit.
                   name: "SizeRestrictions_QUERYSTRING",
                 },
                 {
+                  // Legitimate free text can resemble XSS, causing false-positive blocks.
                   name: "CrossSiteScripting_BODY",
                 },
               ],

@@ -3,6 +3,7 @@
 import { z } from "zod";
 
 import { BaseLambdaEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/base-lambda-environment.js";
+import { AwsAccountIdSchema } from "@amzn/innovation-sandbox-commons/utils/zod.js";
 
 export const CostReportingLambdaEnvironmentSchema =
   BaseLambdaEnvironmentSchema.extend({
@@ -12,9 +13,9 @@ export const CostReportingLambdaEnvironmentSchema =
     ORG_MGT_ROLE_ARN: z.string(),
     ISB_TAG_NAME: z.string(),
     ISB_TAG_VALUE: z.string(),
-    IDC_ACCOUNT_ID: z.string(),
-    ORG_MGT_ACCOUNT_ID: z.string(),
-    HUB_ACCOUNT_ID: z.string(),
+    IDC_ACCOUNT_ID: AwsAccountIdSchema,
+    ORG_MGT_ACCOUNT_ID: AwsAccountIdSchema,
+    HUB_ACCOUNT_ID: AwsAccountIdSchema,
   });
 
 export type CostReportingLambdaEnvironment = z.infer<

@@ -28,7 +28,7 @@ import { SqsEventSource } from "aws-cdk-lib/aws-lambda-event-sources";
 import { Queue, QueueEncryption } from "aws-cdk-lib/aws-sqs";
 import { StateMachine } from "aws-cdk-lib/aws-stepfunctions";
 import { Construct } from "constructs";
-import path from "path";
+import path from "node:path";
 
 const PROCESSOR_LAMBDA_TIMEOUT_MINUTES = 5;
 

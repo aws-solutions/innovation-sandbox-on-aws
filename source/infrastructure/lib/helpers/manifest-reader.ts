@@ -1,8 +1,8 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
-import fs from "fs";
 import yaml from "js-yaml";
-import path from "path";
+import fs from "node:fs";
+import path from "node:path";
 
 export interface SolutionManifest {
   name: string;

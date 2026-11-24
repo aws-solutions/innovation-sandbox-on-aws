@@ -16,6 +16,7 @@ import {
 import { PrincipalStore } from "@amzn/innovation-sandbox-commons/data/principal/principal-store.js";
 import { SandboxAccountStore } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account-store.js";
 import { PersistedSandboxAccount } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account.js";
+import { SandboxSpacesUsageStore } from "@amzn/innovation-sandbox-commons/data/sandbox-spaces-usage/sandbox-spaces-usage-store.js";
 import {
   collect,
   stream,
@@ -27,10 +28,11 @@ import {
   CleanupReasonSchema,
 } from "@amzn/innovation-sandbox-commons/events/clean-account-request.js";
 import { LeaseApprovedEvent } from "@amzn/innovation-sandbox-commons/events/lease-approved-event.js";
+import { BudgetExceededDetectedBy } from "@amzn/innovation-sandbox-commons/events/lease-budget-exceeded-alert.js";
 import { LeaseDeniedEvent } from "@amzn/innovation-sandbox-commons/events/lease-denied-event.js";
 import {
   LeaseFrozenEvent,
-  LeaseFrozenReason,
+  LeaseFrozenReasonInput,
 } from "@amzn/innovation-sandbox-commons/events/lease-frozen-event.js";
 import { LeaseProvisioningFailedEvent } from "@amzn/innovation-sandbox-commons/events/lease-provisioning-failed-event.js";
 import { LeaseRequestedEvent } from "@amzn/innovation-sandbox-commons/events/lease-requested-event.js";
@@ -44,12 +46,16 @@ import { IdcService } from "@amzn/innovation-sandbox-commons/isb-services/idc-se
 import {
   acquireAssignmentProcessingLock,
   enrichDesiredAssignments,
+  IneligibleLeaseOwnerError,
+  normalizeAssignmentsWithOwner,
   publishAssignmentProcessingRequest,
   releaseAssignmentProcessingLock,
   triggerAssignmentProcessing,
 } from "@amzn/innovation-sandbox-commons/isb-services/lease-assignment/index.js";
 import { OrganizationsTaggingService } from "@amzn/innovation-sandbox-commons/isb-services/organizations-tagging-service.js";
+import type { ResolvedPermissionSetConfig } from "@amzn/innovation-sandbox-commons/isb-services/permission-set/index.js";
 import { SandboxOuService } from "@amzn/innovation-sandbox-commons/isb-services/sandbox-ou-service.js";
+import { getLeaseSandboxSpacesEstimatedTokenCost } from "@amzn/innovation-sandbox-commons/isb-services/sandbox-spaces-usage/index.js";
 import {
   ReasonForQuarantine,
   SubscribableLog,
@@ -75,6 +81,7 @@ import {
   parseDatetime,
 } from "@amzn/innovation-sandbox-commons/utils/time-utils.js";
 import { Transaction } from "@amzn/innovation-sandbox-commons/utils/transactions.js";
+import { resolveBedrockTokenMonitoringEnabled } from "@amzn/innovation-sandbox-shared/types/configuration.js";
 import {
   DesiredAssignment,
   ExpiredLeaseStatus,
@@ -89,11 +96,12 @@ import { IsbOu } from "@amzn/innovation-sandbox-shared/types/sandbox-account.js"
 import {
   type IsbUser,
   getUserEmail,
+  getUserLabel,
   isIdcUser,
   isSyntheticM2mEmail,
 } from "@amzn/innovation-sandbox-shared/utils/auth-utils.js";
 import { Tracer } from "@aws-lambda-powertools/tracer";
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 
 export class InnovationSandboxError extends Error {}
 export class NoAccountsAvailableError extends InnovationSandboxError {}
@@ -210,6 +218,7 @@ export class InnovationSandbox {
       targetUser: IsbUser;
       createdBy?: string;
       assignments?: DesiredAssignment[];
+      permissionSetConfig: ResolvedPermissionSetConfig;
     },
     context: IsbContext<{
       globalConfig: GlobalConfig;
@@ -231,6 +240,7 @@ export class InnovationSandbox {
       targetUser,
       createdBy,
       assignments = [],
+      permissionSetConfig,
     } = props;
     const {
       logger,
@@ -264,18 +274,25 @@ export class InnovationSandbox {
       );
     }
 
-    // Always include the owner in desiredAssignments from creation time.
-    // The owner's principalId comes from the resolved target user.
+    // Always include the owner in desiredAssignments from creation time. Use
+    // the default only when the caller did not explicitly choose an owner
+    // assignment.
     if (!isIdcUser(targetUser)) {
       throw new Error("Target user must be an IDC user.");
     }
-    const ownerAssignment = {
-      principalId: targetUser.userId,
-      principalType: "USER" as const,
-    };
+    const { defaultPermissionSetArn } = permissionSetConfig;
+    const normalizedAssignments = assignments.map((assignment) => ({
+      ...assignment,
+      permissionSetArn: assignment.permissionSetArn ?? defaultPermissionSetArn,
+    }));
+    const assignmentsWithOwner = normalizeAssignmentsWithOwner({
+      assignments: normalizedAssignments,
+      ownerPrincipalId: targetUser.userId,
+      defaultPermissionSetArn,
+    });
 
     const enrichedAssignments = await enrichDesiredAssignments(
-      [ownerAssignment, ...assignments],
+      assignmentsWithOwner,
       {
         principalStore,
         idcService: context.idcService,
@@ -299,6 +316,22 @@ export class InnovationSandbox {
       blueprintId: leaseTemplate.blueprintId,
       blueprintName: leaseTemplate.blueprintName,
       allowOwnerToShareLease: leaseTemplate.allowOwnerToShareLease,
+      rateLimits: leaseTemplate.rateLimits,
+      predictiveBudgetEnabled: leaseTemplate.predictiveBudgetEnabled,
+      // Token polling selects leases by this snapshot, so a lease with a
+      // Sandbox Space is always monitored; the template's saved preference is
+      // left unchanged.
+      bedrockTokenMonitoringEnabled: resolveBedrockTokenMonitoringEnabled({
+        configured: leaseTemplate.bedrockTokenMonitoringEnabled,
+        sandboxSpacesEnabled: leaseTemplate.sandboxSpacesEnabled,
+      }),
+      sandboxSpacesEnabled: leaseTemplate.sandboxSpacesEnabled,
+      allowedModelIds: leaseTemplate.allowedModelIds,
+      defaultModelId: leaseTemplate.defaultModelId,
+      defaultPermissionSetArn,
+      allowedPermissionSetArns: permissionSetConfig.allowedPermissionSetArns
+        ? [...permissionSetConfig.allowedPermissionSetArns]
+        : undefined,
       desiredAssignments: enrichedAssignments,
       totalCostAccrued: 0,
       approvedBy: null,
@@ -355,7 +388,7 @@ export class InnovationSandbox {
   public static async freezeLease(
     props: {
       lease: PersistedLease;
-      reason: LeaseFrozenReason;
+      reason: LeaseFrozenReasonInput;
     },
     context: IsbContext<{
       leaseStore: LeaseStore;
@@ -408,6 +441,8 @@ export class InnovationSandbox {
         leaseStore.transactionalUpdate({
           ...lease,
           status: "Frozen",
+          // A new transition: the marker is written again once it finishes.
+          lifecycleDispatch: null,
           // `lease` was read before the lock was taken and this is a full-item
           // put, so the lock must be carried through or the write erases it.
           resourceLock: assignmentLock.lock,
@@ -456,6 +491,12 @@ export class InnovationSandbox {
         reason: reason,
       }),
     );
+    // Last: records that the follow-up work above was dispatched (see LeaseLifecycleDispatchSchema).
+    await leaseStore.recordLifecycleDispatch({
+      leaseId: lease.uuid,
+      userEmail: lease.userEmail,
+      intent: "FREEZE",
+    });
   }
 
   @logErrors
@@ -464,6 +505,8 @@ export class InnovationSandbox {
       lease: PersistedMonitoredLease;
       expiredStatus: ExpiredLeaseStatus;
       autoCleanup?: boolean; //default true
+      budgetExceededBy?: BudgetExceededDetectedBy;
+      budgetTotalSpend?: number;
     },
     context: IsbContext<{
       leaseStore: LeaseStore;
@@ -474,9 +517,10 @@ export class InnovationSandbox {
       blueprintStore: BlueprintStore;
       blueprintDeploymentService: BlueprintDeploymentService;
       organizationsTaggingService: OrganizationsTaggingService;
+      sandboxSpacesUsageStore: SandboxSpacesUsageStore;
     }>,
   ) {
-    const { lease, expiredStatus } = props;
+    const { lease, expiredStatus, budgetExceededBy, budgetTotalSpend } = props;
     const autoCleanup = props.autoCleanup ?? true;
     const {
       logger,
@@ -486,6 +530,7 @@ export class InnovationSandbox {
       orgsService,
       eventBridgeClient,
       globalConfig,
+      sandboxSpacesUsageStore,
     } = context;
 
     addCorrelationContext(logger, searchableLeaseProperties(lease));
@@ -538,12 +583,37 @@ export class InnovationSandbox {
       );
     }
 
+    const agentSpend = await getLeaseSandboxSpacesEstimatedTokenCost(
+      { leaseId: lease.uuid },
+      { sandboxSpacesUsageStore, logger },
+    ).catch((error: unknown) => {
+      logger.warn("Failed to read Sandbox Spaces usage for lease", {
+        ...searchableLeaseProperties(lease),
+        error,
+      });
+      return undefined;
+    });
+
+    const leaseTtl = calculateTtlInEpochSeconds(globalConfig.leases.ttl);
     await leaseStore.update({
       ...lease,
       status: expiredStatus,
       endDate: nowAsIsoDatetimeString(),
-      ttl: calculateTtlInEpochSeconds(globalConfig.leases.ttl),
+      ttl: leaseTtl,
+      // A new transition: the marker is written again once it finishes.
+      lifecycleDispatch: null,
     });
+    await sandboxSpacesUsageStore
+      .stampLeaseTtl(lease.uuid, leaseTtl)
+      .catch((error: unknown) => {
+        logger.warn(
+          "Failed to stamp TTL on Sandbox Spaces usage items for lease",
+          {
+            ...searchableLeaseProperties(lease),
+            error,
+          },
+        );
+      });
 
     await triggerAssignmentProcessing(
       { leaseId: lease.uuid, userEmail: lease.userEmail, intent: "TERMINATE" },
@@ -557,7 +627,11 @@ export class InnovationSandbox {
           uuid: lease.uuid,
         },
         accountId: account.awsAccountId,
-        reason: getLeaseTerminatedReason(expiredStatus, lease),
+        reason: getLeaseTerminatedReason(
+          expiredStatus,
+          lease,
+          budgetTotalSpend,
+        ),
       }),
     );
 
@@ -575,10 +649,19 @@ export class InnovationSandbox {
         actualDurationHours: now().diff(parseDatetime(lease.startDate), "hours")
           .hours,
         reasonForTermination: expiredStatus,
+        agentSpend,
+        budgetExceededBy,
+        budgetTotalSpend,
       } satisfies SubscribableLog,
     );
 
     await eventBridgeClient.sendIsbEvents(tracer, ...eventsToSend);
+    // Last: records that the follow-up work above was dispatched (see LeaseLifecycleDispatchSchema).
+    await leaseStore.recordLifecycleDispatch({
+      leaseId: lease.uuid,
+      userEmail: lease.userEmail,
+      intent: "TERMINATE",
+    });
   }
 
   @logErrors
@@ -808,58 +891,15 @@ export class InnovationSandbox {
     // Acquire an available account from the pool and get user info
     const [freeAccount, leaseUser] = await Promise.all([
       InnovationSandbox.acquireAvailableAccount(context),
-      idcService.getUserFromEmail(lease.userEmail),
+      idcService.getIsbMemberFromEmail(lease.userEmail),
     ]);
 
     if (!leaseUser) {
-      throw new CouldNotRetrieveUserError(
-        "Unable to retrieve user information.",
-      );
+      throw new IneligibleLeaseOwnerError(lease.userEmail);
     }
 
     // Simple conditional: no blueprint vs has blueprint
-    if (!lease.blueprintId) {
-      // No blueprint: move account and grant access immediately
-      const approvedLease: PersistedMonitoredLease = {
-        ...lease,
-        approvedBy: approver,
-        awsAccountId: freeAccount.awsAccountId,
-        status: "Active",
-        startDate: nowAsIsoDatetimeString(), // Placeholder - will be set in publishLease()
-        totalCostAccrued: 0,
-        lastCheckedDate: nowAsIsoDatetimeString(),
-      };
-
-      const transactionResult = await new Transaction(
-        leaseStore.transactionalUpdate(approvedLease),
-        orgsService.transactionalMoveAccount(
-          {
-            ...freeAccount,
-            currentLease: {
-              leaseId: lease.uuid,
-              ownerEmail: lease.userEmail,
-            },
-          },
-          "Available",
-          "Active",
-        ),
-      ).complete();
-
-      logger.info(
-        "Lease approved without blueprint. Status: Active. Granting user access immediately.",
-        {
-          ...searchableLeaseProperties(approvedLease),
-          ...searchableAccountProperties(freeAccount),
-        },
-      );
-
-      await InnovationSandbox.publishLease(
-        { lease: transactionResult.newItem },
-        context,
-      );
-
-      return transactionResult;
-    } else {
+    if (lease.blueprintId) {
       // Has blueprint: validate, move account, set Provisioning status, initiate deployment
       logger.info(
         `Lease has blueprint attached (${lease.blueprintId}). Validating blueprint before approval.`,
@@ -941,6 +981,47 @@ export class InnovationSandbox {
 
       // publishLease() called by Step Functions after successful deployment
       return transactionResult;
+    } else {
+      // No blueprint: move account and grant access immediately
+      const approvedLease: PersistedMonitoredLease = {
+        ...lease,
+        approvedBy: approver,
+        awsAccountId: freeAccount.awsAccountId,
+        status: "Active",
+        startDate: nowAsIsoDatetimeString(), // Placeholder - will be set in publishLease()
+        totalCostAccrued: 0,
+        lastCheckedDate: nowAsIsoDatetimeString(),
+      };
+
+      const transactionResult = await new Transaction(
+        leaseStore.transactionalUpdate(approvedLease),
+        orgsService.transactionalMoveAccount(
+          {
+            ...freeAccount,
+            currentLease: {
+              leaseId: lease.uuid,
+              ownerEmail: lease.userEmail,
+            },
+          },
+          "Available",
+          "Active",
+        ),
+      ).complete();
+
+      logger.info(
+        "Lease approved without blueprint. Status: Active. Granting user access immediately.",
+        {
+          ...searchableLeaseProperties(approvedLease),
+          ...searchableAccountProperties(freeAccount),
+        },
+      );
+
+      await InnovationSandbox.publishLease(
+        { lease: transactionResult.newItem },
+        context,
+      );
+
+      return transactionResult;
     }
   }
 
@@ -981,20 +1062,21 @@ export class InnovationSandbox {
 
     InnovationSandbox.assertAssigneeNotM2m(lease, logger);
 
-    const leaseUser = await idcService.getUserFromEmail(lease.userEmail);
+    const leaseUser = await idcService.getIsbMemberFromEmail(lease.userEmail);
     if (!leaseUser) {
-      throw new CouldNotRetrieveUserError(
-        "Unable to retrieve user information.",
-      );
+      throw new IneligibleLeaseOwnerError(lease.userEmail);
     }
 
     // Set lease to Active and set startDate/expirationDate when user gets access
+    const startDate = nowAsIsoDatetimeString();
     const updatedLease: PersistedMonitoredLease = {
       ...lease,
       status: "Active",
-      startDate: nowAsIsoDatetimeString(),
+      startDate,
       expirationDate: lease.leaseDurationInHours
-        ? now().plus({ hour: lease.leaseDurationInHours }).toISO()
+        ? parseDatetime(startDate)
+            .plus({ hour: lease.leaseDurationInHours })
+            .toISO()!
         : undefined,
     };
 
@@ -1012,6 +1094,13 @@ export class InnovationSandbox {
         userEmail: lease.userEmail,
         intent: "PUBLISH",
         desiredAssignments: preApprovalAssignments,
+        // Reuse the owner validated above instead of resolving it again.
+        resolvedOwner: {
+          principalId: leaseUser.userId,
+          principalType: "USER",
+          displayName: getUserLabel(leaseUser),
+          email: leaseUser.email,
+        },
       },
       {
         leaseStore,
@@ -1246,6 +1335,7 @@ export class InnovationSandbox {
       blueprintStore: BlueprintStore;
       blueprintDeploymentService: BlueprintDeploymentService;
       organizationsTaggingService: OrganizationsTaggingService;
+      sandboxSpacesUsageStore: SandboxSpacesUsageStore;
     }>,
   ) {
     const { sandboxAccount } = props;
@@ -1324,6 +1414,7 @@ export class InnovationSandbox {
       blueprintStore: BlueprintStore;
       blueprintDeploymentService: BlueprintDeploymentService;
       organizationsTaggingService: OrganizationsTaggingService;
+      sandboxSpacesUsageStore: SandboxSpacesUsageStore;
     }>,
   ) {
     const { accountId, currentOu, reason, reasonForQuarantine } = props;
@@ -1395,6 +1486,7 @@ export class InnovationSandbox {
       blueprintStore: BlueprintStore;
       blueprintDeploymentService: BlueprintDeploymentService;
       organizationsTaggingService: OrganizationsTaggingService;
+      sandboxSpacesUsageStore: SandboxSpacesUsageStore;
     }>,
     props: {
       awsAccountId: string;

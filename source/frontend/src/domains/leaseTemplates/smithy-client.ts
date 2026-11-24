@@ -8,7 +8,12 @@
 // follows the same shape.
 import { DateTime } from "luxon";
 
-import type { LeaseTemplate as SmithyLeaseTemplate } from "@amzn/innovation-sandbox-api-client";
+import type {
+  BudgetThreshold as SmithyBudgetThreshold,
+  DurationThreshold as SmithyDurationThreshold,
+  LeaseTemplate as SmithyLeaseTemplate,
+  RateLimitEntry as SmithyRateLimitEntry,
+} from "@amzn/innovation-sandbox-api-client";
 import {
   CreateLeaseTemplateCommand,
   CreateLeaseTemplateCommandInput,
@@ -51,6 +56,29 @@ function toIsoString(value: Date | undefined): string | undefined {
     : (DateTime.fromJSDate(value, { zone: "utc" }).toISO() ?? undefined);
 }
 
+function mapBudgetThreshold(threshold: SmithyBudgetThreshold) {
+  return {
+    dollarsSpent: threshold.dollarsSpent,
+    action: threshold.action,
+    triggerOn: threshold.triggerOn,
+  } satisfies Record<keyof SmithyBudgetThreshold, unknown>;
+}
+
+function mapRateLimitEntry(entry: SmithyRateLimitEntry) {
+  return {
+    basis: entry.basis,
+    rate: entry.rate,
+    action: entry.action,
+  } satisfies Record<keyof SmithyRateLimitEntry, unknown>;
+}
+
+function mapDurationThreshold(threshold: SmithyDurationThreshold) {
+  return {
+    hoursRemaining: threshold.hoursRemaining,
+    action: threshold.action,
+  } satisfies Record<keyof SmithyDurationThreshold, unknown>;
+}
+
 // The adapter maps and validates the generated response into the frontend-owned
 // model. Two representation transforms remain:
 //   1. Faithful restore: `@timestamp` members deserialize to `Date` objects; the
@@ -63,7 +91,7 @@ function toIsoString(value: Date | undefined): string | undefined {
 function mapLeaseTemplate(template: SmithyLeaseTemplate) {
   // Make every generated member explicit so a new optional field cannot be
   // silently dropped at the frontend boundary.
-  return {
+  const generatedTemplate = {
     uuid: template.uuid,
     name: template.name,
     description: template.description,
@@ -71,27 +99,31 @@ function mapLeaseTemplate(template: SmithyLeaseTemplate) {
     createdBy: template.createdBy,
     visibility: template.visibility,
     maxSpend: template.maxSpend,
-    budgetThresholds: template.budgetThresholds?.map((threshold) => ({
-      dollarsSpent: threshold.dollarsSpent,
-      action: threshold.action,
-    })),
+    budgetThresholds: template.budgetThresholds?.map(mapBudgetThreshold),
     leaseDurationInHours: template.leaseDurationInHours,
-    durationThresholds: template.durationThresholds?.map((threshold) => ({
-      hoursRemaining: threshold.hoursRemaining,
-      action: threshold.action,
-    })),
+    durationThresholds: template.durationThresholds?.map(mapDurationThreshold),
     costReportGroup: template.costReportGroup,
     blueprintId: template.blueprintId ?? undefined,
     blueprintName: template.blueprintName ?? undefined,
     allowOwnerToShareLease: template.allowOwnerToShareLease,
+    predictiveBudgetEnabled: template.predictiveBudgetEnabled,
+    bedrockTokenMonitoringEnabled: template.bedrockTokenMonitoringEnabled,
+    sandboxSpacesEnabled: template.sandboxSpacesEnabled,
+    allowedModelIds: template.allowedModelIds,
+    defaultModelId: template.defaultModelId,
+    rateLimits: template.rateLimits?.map(mapRateLimitEntry),
+    defaultPermissionSet: template.defaultPermissionSet,
+    allowedPermissionSets: template.allowedPermissionSets,
     meta: template.meta
       ? {
           createdTime: toIsoString(template.meta.createdTime),
           lastEditTime: toIsoString(template.meta.lastEditTime),
-          schemaVersion: template.meta.schemaVersion,
+          schemaVersion: template.meta.schemaVersion, // NOSONAR typescript:S1874: Preserve schemaVersion through the API metadata migration and read-modify-write flow.
         }
       : undefined,
   } satisfies Record<keyof SmithyLeaseTemplate, unknown>;
+
+  return generatedTemplate;
 }
 
 function toLeaseTemplate(template: SmithyLeaseTemplate): LeaseTemplateView {
@@ -113,6 +145,14 @@ function toCreateInput(
     costReportGroup: leaseTemplate.costReportGroup,
     blueprintId: leaseTemplate.blueprintId ?? undefined,
     allowOwnerToShareLease: leaseTemplate.allowOwnerToShareLease,
+    predictiveBudgetEnabled: leaseTemplate.predictiveBudgetEnabled,
+    bedrockTokenMonitoringEnabled: leaseTemplate.bedrockTokenMonitoringEnabled,
+    sandboxSpacesEnabled: leaseTemplate.sandboxSpacesEnabled,
+    allowedModelIds: leaseTemplate.allowedModelIds,
+    defaultModelId: leaseTemplate.defaultModelId,
+    rateLimits: leaseTemplate.rateLimits,
+    defaultPermissionSetArn: leaseTemplate.defaultPermissionSetArn,
+    allowedPermissionSetArns: leaseTemplate.allowedPermissionSetArns,
   };
 }
 
@@ -146,6 +186,16 @@ function toUpdateInput(
     costReportGroup: body.costReportGroup,
     blueprintId: body.blueprintId ?? undefined,
     allowOwnerToShareLease: body.allowOwnerToShareLease,
+    predictiveBudgetEnabled: body.predictiveBudgetEnabled,
+    bedrockTokenMonitoringEnabled: body.bedrockTokenMonitoringEnabled,
+    sandboxSpacesEnabled: body.sandboxSpacesEnabled,
+    allowedModelIds: body.allowedModelIds,
+    defaultModelId: body.defaultModelId,
+    rateLimits: body.rateLimits,
+    defaultPermissionSetArn: body.defaultPermissionSet?.permissionSetArn,
+    allowedPermissionSetArns: body.allowedPermissionSets?.map(
+      ({ permissionSetArn }) => permissionSetArn,
+    ),
     meta: body.meta
       ? {
           createdTime: body.meta.createdTime

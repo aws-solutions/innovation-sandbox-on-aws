@@ -33,6 +33,7 @@ export const LeaseTemplateDetails = () => {
   } = useGetConfigurations();
 
   const leaseSharingEnabled = config?.leases.leaseSharingEnabled || false;
+  const sandboxSpacesEnabled = config?.agent.sandboxSpacesEnabled || false;
 
   // Set page breadcrumb on page init
   useEffect(() => {
@@ -70,7 +71,7 @@ export const LeaseTemplateDetails = () => {
         <ErrorPanel
           description="There was a problem loading global configuration settings."
           retry={refetchConfig}
-          error={configError as Error}
+          error={configError}
         />
       </ContentLayout>
     );
@@ -82,6 +83,7 @@ export const LeaseTemplateDetails = () => {
         leaseTemplate={leaseTemplate}
         showEditButtons={true}
         leaseSharingEnabled={leaseSharingEnabled}
+        sandboxSpacesEnabled={sandboxSpacesEnabled}
         onEditBasic={() =>
           navigate(`/lease_templates/${leaseTemplate.uuid}/edit/basic`)
         }
@@ -96,6 +98,12 @@ export const LeaseTemplateDetails = () => {
         }
         onEditCostReport={() =>
           navigate(`/lease_templates/${leaseTemplate.uuid}/edit/cost-report`)
+        }
+        onEditAccessAndSharing={() =>
+          navigate(`/lease_templates/${leaseTemplate.uuid}/edit/access`)
+        }
+        onEditSandboxSpaces={() =>
+          navigate(`/lease_templates/${leaseTemplate.uuid}/edit/sandbox-spaces`)
         }
       />
     </ContentLayout>

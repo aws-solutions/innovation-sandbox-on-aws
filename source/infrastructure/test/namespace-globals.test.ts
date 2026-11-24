@@ -78,7 +78,12 @@ describe("IsbComputeStack namespaced globals", () => {
 
   beforeAll(() => {
     ensureDirSync(path.join(__dirname, "..", "..", "frontend", "dist"));
-    const app = new App();
+    // The sandbox agent runtime requires a private ECR repository name at synth time.
+    const app = new App({
+      context: {
+        privateSandboxAgentRuntimeEcrRepo: "isb-sandbox-agent-runtime-test",
+      },
+    });
     const stack = new IsbComputeStack(app, "IsbComputeStack");
     template = Template.fromStack(stack);
   });
@@ -143,7 +148,7 @@ describe("IsbDataStack namespaced globals", () => {
     });
   });
 
-  // Assert all 16 exports (stackName resolves to the "IsbDataStack" construct id at synth).
+  // Assert all 17 exports (stackName resolves to the "IsbDataStack" construct id at synth).
   it.each([
     "ConfigApplicationId",
     "ConfigEnvironmentId",
@@ -157,6 +162,7 @@ describe("IsbDataStack namespaced globals", () => {
     "CleanupReportTable",
     "CognitoUserPoolId",
     "CognitoAppClientId",
+    "CognitoMcpClientId",
     "CognitoIdentityPoolId",
     "CognitoDomain",
     "CognitoAcsUrl",

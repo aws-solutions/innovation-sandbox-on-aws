@@ -7,11 +7,26 @@ import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { CostReportingForm } from "@amzn/innovation-sandbox-frontend/domains/settings/components/forms/CostReportingForm";
-import { CONFIG_CONSTRAINTS } from "@amzn/innovation-sandbox-frontend/domains/settings/validation";
+import { CostReportingForm as CostReportingFormFields } from "@amzn/innovation-sandbox-frontend/domains/settings/components/forms/CostReportingForm";
+import type { ConfigurationSectionView } from "@amzn/innovation-sandbox-frontend/domains/settings/model";
 import { getConfig } from "@amzn/innovation-sandbox-frontend/helpers/config";
 import { server } from "@amzn/innovation-sandbox-frontend/mocks/server";
 import { createQueryClientWrapper } from "@amzn/innovation-sandbox-frontend/setupTests";
+import { CONFIG_BOUNDS } from "@amzn/innovation-sandbox-shared/types/configuration.js";
+
+import { ConfigurationFormHarness } from "./ConfigurationFormHarness";
+
+function CostReportingForm({
+  data,
+}: {
+  data: ConfigurationSectionView<"costReporting">;
+}) {
+  return (
+    <ConfigurationFormHarness section="costReporting" data={data}>
+      <CostReportingFormFields />
+    </ConfigurationFormHarness>
+  );
+}
 
 const adminUser = {
   status: "authenticated",
@@ -49,39 +64,133 @@ const baseData = {
 };
 
 describe("CostReportingForm", () => {
+  it.each(["enable requirement", "remove last group"])(
+    "blocks saving missing required groups after %s and recovers when a group is added",
+    async (action) => {
+      const put = vi.fn();
+      server.use(
+        http.put(
+          `${getConfig().ApiUrl}/configurations/costReporting`,
+          async ({ request }) => {
+            const body = await request.json();
+            put(body);
+            return HttpResponse.json({
+              status: "success",
+              data: { ...baseData, ...(body as object) },
+            });
+          },
+        ),
+      );
+      render(
+        <CostReportingForm
+          data={{
+            ...baseData,
+            costReportGroups: action === "enable requirement" ? [] : ["team-a"],
+            requireCostReportGroup: action === "remove last group",
+          }}
+        />,
+        { wrapper: createQueryClientWrapper() },
+      );
+      const input = await screen.findByPlaceholderText(/add a group/i);
+      await userEvent.click(
+        action === "enable requirement"
+          ? screen.getByRole("checkbox")
+          : screen.getByRole("button", { name: /remove team-a/i }),
+      );
+
+      const message =
+        "Add at least one cost report group or turn off Require cost report group.";
+      expect(await screen.findByText(message)).toBeInTheDocument();
+      const save = screen.getByRole("button", { name: /^save$/i });
+      expect(save).toHaveAttribute("aria-disabled", "true");
+      await userEvent.click(save);
+      expect(put).not.toHaveBeenCalled();
+
+      await userEvent.type(input, "team-b{enter}");
+      await waitFor(() =>
+        expect(save).not.toHaveAttribute("aria-disabled", "true"),
+      );
+      expect(screen.queryByText(message)).not.toBeInTheDocument();
+      await userEvent.click(save);
+      await waitFor(() =>
+        expect(put).toHaveBeenCalledWith({
+          requireCostReportGroup: true,
+          costReportGroups: ["team-b"],
+        }),
+      );
+    },
+  );
+
+  it("clears the missing-groups error and allows saving when the requirement is turned off", async () => {
+    render(
+      <CostReportingForm
+        data={{ ...baseData, requireCostReportGroup: true }}
+      />,
+      { wrapper: createQueryClientWrapper() },
+    );
+    await screen.findByPlaceholderText(/add a group/i);
+    await userEvent.click(
+      screen.getByRole("button", { name: /remove team-a/i }),
+    );
+    const message =
+      "Add at least one cost report group or turn off Require cost report group.";
+    expect(await screen.findByText(message)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("checkbox"));
+    await waitFor(() => {
+      expect(screen.queryByText(message)).not.toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: /^save$/i }),
+      ).not.toHaveAttribute("aria-disabled", "true");
+    });
+  });
+
+  it("loads existing invalid settings and lets the admin repair them by adding a group", async () => {
+    render(
+      <CostReportingForm
+        data={{
+          ...baseData,
+          requireCostReportGroup: true,
+          costReportGroups: [],
+        }}
+      />,
+      { wrapper: createQueryClientWrapper() },
+    );
+    const input = await screen.findByPlaceholderText(/add a group/i);
+    expect(screen.getByRole("checkbox")).toBeChecked();
+
+    await userEvent.type(input, "team-a{enter}");
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /^save$/i }),
+      ).not.toHaveAttribute("aria-disabled", "true"),
+    );
+  });
+
   it("renders existing groups as tokens and adds a new one", async () => {
     render(<CostReportingForm data={baseData} />, {
       wrapper: createQueryClientWrapper(),
     });
 
-    // Wait for the admin (editable) form to render; its input placeholder is
-    // unique to the admin view, so this also confirms the existing token shows.
-    const input = await screen.findByPlaceholderText(
-      /enter a cost report group/i,
-    );
+    // Wait for the form controls, then verify the saved token and live count.
+    const input = await screen.findByPlaceholderText(/add a group/i);
     expect(screen.getByText("team-a")).toBeInTheDocument();
     // The field shows a live "N / max groups" count (not a static "Up to N").
     expect(
-      screen.getByText(
-        `1 / ${CONFIG_CONSTRAINTS.MAX_COST_REPORT_GROUPS} groups`,
-      ),
+      screen.getByText(`1 / ${CONFIG_BOUNDS.MAX_COST_REPORT_GROUPS} groups`),
     ).toBeInTheDocument();
 
     await userEvent.type(input, "team-b{enter}");
 
     expect(await screen.findByText("team-b")).toBeInTheDocument();
     expect(
-      screen.getByText(
-        `2 / ${CONFIG_CONSTRAINTS.MAX_COST_REPORT_GROUPS} groups`,
-      ),
+      screen.getByText(`2 / ${CONFIG_BOUNDS.MAX_COST_REPORT_GROUPS} groups`),
     ).toBeInTheDocument();
   });
 
   it("adds a group on Enter without submitting the form (only Save saves)", async () => {
-    // Count PUTs so we can prove Enter does NOT save. Without preventDefault in
-    // the draft Input's onKeyDown, pressing Enter implicitly submits the parent
-    // SectionForm <form>, firing a spurious PUT mid-edit; this asserts it does
-    // not, then that the explicit Save button still does.
+    // Adding a token edits the local draft; only Save persists it.
     let putCount = 0;
     server.use(
       http.put(`${getConfig().ApiUrl}/configurations/:section`, async () => {
@@ -106,9 +215,7 @@ describe("CostReportingForm", () => {
       wrapper: createQueryClientWrapper(),
     });
 
-    const input = await screen.findByPlaceholderText(
-      /enter a cost report group/i,
-    );
+    const input = await screen.findByPlaceholderText(/add a group/i);
     await userEvent.type(input, "team-b{enter}");
 
     // The token is added locally (the Enter handler ran)...
@@ -118,13 +225,7 @@ describe("CostReportingForm", () => {
     await new Promise((r) => setTimeout(r, 50));
     expect(putCount).toBe(0);
 
-    // The explicit Save button DOES save — via the change-confirmation modal
-    // (adding a group changes the list), so confirm through it.
     await userEvent.click(screen.getByRole("button", { name: /^save$/i }));
-    const dialog = await screen.findByRole("dialog");
-    await userEvent.click(
-      within(dialog).getByRole("button", { name: /save changes/i }),
-    );
     await waitFor(() => expect(putCount).toBe(1));
   });
 
@@ -139,7 +240,7 @@ describe("CostReportingForm", () => {
     );
 
     // Wait for the admin (editable) form before locating the dismiss buttons.
-    await screen.findByPlaceholderText(/enter a cost report group/i);
+    await screen.findByPlaceholderText(/add a group/i);
     expect(screen.getByText("team-a")).toBeInTheDocument();
     // Dismiss the first token.
     const dismissButtons = screen.getAllByRole("button", { name: /remove/i });
@@ -156,9 +257,7 @@ describe("CostReportingForm", () => {
     // baseData already contains "team-a". Re-entering it must NOT add a second
     // token and, critically, must leave the typed text in the input rather than
     // clearing it with no feedback.
-    const input = await screen.findByPlaceholderText(
-      /enter a cost report group/i,
-    );
+    const input = await screen.findByPlaceholderText(/add a group/i);
     await userEvent.type(input, "team-a{enter}");
 
     expect(screen.getAllByText("team-a")).toHaveLength(1);
@@ -170,12 +269,8 @@ describe("CostReportingForm", () => {
       wrapper: createQueryClientWrapper(),
     });
 
-    const input = await screen.findByPlaceholderText(
-      /enter a cost report group/i,
-    );
-    const tooLong = "x".repeat(
-      CONFIG_CONSTRAINTS.MAX_COST_REPORT_GROUP_LENGTH + 1,
-    );
+    const input = await screen.findByPlaceholderText(/add a group/i);
+    const tooLong = "x".repeat(CONFIG_BOUNDS.MAX_COST_REPORT_GROUP_LENGTH + 1);
     await userEvent.type(input, `${tooLong}{enter}`);
 
     // The over-length group is not added and an inline limit message appears.
@@ -183,7 +278,7 @@ describe("CostReportingForm", () => {
     expect(
       screen.getByText(
         new RegExp(
-          `${CONFIG_CONSTRAINTS.MAX_COST_REPORT_GROUP_LENGTH} characters or fewer`,
+          `${CONFIG_BOUNDS.MAX_COST_REPORT_GROUP_LENGTH} characters or fewer`,
           "i",
         ),
       ),
@@ -201,9 +296,7 @@ describe("CostReportingForm", () => {
       { wrapper: createQueryClientWrapper() },
     );
 
-    const input = await screen.findByPlaceholderText(
-      /enter a cost report group/i,
-    );
+    const input = await screen.findByPlaceholderText(/add a group/i);
     await userEvent.type(input, "team-d{enter}");
 
     // The dismiss buttons are labelled "Remove <group>" in token display order.
@@ -223,253 +316,28 @@ describe("CostReportingForm", () => {
     ]);
   });
 
-  describe("save confirmation diff modal", () => {
-    // Mock the PUT so a confirmed save resolves; capture bodies to assert what
-    // was persisted.
-    const mockPut = () => {
-      const putBodies: Array<Record<string, unknown>> = [];
-      server.use(
-        http.put(
-          `${getConfig().ApiUrl}/configurations/:section`,
-          async ({ request }) => {
-            const body = (await request.json()) as Record<string, unknown>;
-            putBodies.push(body);
-            const { lastSavedBy: _l, meta: _m, ...fields } = body;
-            void _l;
-            void _m;
-            return HttpResponse.json({
-              status: "success",
-              data: {
-                ...fields,
-                lastSavedBy: "a@b.com",
-                meta: {
-                  schemaVersion: 1,
-                  createdTime: "2026-01-01T00:00:00.000Z",
-                  lastEditTime: "T1",
-                },
-              },
-            });
-          },
-        ),
-      );
-      return putBodies;
-    };
-
-    const modal = () => screen.queryByRole("dialog");
-
-    it("shows a before/after diff and requires confirmation before saving", async () => {
-      const putBodies = mockPut();
-      render(
-        <CostReportingForm
-          data={{ ...baseData, costReportGroups: ["team-a", "team-b"] }}
-        />,
-        { wrapper: createQueryClientWrapper() },
-      );
-
-      const input = await screen.findByPlaceholderText(
-        /enter a cost report group/i,
-      );
-      await userEvent.click(
-        screen.getByRole("button", { name: /remove team-a/i }),
-      );
-      await userEvent.type(input, "team-c{enter}");
-
-      // Clicking Save opens the confirmation modal; nothing is persisted yet.
-      await userEvent.click(screen.getByRole("button", { name: /^save$/i }));
-      const dialog = await screen.findByRole("dialog");
-      expect(dialog).toHaveTextContent(/save cost report group changes\?/i);
-      expect(within(dialog).getByText(/adding/i)).toBeInTheDocument();
-      expect(within(dialog).getByText("team-c")).toBeInTheDocument();
-      expect(within(dialog).getByText(/removing/i)).toBeInTheDocument();
-      expect(within(dialog).getByText("team-a")).toBeInTheDocument();
-      // One group each side -> singular consequence copy.
-      expect(
-        within(dialog).getByText(
-          "This group will become available for lease templates.",
-        ),
-      ).toBeInTheDocument();
-      expect(
-        within(dialog).getByText(
-          "This group will no longer be available for new lease templates.",
-        ),
-      ).toBeInTheDocument();
-      expect(putBodies).toHaveLength(0);
-
-      // Confirming saves the edited list.
-      await userEvent.click(
-        within(dialog).getByRole("button", { name: /save changes/i }),
-      );
-      await waitFor(() => expect(putBodies).toHaveLength(1));
-      expect(putBodies[0].costReportGroups).toEqual(["team-b", "team-c"]);
-    });
-
-    it("separates added and removed groups into their own labelled sections", async () => {
-      mockPut();
-      render(
-        <CostReportingForm
-          data={{ ...baseData, costReportGroups: ["team-a", "team-b"] }}
-        />,
-        { wrapper: createQueryClientWrapper() },
-      );
-
-      const input = await screen.findByPlaceholderText(
-        /enter a cost report group/i,
-      );
-      await userEvent.click(
-        screen.getByRole("button", { name: /remove team-a/i }),
-      );
-      await userEvent.type(input, "team-c{enter}");
-      await userEvent.click(screen.getByRole("button", { name: /^save$/i }));
-      const dialog = await screen.findByRole("dialog");
-
-      // The added group appears only in the "adding" section and the removed one
-      // only in the "removing" section (each is a separate labelled region; the
-      // green/red chip color is a visual reinforcement of these labels). The
-      // per-side chips carry color for sighted users, but the labels/sections
-      // are the assertable, non-color-only contract.
-      const added = createWrapper(dialog).find('[data-testid="diff-added"]')!;
-      const removed = createWrapper(dialog).find(
-        '[data-testid="diff-removed"]',
-      )!;
-      expect(added.getElement()).toHaveTextContent("team-c");
-      expect(added.getElement()).not.toHaveTextContent("team-a");
-      expect(removed.getElement()).toHaveTextContent("team-a");
-      expect(removed.getElement()).not.toHaveTextContent("team-c");
-    });
-
-    it("uses the plural consequence copy when more than one group changes", async () => {
-      // The chip capping / show-more mechanics live in DiffChipList's own test;
-      // here we only assert the form supplies the correct plural copy (the
-      // singular form is covered by the diff+confirm test above).
-      mockPut();
-      render(
-        <CostReportingForm
-          data={{ ...baseData, costReportGroups: ["team-a"] }}
-        />,
-        { wrapper: createQueryClientWrapper() },
-      );
-
-      const input = await screen.findByPlaceholderText(
-        /enter a cost report group/i,
-      );
-      await userEvent.type(input, "team-b{enter}");
-      await userEvent.type(input, "team-c{enter}");
-      await userEvent.click(screen.getByRole("button", { name: /^save$/i }));
-      const dialog = await screen.findByRole("dialog");
-
-      // Two groups added -> plural "Adding" copy.
-      expect(
-        within(dialog).getByText(
-          "These groups will become available for lease templates.",
-        ),
-      ).toBeInTheDocument();
-    });
-
-    it("omits the opposite section entirely for a pure add or pure removal", async () => {
-      mockPut();
-      // Pure add: the empty "Removing" side must be omitted, not shown as "Removing (0)".
-      const { unmount } = render(
-        <CostReportingForm
-          data={{ ...baseData, costReportGroups: ["team-a"] }}
-        />,
-        { wrapper: createQueryClientWrapper() },
-      );
-
-      const input = await screen.findByPlaceholderText(
-        /enter a cost report group/i,
-      );
-      await userEvent.type(input, "team-b{enter}");
-      await userEvent.click(screen.getByRole("button", { name: /^save$/i }));
-      const addDialog = await screen.findByRole("dialog");
-
-      expect(within(addDialog).getByText(/adding/i)).toBeInTheDocument();
-      expect(
-        within(addDialog).queryByText(/removing/i),
-      ).not.toBeInTheDocument();
-
-      unmount();
-
-      // Pure removal: the empty "Adding" side must be omitted.
-      render(
-        <CostReportingForm
-          data={{ ...baseData, costReportGroups: ["team-a", "team-b"] }}
-        />,
-        { wrapper: createQueryClientWrapper() },
-      );
-
-      await screen.findByPlaceholderText(/enter a cost report group/i);
-      await userEvent.click(
-        screen.getByRole("button", { name: /remove team-a/i }),
-      );
-      await userEvent.click(screen.getByRole("button", { name: /^save$/i }));
-      const removeDialog = await screen.findByRole("dialog");
-
-      expect(within(removeDialog).getByText(/removing/i)).toBeInTheDocument();
-      expect(
-        within(removeDialog).queryByText(/adding/i),
-      ).not.toBeInTheDocument();
-    });
-
-    it("cancel closes the modal without saving and preserves the edit", async () => {
-      const putBodies = mockPut();
-      render(
-        <CostReportingForm
-          data={{ ...baseData, costReportGroups: ["team-a"] }}
-        />,
-        { wrapper: createQueryClientWrapper() },
-      );
-
-      const input = await screen.findByPlaceholderText(
-        /enter a cost report group/i,
-      );
-      await userEvent.type(input, "team-new{enter}");
-      await userEvent.click(screen.getByRole("button", { name: /^save$/i }));
-      await screen.findByRole("dialog");
-
-      await userEvent.click(screen.getByRole("button", { name: /cancel/i }));
-
-      await waitFor(() => expect(modal()).not.toBeInTheDocument());
-      expect(putBodies).toHaveLength(0);
-      // The edit survives so the admin can still save after re-confirming.
-      expect(screen.getByText("team-new")).toBeInTheDocument();
-    });
-
-    it("saves without a modal when only the toggle changed (groups unchanged)", async () => {
-      const putBodies = mockPut();
-      render(
-        <CostReportingForm
-          data={{ ...baseData, costReportGroups: ["team-a"] }}
-        />,
-        { wrapper: createQueryClientWrapper() },
-      );
-
-      // Flip the toggle only; the group list is untouched.
-      const toggle = await screen.findByRole("checkbox");
-      await userEvent.click(toggle);
-      await userEvent.click(screen.getByRole("button", { name: /^save$/i }));
-
-      // No confirmation modal; the save goes straight through.
-      await waitFor(() => expect(putBodies).toHaveLength(1));
-      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    });
-  });
-
-  it("renders a read-only summary for a manager (no input)", async () => {
+  it("renders cost reporting controls read-only for a manager", async () => {
     getCurrentUser.mockResolvedValue(managerUser);
 
     render(<CostReportingForm data={baseData} />, {
       wrapper: createQueryClientWrapper(),
     });
 
-    // Anchor on the read-only KeyValuePairs label "Require cost report group".
-    // The manager render shows only the read-only view (no editable toggle or
-    // input), so this waits for the resolved manager render. The placeholder
-    // assertion below confirms the editable form did not render.
+    const input = await screen.findByPlaceholderText(/add a group/i);
+    expect(input).toHaveAttribute("readonly");
+    expect(screen.getByRole("checkbox")).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "Add" })).toBeDisabled();
+    await userEvent.type(input, "team-b{Enter}");
+    expect(screen.queryByText("team-b")).not.toBeInTheDocument();
+    const remove = screen.getByRole("button", { name: /remove team-a/i });
+    expect(remove).toHaveAttribute("aria-disabled", "true");
+    await userEvent.click(remove);
+    expect(screen.getByText("team-a")).toBeInTheDocument();
     expect(
-      await screen.findByText("Require cost report group"),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByPlaceholderText(/enter a cost report group/i),
+      screen.queryByRole("button", { name: /^save$/i }),
     ).not.toBeInTheDocument();
   });
 
@@ -486,7 +354,7 @@ describe("CostReportingForm", () => {
     expect(screen.queryByText("false")).not.toBeInTheDocument();
   });
 
-  it("renders each read-only cost report group as its own Badge, sorted", async () => {
+  it("renders saved cost report groups as sorted read-only tokens", async () => {
     getCurrentUser.mockResolvedValue(managerUser);
 
     const { container } = render(
@@ -498,28 +366,27 @@ describe("CostReportingForm", () => {
       { wrapper: createQueryClientWrapper() },
     );
 
-    await screen.findByText("Cost report groups");
-    // Each group renders in its own Cloudscape Badge (a read-only chip), not as
-    // one comma-joined plain-text string, matching the tokenized editable view.
-    // Use the Cloudscape test-utils Badge finder rather than matching internal
-    // (hashed) CSS class names, which are not a stable contract. Sorted to match
-    // the editable field's alphabetical token order. Scope to this render's
-    // container (not the whole document) so a stray badge leaked from another
-    // test's teardown can't make this assertion flaky.
-    const badges = createWrapper(container)
-      .findAllBadges()
-      .map((badge) => badge.getElement().textContent);
-    expect(badges).toEqual(["team-a", "team-b", "team-c"]);
+    await screen.findByPlaceholderText(/add a group/i);
+    const tokens = createWrapper(container).findTokenGroup()!.findTokens();
+    expect(
+      tokens.map((token) => token.findLabel().getElement().textContent),
+    ).toEqual(["team-a", "team-b", "team-c"]);
+    for (const remove of screen.getAllByRole("button", {
+      name: /remove team-/i,
+    }))
+      expect(remove).toHaveAttribute("aria-disabled", "true");
   });
 
-  it("shows a fallback when there are no read-only cost report groups", async () => {
+  it("shows an empty token list when no cost report groups are configured", async () => {
     getCurrentUser.mockResolvedValue(managerUser);
 
     render(<CostReportingForm data={{ ...baseData, costReportGroups: [] }} />, {
       wrapper: createQueryClientWrapper(),
     });
 
-    await screen.findByText("Cost report groups");
-    expect(screen.getByText("(none)")).toBeInTheDocument();
+    await screen.findByPlaceholderText(/add a group/i);
+    expect(
+      screen.getByText(`0 / ${CONFIG_BOUNDS.MAX_COST_REPORT_GROUPS} groups`),
+    ).toBeInTheDocument();
   });
 });

@@ -14,7 +14,10 @@ import { ContextWithConfig } from "@amzn/innovation-sandbox-commons/lambda/middl
 import { encodeTestToken } from "@amzn/innovation-sandbox-commons/test/lambdas/api-test-setup.js";
 import { JSendErrorObject } from "@amzn/innovation-sandbox-commons/types/isb-types.js";
 import { buildM2mAssumedRoleArn } from "@amzn/innovation-sandbox-commons/utils/m2m-role-arn.js";
-import { nowAsIsoDatetimeString } from "@amzn/innovation-sandbox-commons/utils/time-utils.js";
+import {
+  now,
+  nowAsIsoDatetimeString,
+} from "@amzn/innovation-sandbox-commons/utils/time-utils.js";
 import {
   ConfigSchemas,
   ConfigSection,
@@ -90,7 +93,7 @@ function userPropsToEventOverrides(user: IsbUser): {
           namespace,
           roleTier: user.roles[0] ?? "User",
           clientName: user.clientId,
-          accountId: "123456789012",
+          accountId: process.env.HUB_ACCOUNT_ID ?? "123456789012",
         }),
       },
     };
@@ -244,6 +247,10 @@ export function mockGlobalConfig(): GlobalConfig {
   // default for `maintenance.enabled` is fresh-install behavior; tests that
   // need maintenance mode opt into it explicitly.
   config.maintenance.enabled = false;
+  // Gates open in the baseline so template tests may enable the features;
+  // gate-off 400 tests override these explicitly.
+  config.leases.allowPredictiveBudgetControls = true;
+  config.leases.allowBedrockTokenMonitoring = true;
   return config;
 }
 
@@ -336,15 +343,20 @@ export function createErrorResponseBody(message: string) {
   });
 }
 
+const persistenceOnlyResponseMembers = new Set([
+  "defaultPermissionSetArn",
+  "allowedPermissionSetArns",
+]);
+
 /**
  * Normalizes a value the way the generated `restJson1` serializer observably does:
- * it drops `null`/`undefined` members (member order is not normalized because the
- * matchers below compare structurally). When `canonicalizeDates` is set it also
- * re-emits `date-time` strings in the serializer's canonical form (millisecond
- * precision, with a zero `.000` fraction collapsed to a bare `Z`) — the behavior of
- * a domain whose timestamps are modeled as `@timestamp` (e.g. `/leaseTemplates`).
- * Domains that model timestamps as raw `String` emit them byte-faithfully, so they
- * normalize with `canonicalizeDates: false`.
+ * it drops `null`/`undefined` members and persistence-only members (member order is
+ * not normalized because the matchers below compare structurally). When
+ * `canonicalizeDates` is set it also re-emits `date-time` strings in the serializer's
+ * canonical form (millisecond precision, with a zero `.000` fraction collapsed to a
+ * bare `Z`) — the behavior of a domain whose timestamps are modeled as `@timestamp`
+ * (e.g. `/leaseTemplates`). Domains that model timestamps as raw `String` emit them
+ * byte-faithfully, so they normalize with `canonicalizeDates: false`.
  */
 function normalizeBody(value: unknown, canonicalizeDates: boolean): unknown {
   if (Array.isArray(value)) {
@@ -353,7 +365,11 @@ function normalizeBody(value: unknown, canonicalizeDates: boolean): unknown {
   if (value !== null && typeof value === "object" && !(value instanceof Date)) {
     const out: Record<string, unknown> = {};
     for (const [key, member] of Object.entries(value)) {
-      if (member === null || member === undefined) {
+      if (
+        persistenceOnlyResponseMembers.has(key) ||
+        member === null ||
+        member === undefined
+      ) {
         continue;
       }
       out[key] = normalizeBody(member, canonicalizeDates);
@@ -438,4 +454,15 @@ export function createEventBridgeEvent(detailType: string, detail: object) {
       ...detail,
     },
   };
+}
+
+/**
+ * A lease-cost-history `ttl` 30 days ahead of the project's clock, in epoch
+ * seconds. Derived at call time rather than fixed: the store refuses to write a
+ * row whose ttl has already elapsed, and the schema caps how far ahead of now a
+ * ttl may sit, so any literal drifts out of that window as the calendar moves.
+ * Reads the same clock as both checks, so it also follows `vi.setSystemTime`.
+ */
+export function futureTtl(): number {
+  return Math.floor(now().plus({ days: 30 }).valueOf() / 1000);
 }

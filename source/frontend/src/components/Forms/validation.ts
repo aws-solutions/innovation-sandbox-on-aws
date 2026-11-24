@@ -4,16 +4,38 @@
 import { DateTime } from "luxon";
 import { z } from "zod";
 
+import { RateBasisSchema } from "@amzn/innovation-sandbox-shared/types/cost-history.js";
+import {
+  MAX_RATE_LIMIT_ENTRIES,
+  ThresholdActionSchema,
+} from "@amzn/innovation-sandbox-shared/types/lease-template.js";
+import {
+  MAX_ALLOWED_PERMISSION_SETS,
+  type PermissionSetReference,
+  PermissionSetReferenceSchema,
+} from "@amzn/innovation-sandbox-shared/types/permission-set.js";
+
+const USD_FORMATTER = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+});
+
 /**
- * Shared validation schemas for budget, duration, and cost report settings.
+ * Shared validation schemas for access, budget, duration, and cost report settings.
  * These schemas are used across both lease templates and lease management.
  */
+
+export const RATE_LIMIT_CONSTRAINTS = {
+  MAX_ENTRIES: MAX_RATE_LIMIT_ENTRIES,
+  ERROR_TOO_MANY: `Add no more than ${MAX_RATE_LIMIT_ENTRIES} rate thresholds`,
+  ERROR_DUPLICATE: "This period already has a rate threshold at this rate",
+} as const;
 
 export const BudgetSettingsValidationSchema = z.object({
   maxBudgetEnabled: z.boolean(),
   maxSpend: z
-    .number({ error: "Maximum spend must be a number" })
-    .gt(0, "Maximum spend must be greater than 0")
+    .number({ error: "Maximum budget must be a number" })
+    .gt(0, "Maximum budget must be greater than 0")
     .optional(),
   budgetThresholds: z
     .array(
@@ -29,10 +51,66 @@ export const BudgetSettingsValidationSchema = z.object({
         action: z.enum(["ALERT", "FREEZE_ACCOUNT"], {
           error: "Threshold action is required",
         }),
+        triggerOn: z.enum(["REPORTED", "PREDICTED"]).optional(),
       }),
     )
     .optional(),
+  predictiveBudgetEnabled: z.boolean().optional(),
+  bedrockTokenMonitoringEnabled: z.boolean().optional(),
+  rateLimits: z
+    .array(
+      z.object({
+        // Typed as the form holds it (`RateLimitFormRow`): a blank number
+        // input reports "", so a newly added row starts that way. The pipe
+        // still requires a positive number, so "" fails as "Rate is required".
+        rate: z.custom<number | "">().pipe(
+          z
+            .number({
+              error: (issue) =>
+                issue.input === undefined || issue.input === ""
+                  ? "Rate is required"
+                  : "Rate must be a number",
+            })
+            .gt(0, "Rate must be greater than 0"),
+        ),
+        // The shared value sets, with the form's own messages.
+        basis: z.enum(RateBasisSchema.options, { error: "Period is required" }),
+        action: z.enum(ThresholdActionSchema.options, {
+          error: "Action is required",
+        }),
+      }),
+    )
+    .max(
+      RATE_LIMIT_CONSTRAINTS.MAX_ENTRIES,
+      RATE_LIMIT_CONSTRAINTS.ERROR_TOO_MANY,
+    )
+    .optional(),
 });
+
+/**
+ * Flags every row repeating an earlier row's (period, rate) pair, whatever its
+ * action: the two would be one line, and the API rejects the pair.
+ */
+const validateUniqueRateLimits = (
+  rateLimits: { basis?: string; rate?: number }[] | undefined,
+  ctx: z.RefinementCtx,
+) => {
+  const seen = new Set<string>();
+  rateLimits?.forEach((limit, idx) => {
+    if (limit.basis === undefined || typeof limit.rate !== "number") {
+      return;
+    }
+    const key = `${limit.basis}:${limit.rate}`;
+    if (seen.has(key)) {
+      ctx.addIssue({
+        code: "custom",
+        message: RATE_LIMIT_CONSTRAINTS.ERROR_DUPLICATE,
+        path: ["rateLimits", idx, "rate"],
+      });
+    }
+    seen.add(key);
+  });
+};
 
 export const DurationSettingsValidationSchema = z.object({
   maxDurationEnabled: z.boolean(),
@@ -65,12 +143,24 @@ export const CostReportSettingsValidationSchema = z.object({
   selectedCostReportGroup: z.string().optional(),
 });
 
-export const SharingSettingsValidationSchema = z.object({
+export const AccessAndSharingValidationSchema = z.object({
   allowOwnerToShareLease: z.boolean(),
+  defaultPermissionSet: z
+    .custom<PermissionSetReference>(
+      (permissionSet) => permissionSet !== undefined,
+      "Choose a default permission set.",
+    )
+    .pipe(PermissionSetReferenceSchema),
+  allowedPermissionSets: z
+    .array(PermissionSetReferenceSchema)
+    .max(
+      MAX_ALLOWED_PERMISSION_SETS - 1,
+      `Choose no more than ${MAX_ALLOWED_PERMISSION_SETS - 1} additional permission sets.`,
+    ),
 });
 
-export type SharingSettingsFormValues = z.infer<
-  typeof SharingSettingsValidationSchema
+export type AccessAndSharingFormValues = z.infer<
+  typeof AccessAndSharingValidationSchema
 >;
 
 export const BlueprintSelectionValidationSchema = z.object({
@@ -91,8 +181,8 @@ export const createBlueprintSelectionValidationRefinement = () => {
   return (data: any, ctx: z.RefinementCtx) => {
     if (data.blueprintEnabled && !data.blueprintId) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "Select a blueprint or disable blueprint selection",
+        code: "custom",
+        message: "Select a blueprint or turn off Deploy a blueprint",
         path: ["blueprintId"],
       });
     }
@@ -129,7 +219,7 @@ const validateMaxValueRequired = (
 
   if (isEnabledWithoutValue || isGloballyRequiredWithoutValue) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       message: requiredMessage,
       path: [maxValueField],
     });
@@ -157,7 +247,7 @@ const validateGlobalLimit = (
 
   if (exceedsLimit) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       message: exceedsLimitMessage(globalMaxValue),
       path: [maxValueField],
     });
@@ -192,7 +282,7 @@ const validateUniqueFreezeAction = <T extends { action: string }>(
   if (freezeIndices.length > 1) {
     freezeIndices.forEach((idx) => {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         message: multipleFreezeMessage,
         path: [thresholdsField, idx, "action"],
       });
@@ -201,7 +291,7 @@ const validateUniqueFreezeAction = <T extends { action: string }>(
 };
 
 /**
- * Validates that threshold values do not exceed max value.
+ * Validates that threshold values are less than max value.
  */
 const validateThresholdValues = (
   thresholds: any[],
@@ -218,7 +308,7 @@ const validateThresholdValues = (
   thresholds.forEach((threshold, idx) => {
     if (threshold[thresholdValueField] >= maxValue) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         message: exceedsMaxMessage,
         path: [thresholdsField, idx, thresholdValueField],
       });
@@ -229,6 +319,8 @@ const validateThresholdValues = (
 /**
  * Generic threshold validation for budget and duration settings.
  * Validates: required fields, global limits, unique FREEZE_ACCOUNT, thresholds vs max values.
+ * Global limits and thresholds vs max values are checked only while the limit
+ * is on or required, since a max value left in the form is not saved otherwise.
  */
 const createThresholdValidationRefinement = <
   T extends { action: string },
@@ -243,7 +335,7 @@ const createThresholdValidationRefinement = <
     required: string;
     exceedsGlobalLimit: (limit: number) => string;
     multipleFreezeAccount: string;
-    exceedsMaxValue: string;
+    exceedsMaxValue: (maxValue: number) => string;
   };
 }) => {
   return (data: any, ctx: z.RefinementCtx) => {
@@ -264,11 +356,14 @@ const createThresholdValidationRefinement = <
       requiredMessage: messages.required,
     });
 
-    validateGlobalLimit(data, ctx, {
-      maxValueField,
-      globalMaxValue,
-      exceedsLimitMessage: messages.exceedsGlobalLimit,
-    });
+    const limitActive = data[enabledField] || requireMaxValue;
+    if (limitActive) {
+      validateGlobalLimit(data, ctx, {
+        maxValueField,
+        globalMaxValue,
+        exceedsLimitMessage: messages.exceedsGlobalLimit,
+      });
+    }
 
     const thresholds = data[thresholdsField];
     if (thresholds && thresholds.length > 0) {
@@ -277,21 +372,18 @@ const createThresholdValidationRefinement = <
         multipleFreezeMessage: messages.multipleFreezeAccount,
       });
 
-      if (data[maxValueField]) {
+      if (limitActive && data[maxValueField]) {
         validateThresholdValues(thresholds, data[maxValueField], ctx, {
           thresholdsField,
           thresholdValueField,
-          exceedsMaxMessage: messages.exceedsMaxValue,
+          exceedsMaxMessage: messages.exceedsMaxValue(data[maxValueField]),
         });
       }
     }
   };
 };
 
-/**
- * Creates validation refinement for budget settings based on global config.
- */
-export const createBudgetSettingsValidationRefinement = (
+const createBudgetThresholdValidationRefinement = (
   globalMaxBudget?: number,
   requireMaxBudget?: boolean,
 ) => {
@@ -303,13 +395,31 @@ export const createBudgetSettingsValidationRefinement = (
     requireMaxValue: requireMaxBudget,
     globalMaxValue: globalMaxBudget,
     messages: {
-      required: "Maximum spend is required and must be greater than 0",
+      required: "Maximum budget is required and must be greater than 0",
       exceedsGlobalLimit: (limit) =>
-        `Maximum spend cannot exceed global limit of $${limit}`,
-      multipleFreezeAccount: "Only one 'Freeze Lease' threshold is allowed",
-      exceedsMaxValue: "Threshold cannot exceed maximum spend",
+        `Maximum budget cannot exceed global limit of ${USD_FORMATTER.format(limit)}`,
+      multipleFreezeAccount: "Only one 'Freeze lease' threshold is allowed",
+      exceedsMaxValue: (maxSpend) =>
+        `Must be less than the Terminate lease amount (${USD_FORMATTER.format(maxSpend)})`,
     },
   });
+};
+
+/**
+ * Creates validation refinement for budget settings based on global config.
+ */
+export const createBudgetSettingsValidationRefinement = (
+  globalMaxBudget?: number,
+  requireMaxBudget?: boolean,
+) => {
+  const thresholdRefinement = createBudgetThresholdValidationRefinement(
+    globalMaxBudget,
+    requireMaxBudget,
+  );
+  return (data: any, ctx: z.RefinementCtx) => {
+    thresholdRefinement(data, ctx);
+    validateUniqueRateLimits(data.rateLimits, ctx);
+  };
 };
 
 /** Budget validation schema with config-based rules applied via .superRefine() */
@@ -342,7 +452,7 @@ export const createDurationSettingsValidationRefinement = (
       exceedsGlobalLimit: (limit) =>
         `Duration cannot exceed global limit of ${limit} hours`,
       multipleFreezeAccount: "Only one 'Freeze Lease' threshold is allowed",
-      exceedsMaxValue: "Hours remaining cannot exceed maximum duration",
+      exceedsMaxValue: () => "Hours remaining cannot exceed maximum duration",
     },
   });
 };
@@ -379,16 +489,22 @@ export const createLeaseExpirationValidationRefinement = (
 
     if (isEnabledWithoutValue || isGloballyRequiredWithoutValue) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         message: "Expiration date is required",
         path: ["expirationDate"],
       });
     }
 
+    // An expiration that is off is not saved, so a date and thresholds left in
+    // the form are not checked.
+    if (!maxDurationEnabled && !requireMaxDuration) {
+      return;
+    }
+
     // Validate expiration date is in the future
     if (expirationDate && DateTime.fromISO(expirationDate) <= DateTime.utc()) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         message: "Expiration date must be in the future",
         path: ["expirationDate"],
       });
@@ -404,7 +520,7 @@ export const createLeaseExpirationValidationRefinement = (
 
       if (expirationDateTime > maxExpirationDateTime) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           message: `Expiration date cannot exceed ${globalMaxDurationHours} hours from lease start (${maxExpirationDateTime.toLocaleString(DateTime.DATETIME_SHORT)})`,
           path: ["expirationDate"],
         });
@@ -428,7 +544,7 @@ export const createLeaseExpirationValidationRefinement = (
       durationThresholds.forEach((threshold: any, idx: number) => {
         if (threshold.hoursRemaining >= totalDurationHours) {
           ctx.addIssue({
-            code: z.ZodIssueCode.custom,
+            code: "custom",
             message: "Hours remaining cannot exceed maximum duration",
             path: ["durationThresholds", idx, "hoursRemaining"],
           });
@@ -469,7 +585,7 @@ export const createCostReportSettingsValidationRefinement = (
     // Require value if toggle is enabled (regardless of global requirement)
     if (data.costReportGroupEnabled && !data.selectedCostReportGroup) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         message: "Cost report group is required",
         path: ["selectedCostReportGroup"],
       });
@@ -478,7 +594,7 @@ export const createCostReportSettingsValidationRefinement = (
     // Also require value if globally required
     if (requireCostReportGroup && !data.selectedCostReportGroup) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         message: "Cost report group is required",
         path: ["selectedCostReportGroup"],
       });

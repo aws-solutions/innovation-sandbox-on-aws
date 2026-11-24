@@ -28,6 +28,7 @@ describe("SsmAccountPoolStackConfigStore", () => {
   describe("get()", () => {
     it("should fetch and parse account pool config from SSM", async () => {
       const mockConfig = {
+        organizationId: "o-a1b2c3d4e5",
         sandboxOuId: "ou-sandbox-123",
         availableOuId: "ou-available-123",
         activeOuId: "ou-active-123",
@@ -50,6 +51,7 @@ describe("SsmAccountPoolStackConfigStore", () => {
       const result = await store.get();
 
       expect(result).toEqual({
+        organizationId: "o-a1b2c3d4e5",
         sandboxOuId: "ou-sandbox-123",
         availableOuId: "ou-available-123",
         activeOuId: "ou-active-123",

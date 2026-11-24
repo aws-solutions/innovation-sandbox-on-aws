@@ -111,13 +111,16 @@ function extractAwsMetric(
     case "LeaseTerminated":
       return {
         event_name: "LeaseTerminated",
-        context_version: 2,
+        context_version: 3,
         context: {
           maxBudget: log.maxBudget,
           actualSpend: log.actualSpend,
           maxDurationHours: log.maxDurationHours,
           actualDurationHours: log.actualDurationHours,
           reasonForTermination: log.reasonForTermination,
+          agentSpend: log.agentSpend,
+          budgetExceededBy: log.budgetExceededBy,
+          budgetTotalSpend: log.budgetTotalSpend,
         },
       };
     case "LeaseUnfrozen":
@@ -139,7 +142,7 @@ function extractAwsMetric(
     case "DeploymentSummary":
       return {
         event_name: "DeploymentSummary",
-        context_version: 4,
+        context_version: 5,
         context: {
           numM2mClients: log.numM2mClients,
           numLeaseTemplates: log.numLeaseTemplates,
@@ -179,6 +182,10 @@ function extractAwsMetric(
             log.bedrockInferenceProfilePatternsList,
           leaseSharingEnabled: log.config.leaseSharingEnabled,
           enablePrincipalSearch: log.config.enablePrincipalSearch,
+          allowPredictiveBudgetControls:
+            log.config.allowPredictiveBudgetControls,
+          serviceBreakdownEnabled: log.config.serviceBreakdownEnabled,
+          allowBedrockTokenMonitoring: log.config.allowBedrockTokenMonitoring,
           // Multi-user lease metrics
           numTemplatesWithSharing: log.numTemplatesWithSharing,
           numLeasesWithAssignments: log.numLeasesWithAssignments,
@@ -189,6 +196,52 @@ function extractAwsMetric(
           // daily API call mix
           dailyM2mApiCalls: log.dailyApiCallsByAuthType.m2m,
           dailyUserApiCalls: log.dailyApiCallsByAuthType.user,
+          // Predictive budget controls adoption
+          predictiveBudgetEnabledTemplates:
+            log.predictiveBudget.enabledTemplates,
+          predictiveBudgetEnabledActiveLeases:
+            log.predictiveBudget.enabledActiveLeases,
+          predictiveBudgetRateLimitTemplates:
+            log.predictiveBudget.rateLimitTemplates,
+          predictiveBudgetRateLimitActiveLeases:
+            log.predictiveBudget.rateLimitActiveLeases,
+          // Bedrock token monitoring adoption
+          bedrockTokenMonitoringEnabledTemplates:
+            log.bedrockTokenMonitoring.enabledTemplates,
+          bedrockTokenMonitoringEnabledActiveLeases:
+            log.bedrockTokenMonitoring.enabledActiveLeases,
+          // Sandbox Spaces adoption
+          sandboxSpacesEnabled: log.config.sandboxSpacesEnabled,
+          sandboxSpacesEnabledActiveLeases:
+            log.sandboxSpaces.enabledActiveLeases,
+          // Permission profile adoption
+          numTaggedPermissionSets:
+            log.permissionProfiles.numTaggedPermissionSets,
+          numAssignmentsWithCustomPermissionSet:
+            log.permissionProfiles.numAssignmentsWithCustomPermissionSet,
+          numLeasesWithCustomPermissionSet:
+            log.permissionProfiles.numLeasesWithCustomPermissionSet,
+          maxUniquePermissionSetsPerLease:
+            log.permissionProfiles.maxUniquePermissionSetsPerLease,
+          avgUniquePermissionSetsPerLease:
+            log.permissionProfiles.avgUniquePermissionSetsPerLease,
+          maxAllowedPermissionSetsPerTemplate:
+            log.permissionProfiles.maxAllowedPermissionSetsPerTemplate,
+          avgAllowedPermissionSetsPerTemplate:
+            log.permissionProfiles.avgAllowedPermissionSetsPerTemplate,
+          maxAllowedPermissionSetsPerLease:
+            log.permissionProfiles.maxAllowedPermissionSetsPerLease,
+          avgAllowedPermissionSetsPerLease:
+            log.permissionProfiles.avgAllowedPermissionSetsPerLease,
+          // Notification channel adoption and reliability
+          notificationSesEnabled: log.notificationSesEnabled,
+          notificationSnsEnabled: log.notificationSnsEnabled,
+          notificationUsingDelegatedSesIdentity:
+            log.notificationUsingDelegatedSesIdentity,
+          notificationSnsSubscriptionCount:
+            log.notificationSnsSubscriptionCount,
+          notificationFailuresSes: log.notificationFailuresSes,
+          notificationFailuresSns: log.notificationFailuresSns,
         },
       };
     case "CostReporting":
@@ -226,6 +279,15 @@ function extractAwsMetric(
           idcAssignmentsDeleted: log.idcAssignmentsDeleted,
           principalRecordsFound: log.principalRecordsFound,
           principalRecordsDeleted: log.principalRecordsDeleted,
+        },
+      };
+    case "MemoryCleanupFailed":
+      return {
+        event_name: "MemoryCleanupFailed",
+        context_version: 1,
+        context: {
+          failedPhase: log.phase,
+          errorName: log.errorName,
         },
       };
     case "AccountQuarantined":
@@ -267,6 +329,56 @@ function extractAwsMetric(
           tagsMissingCount: log.tagsMissing.length,
         },
       };
+    case "BudgetThresholdFired":
+      return {
+        event_name: "BudgetThresholdFired",
+        context_version: 1,
+        context: {
+          thresholdDollars: log.thresholdDollars,
+          action: log.action,
+          triggeredBy: log.triggeredBy,
+          evaluatedBy: log.evaluatedBy,
+          spendAtFire: log.spendAtFire,
+          billedCostAtFire: log.billedCostAtFire,
+          predictedCostAtFire: log.predictedCostAtFire,
+          hoursSinceLastRefresh: log.hoursSinceLastRefresh,
+          costAtFreezeDecision: log.costAtFreezeDecision,
+        },
+      };
+    case "SpendRateThresholdFired":
+      return {
+        event_name: "SpendRateThresholdFired",
+        context_version: 1,
+        context: {
+          rateBasis: log.rateBasis,
+          thresholdRate: log.thresholdRate,
+          measuredRate: log.measuredRate,
+          action: log.action,
+          evaluatedBy: log.evaluatedBy,
+          spendAtFire: log.spendAtFire,
+          billedCostAtFire: log.billedCostAtFire,
+          predictedCostAtFire: log.predictedCostAtFire,
+          hoursSinceLastRefresh: log.hoursSinceLastRefresh,
+          costAtFreezeDecision: log.costAtFreezeDecision,
+        },
+      };
+    case "ProjectionAccuracy":
+      return {
+        event_name: "ProjectionAccuracy",
+        context_version: 1,
+        context: {
+          predictedCost: log.predictedCost,
+          billedCostAccrued: log.billedCostAccrued,
+          errorDollars: log.errorDollars,
+          errorPercent: log.errorPercent,
+          intervalHours: log.intervalHours,
+          rateSource: log.rateSource,
+          algorithmId: log.algorithmId,
+        },
+      };
+    // A type with no case is parsed and dropped. SpendRateComputed is one of
+    // them on purpose: one record per lease per hour is too many to forward,
+    // and parsing it keeps it from being logged as a failure.
     default: {
       return undefined;
     }

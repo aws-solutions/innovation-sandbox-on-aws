@@ -8,7 +8,9 @@ import { mockContext } from "@amzn/innovation-sandbox-commons/test/lambdas/fixtu
 import { bulkStubEnv } from "@amzn/innovation-sandbox-commons/test/lambdas/utils.js";
 import type { PreTokenGenerationV2Event } from "@amzn/innovation-sandbox-pre-token-generation/types.js";
 import {
+  COGNITO_IDC_DISPLAY_NAME_CLAIM,
   COGNITO_IDC_USER_ID_CLAIM,
+  COGNITO_IDC_USER_NAME_CLAIM,
   COGNITO_ISB_ROLES_CLAIM,
   IdcIdentitySchema,
 } from "@amzn/innovation-sandbox-shared/utils/auth-utils.js";
@@ -34,6 +36,8 @@ const testEnv = generateSchemaData(PreTokenGenerationEnvironmentSchema);
 const testContext = mockContext(testEnv);
 const NO_GROUPS_ERROR =
   "User is not assigned to any ISB groups. Please contact your administrator to request access.";
+const USER_NOT_FOUND_ERROR =
+  "User could not be found in IAM Identity Center. Please contact your administrator to request access.";
 let handler: (typeof import("@amzn/innovation-sandbox-pre-token-generation/pre-token-generation-handler.js"))["handler"];
 
 function createTestEvent(
@@ -75,10 +79,12 @@ describe("Pre Token Generation Handler", () => {
     vi.clearAllMocks();
   });
 
-  it("should inject Admin and User roles into both ID and access tokens", async () => {
+  it("should inject identity claims into the ID token", async () => {
     mockGetUserFromEmail.mockResolvedValue(
       generateSchemaData(IdcIdentitySchema, {
         email: "testuser@example.com",
+        displayName: "Test User",
+        userName: "testuser",
         userId: "test-idc-user-id",
         roles: ["Admin", "User"],
       }),
@@ -92,29 +98,29 @@ describe("Pre Token Generation Handler", () => {
         claimsToAddOrOverride: {
           [COGNITO_ISB_ROLES_CLAIM]: '["Admin","User"]',
           [COGNITO_IDC_USER_ID_CLAIM]: "test-idc-user-id",
-        },
-      },
-      accessTokenGeneration: {
-        claimsToAddOrOverride: {
-          [COGNITO_ISB_ROLES_CLAIM]: '["Admin","User"]',
-          [COGNITO_IDC_USER_ID_CLAIM]: "test-idc-user-id",
+          [COGNITO_IDC_DISPLAY_NAME_CLAIM]: "Test User",
+          [COGNITO_IDC_USER_NAME_CLAIM]: "testuser",
         },
       },
     });
   });
 
-  it("should throw error when user is not in any ISB group", async () => {
+  it("should throw error when user is not found", async () => {
     mockGetUserFromEmail.mockResolvedValue(undefined);
 
     const event = createTestEvent();
 
-    await expect(handler(event, testContext)).rejects.toThrow(NO_GROUPS_ERROR);
+    await expect(handler(event, testContext)).rejects.toThrow(
+      USER_NOT_FOUND_ERROR,
+    );
   });
 
   it("should inject single role when user has only one ISB role", async () => {
     mockGetUserFromEmail.mockResolvedValue(
       generateSchemaData(IdcIdentitySchema, {
         email: "manager@example.com",
+        displayName: "Manager User",
+        userName: "manager",
         userId: "manager-idc-user-id",
         roles: ["Manager"],
       }),
@@ -136,16 +142,49 @@ describe("Pre Token Generation Handler", () => {
         claimsToAddOrOverride: {
           [COGNITO_ISB_ROLES_CLAIM]: '["Manager"]',
           [COGNITO_IDC_USER_ID_CLAIM]: "manager-idc-user-id",
-        },
-      },
-      accessTokenGeneration: {
-        claimsToAddOrOverride: {
-          [COGNITO_ISB_ROLES_CLAIM]: '["Manager"]',
-          [COGNITO_IDC_USER_ID_CLAIM]: "manager-idc-user-id",
+          [COGNITO_IDC_DISPLAY_NAME_CLAIM]: "Manager User",
+          [COGNITO_IDC_USER_NAME_CLAIM]: "manager",
         },
       },
     });
   });
+
+  it.each([undefined, ""])(
+    "injects the IDC user name separately when display name is %s",
+    async (displayName) => {
+      mockGetUserFromEmail.mockResolvedValue(
+        generateSchemaData(IdcIdentitySchema, {
+          email: "username@example.com",
+          displayName,
+          userName: "username",
+          userId: "username-idc-user-id",
+          roles: ["User"],
+        }),
+      );
+
+      const result = await handler(
+        createTestEvent({
+          request: {
+            userAttributes: {
+              email: "username@example.com",
+              sub: "username-sub",
+            },
+            groupConfiguration: {},
+          },
+        }),
+        testContext,
+      );
+
+      expect(
+        result.response.claimsAndScopeOverrideDetails.idTokenGeneration
+          ?.claimsToAddOrOverride?.[COGNITO_IDC_DISPLAY_NAME_CLAIM],
+      ).toBeUndefined();
+      expect(
+        result.response.claimsAndScopeOverrideDetails.idTokenGeneration
+          ?.claimsToAddOrOverride?.[COGNITO_IDC_USER_NAME_CLAIM],
+      ).toBe("username");
+    },
+  );
 
   it("should extract email from event.request.userAttributes.email", async () => {
     mockGetUserFromEmail.mockResolvedValue(
@@ -216,6 +255,7 @@ describe("Pre Token Generation Handler", () => {
     mockGetUserFromEmail.mockResolvedValue(
       generateSchemaData(IdcIdentitySchema, {
         email: "testuser@example.com",
+        displayName: "Test User",
         userId: "test-idc-user-id",
         roles: ["User"],
       }),
@@ -231,7 +271,11 @@ describe("Pre Token Generation Handler", () => {
     ).toBeDefined();
     expect(
       result.response.claimsAndScopeOverrideDetails.accessTokenGeneration,
-    ).toBeDefined();
+    ).toBeUndefined();
+    expect(
+      result.response.claimsAndScopeOverrideDetails.idTokenGeneration
+        ?.claimsToAddOrOverride?.[COGNITO_IDC_DISPLAY_NAME_CLAIM],
+    ).toBe("Test User");
   });
 
   it("should throw error when email cannot be resolved from attributes or userName", async () => {

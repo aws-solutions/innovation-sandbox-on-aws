@@ -24,8 +24,12 @@ import {
   vi,
 } from "vitest";
 
-const testEnv = generateSchemaData(DeploymentSummaryLambdaEnvironmentSchema);
+const testEnv = {
+  ...generateSchemaData(DeploymentSummaryLambdaEnvironmentSchema),
+  SES_IDENTITY_ARN: "arn:aws:ses:us-east-1:111122223333:identity/example.com",
+};
 const mockedGlobalConfig = mockGlobalConfig();
+mockedGlobalConfig.notification.emailFrom = "sender@example.com";
 const mockedReportingConfig = {
   costReportGroups: ["test-group"],
   requireCostReportGroup: false,
@@ -40,10 +44,20 @@ const mockSummarizeAccountPool = vi.fn();
 const mockGetScpMetrics = vi.fn();
 const mockSummarizeBlueprints = vi.fn();
 const mockSummarizeMultiUserLeases = vi.fn();
+const mockSummarizePermissionProfiles = vi.fn();
+const mockSummarizePredictiveBudget = vi.fn();
+const mockSummarizeBedrockTokenMonitoring = vi.fn();
+const mockSummarizeSandboxSpaces = vi.fn();
 const mockCountM2mClients = vi.fn();
 const mockCollectApiCallsByAuthType = vi.fn();
+const mockGetNotificationSnsSubscriptionCount = vi.fn();
+const mockSummarizeNotificationFailures = vi.fn();
 
 const mockLeaseTemplateStore = { findAll: vi.fn() };
+const mockPrincipalStore = {
+  listAllAssignments: vi.fn(),
+};
+const mockLeaseStore = { findByStatus: vi.fn() };
 
 vi.spyOn(Logger.prototype, "info").mockImplementation(() => {});
 vi.spyOn(Logger.prototype, "warn").mockImplementation(() => {});
@@ -65,7 +79,8 @@ beforeAll(async () => {
       accountPoolStackConfigStore: vi
         .fn()
         .mockReturnValue({ get: vi.fn().mockResolvedValue({}) }),
-      principalStore: vi.fn().mockReturnValue({}),
+      principalStore: vi.fn().mockReturnValue(mockPrincipalStore),
+      leaseStore: vi.fn().mockReturnValue(mockLeaseStore),
     },
   }));
 
@@ -75,6 +90,7 @@ beforeAll(async () => {
       accessAnalyzer: vi.fn().mockReturnValue({}),
       iam: vi.fn().mockReturnValue({}),
       cloudWatch: vi.fn().mockReturnValue({}),
+      sns: vi.fn().mockReturnValue({}),
     },
   }));
 
@@ -99,6 +115,13 @@ beforeAll(async () => {
       getScpMetrics: mockGetScpMetrics,
       summarizeBlueprints: mockSummarizeBlueprints,
       summarizeMultiUserLeases: mockSummarizeMultiUserLeases,
+      summarizePermissionProfiles: mockSummarizePermissionProfiles,
+      summarizePredictiveBudget: mockSummarizePredictiveBudget,
+      summarizeBedrockTokenMonitoring: mockSummarizeBedrockTokenMonitoring,
+      getNotificationSnsSubscriptionCount:
+        mockGetNotificationSnsSubscriptionCount,
+      summarizeNotificationFailures: mockSummarizeNotificationFailures,
+      summarizeSandboxSpaces: mockSummarizeSandboxSpaces,
     }),
   );
 
@@ -117,6 +140,14 @@ beforeEach(() => {
       { leaseTemplateId: "t1", blueprintId: "bp-1" },
       { leaseTemplateId: "t2", blueprintId: undefined },
     ],
+    nextPageIdentifier: null,
+  });
+  mockLeaseStore.findByStatus.mockResolvedValue({
+    result: [],
+    nextPageIdentifier: null,
+  });
+  mockPrincipalStore.listAllAssignments.mockResolvedValue({
+    result: [],
     nextPageIdentifier: null,
   });
   mockCountM2mClients.mockResolvedValue(0);
@@ -144,6 +175,33 @@ beforeEach(() => {
     maxAssignmentsPerLease: 0,
   });
   mockCollectApiCallsByAuthType.mockResolvedValue({ m2m: 0, user: 0 });
+  mockSummarizePredictiveBudget.mockResolvedValue({
+    enabledTemplates: 0,
+    enabledActiveLeases: 0,
+    rateLimitTemplates: 0,
+    rateLimitActiveLeases: 0,
+  });
+  mockSummarizeBedrockTokenMonitoring.mockResolvedValue({
+    enabledTemplates: 0,
+    enabledActiveLeases: 0,
+  });
+  mockSummarizeSandboxSpaces.mockResolvedValue({ enabledActiveLeases: 0 });
+  mockSummarizePermissionProfiles.mockResolvedValue({
+    numTaggedPermissionSets: 0,
+    numAssignmentsWithCustomPermissionSet: 0,
+    numLeasesWithCustomPermissionSet: 0,
+    maxUniquePermissionSetsPerLease: 0,
+    avgUniquePermissionSetsPerLease: 0,
+    maxAllowedPermissionSetsPerTemplate: 0,
+    avgAllowedPermissionSetsPerTemplate: 0,
+    maxAllowedPermissionSetsPerLease: 0,
+    avgAllowedPermissionSetsPerLease: 0,
+  });
+  mockGetNotificationSnsSubscriptionCount.mockResolvedValue(0);
+  mockSummarizeNotificationFailures.mockResolvedValue({
+    failuresSes: 0,
+    failuresSns: 0,
+  });
 });
 
 afterEach(() => {
@@ -184,6 +242,33 @@ describe("deployment-summary-handler", () => {
       maxAssignmentsPerLease: 3,
     });
     mockCollectApiCallsByAuthType.mockResolvedValue({ m2m: 4, user: 12 });
+    mockSummarizePredictiveBudget.mockResolvedValue({
+      enabledTemplates: 1,
+      enabledActiveLeases: 2,
+      rateLimitTemplates: 1,
+      rateLimitActiveLeases: 1,
+    });
+    mockSummarizeBedrockTokenMonitoring.mockResolvedValue({
+      enabledTemplates: 3,
+      enabledActiveLeases: 5,
+    });
+    mockSummarizeSandboxSpaces.mockResolvedValue({ enabledActiveLeases: 4 });
+    mockSummarizePermissionProfiles.mockResolvedValue({
+      numTaggedPermissionSets: 6,
+      numAssignmentsWithCustomPermissionSet: 8,
+      numLeasesWithCustomPermissionSet: 3,
+      maxUniquePermissionSetsPerLease: 4,
+      avgUniquePermissionSetsPerLease: 2.5,
+      maxAllowedPermissionSetsPerTemplate: 5,
+      avgAllowedPermissionSetsPerTemplate: 2.75,
+      maxAllowedPermissionSetsPerLease: 4,
+      avgAllowedPermissionSetsPerLease: 2.25,
+    });
+    mockGetNotificationSnsSubscriptionCount.mockResolvedValue(2);
+    mockSummarizeNotificationFailures.mockResolvedValue({
+      failuresSes: 1,
+      failuresSns: 3,
+    });
 
     await handler(scheduleEvent, mockedContext);
 
@@ -232,6 +317,13 @@ describe("deployment-summary-handler", () => {
           leaseSharingEnabled: mockedGlobalConfig.leases.leaseSharingEnabled,
           enablePrincipalSearch:
             mockedGlobalConfig.leases.enablePrincipalSearch,
+          allowPredictiveBudgetControls:
+            mockedGlobalConfig.leases.allowPredictiveBudgetControls,
+          serviceBreakdownEnabled:
+            mockedGlobalConfig.leases.serviceBreakdownEnabled,
+          allowBedrockTokenMonitoring:
+            mockedGlobalConfig.leases.allowBedrockTokenMonitoring,
+          sandboxSpacesEnabled: mockedGlobalConfig.agent.sandboxSpacesEnabled,
         },
         accountPool: {
           available: 5,
@@ -249,6 +341,206 @@ describe("deployment-summary-handler", () => {
         avgAssignmentsPerLease: 2,
         maxAssignmentsPerLease: 3,
         dailyApiCallsByAuthType: { m2m: 4, user: 12 },
+        predictiveBudget: {
+          enabledTemplates: 1,
+          enabledActiveLeases: 2,
+          rateLimitTemplates: 1,
+          rateLimitActiveLeases: 1,
+        },
+        bedrockTokenMonitoring: { enabledTemplates: 3, enabledActiveLeases: 5 },
+        sandboxSpaces: { enabledActiveLeases: 4 },
+        permissionProfiles: {
+          numTaggedPermissionSets: 6,
+          numAssignmentsWithCustomPermissionSet: 8,
+          numLeasesWithCustomPermissionSet: 3,
+          maxUniquePermissionSetsPerLease: 4,
+          avgUniquePermissionSetsPerLease: 2.5,
+          maxAllowedPermissionSetsPerTemplate: 5,
+          avgAllowedPermissionSetsPerTemplate: 2.75,
+          maxAllowedPermissionSetsPerLease: 4,
+          avgAllowedPermissionSetsPerLease: 2.25,
+        },
+        notificationSesEnabled: true,
+        notificationSnsEnabled:
+          mockedGlobalConfig.notification.snsIntegrationTopicEnabled,
+        notificationUsingDelegatedSesIdentity: true,
+        notificationSnsSubscriptionCount: 2,
+        notificationFailuresSes: 1,
+        notificationFailuresSns: 3,
+      }),
+    );
+    expect(mockGetNotificationSnsSubscriptionCount).toHaveBeenCalledWith(
+      expect.anything(),
+      testEnv.NOTIFICATION_TOPIC_ARN,
+    );
+    expect(mockSummarizeNotificationFailures).toHaveBeenCalledWith(
+      expect.anything(),
+      testEnv.ISB_NAMESPACE,
+    );
+    expect(mockSummarizePredictiveBudget).toHaveBeenCalledWith(
+      [
+        { leaseTemplateId: "t1", blueprintId: "bp-1" },
+        { leaseTemplateId: "t2", blueprintId: undefined },
+      ],
+      expect.anything(),
+    );
+  });
+
+  it("degrades permission profile metrics to zero counts without sinking the heartbeat", async () => {
+    mockSummarizePermissionProfiles.mockRejectedValue(
+      new Error("permission profile scan blew up"),
+    );
+
+    await handler(scheduleEvent, mockedContext);
+
+    expect(Logger.prototype.info).toHaveBeenCalledWith(
+      "ISB Deployment Summary",
+      expect.objectContaining({
+        permissionProfiles: {
+          numTaggedPermissionSets: 0,
+          numAssignmentsWithCustomPermissionSet: 0,
+          numLeasesWithCustomPermissionSet: 0,
+          maxUniquePermissionSetsPerLease: 0,
+          avgUniquePermissionSetsPerLease: 0,
+          maxAllowedPermissionSetsPerTemplate: 0,
+          avgAllowedPermissionSetsPerTemplate: 0,
+          maxAllowedPermissionSetsPerLease: 0,
+          avgAllowedPermissionSetsPerLease: 0,
+        },
+      }),
+    );
+  });
+
+  it("degrades the predictive budget collector to zero counts without sinking the heartbeat", async () => {
+    mockSummarizePredictiveBudget.mockRejectedValue(
+      new Error("lease scan blew up"),
+    );
+
+    await handler(scheduleEvent, mockedContext);
+
+    expect(Logger.prototype.info).toHaveBeenCalledWith(
+      "ISB Deployment Summary",
+      expect.objectContaining({
+        predictiveBudget: {
+          enabledTemplates: 0,
+          enabledActiveLeases: 0,
+          rateLimitTemplates: 0,
+          rateLimitActiveLeases: 0,
+        },
+      }),
+    );
+  });
+
+  it("degrades the Bedrock token monitoring collector to zero counts without sinking the heartbeat", async () => {
+    mockSummarizeBedrockTokenMonitoring.mockRejectedValue(
+      new Error("lease scan blew up"),
+    );
+
+    await handler(scheduleEvent, mockedContext);
+
+    expect(Logger.prototype.info).toHaveBeenCalledWith(
+      "ISB Deployment Summary",
+      expect.objectContaining({
+        bedrockTokenMonitoring: { enabledTemplates: 0, enabledActiveLeases: 0 },
+      }),
+    );
+  });
+
+  it("reports hub-account SES sending when the delegated identity ARN is empty", async () => {
+    bulkStubEnv({ ...testEnv, SES_IDENTITY_ARN: "" });
+
+    await handler(scheduleEvent, mockedContext);
+
+    expect(Logger.prototype.info).toHaveBeenCalledWith(
+      "ISB Deployment Summary",
+      expect.objectContaining({
+        notificationUsingDelegatedSesIdentity: false,
+      }),
+    );
+  });
+
+  it("reports SES disabled when emailFrom is empty", async () => {
+    mockAppConfigMiddleware(
+      {
+        ...mockedGlobalConfig,
+        notification: {
+          ...mockedGlobalConfig.notification,
+          emailFrom: "",
+          sesEnabled: true,
+        },
+      },
+      mockedReportingConfig,
+    );
+
+    await handler(scheduleEvent, mockedContext);
+
+    expect(Logger.prototype.info).toHaveBeenCalledWith(
+      "ISB Deployment Summary",
+      expect.objectContaining({ notificationSesEnabled: false }),
+    );
+  });
+
+  it("keeps failure counts when the SNS subscription count fails", async () => {
+    mockGetNotificationSnsSubscriptionCount.mockRejectedValue(
+      new Error("GetTopicAttributes blew up"),
+    );
+    mockSummarizeNotificationFailures.mockResolvedValue({
+      failuresSes: 2,
+      failuresSns: 3,
+    });
+
+    await handler(scheduleEvent, mockedContext);
+
+    expect(Logger.prototype.warn).toHaveBeenCalledWith(
+      expect.stringContaining("notificationSnsSubscriptionCount"),
+      expect.objectContaining({ error: expect.any(String) }),
+    );
+    expect(Logger.prototype.info).toHaveBeenCalledWith(
+      "ISB Deployment Summary",
+      expect.objectContaining({
+        notificationSesEnabled: true,
+        notificationSnsEnabled:
+          mockedGlobalConfig.notification.snsIntegrationTopicEnabled,
+        notificationSnsSubscriptionCount: 0,
+        notificationFailuresSes: 2,
+        notificationFailuresSns: 3,
+      }),
+    );
+  });
+
+  it("keeps the SNS subscription count when failure collection fails", async () => {
+    mockGetNotificationSnsSubscriptionCount.mockResolvedValue(4);
+    mockSummarizeNotificationFailures.mockRejectedValue(
+      new Error("GetMetricData blew up"),
+    );
+
+    await handler(scheduleEvent, mockedContext);
+
+    expect(Logger.prototype.warn).toHaveBeenCalledWith(
+      expect.stringContaining("notificationFailures"),
+      expect.objectContaining({ error: expect.any(String) }),
+    );
+    expect(Logger.prototype.info).toHaveBeenCalledWith(
+      "ISB Deployment Summary",
+      expect.objectContaining({
+        notificationSnsSubscriptionCount: 4,
+        notificationFailuresSes: 0,
+        notificationFailuresSns: 0,
+      }),
+    );
+  });
+
+  it("degrades the Sandbox Spaces collector to zero counts without sinking the heartbeat", async () => {
+    mockSummarizeSandboxSpaces.mockRejectedValue(
+      new Error("lease scan blew up"),
+    );
+
+    await handler(scheduleEvent, mockedContext);
+
+    expect(Logger.prototype.info).toHaveBeenCalledWith(
+      "ISB Deployment Summary",
+      expect.objectContaining({
+        sandboxSpaces: { enabledActiveLeases: 0 },
       }),
     );
   });
@@ -273,18 +565,82 @@ describe("deployment-summary-handler", () => {
     );
   });
 
-  it("passes the fetched lease templates into the dependent collector", async () => {
+  it("fans out each preloaded table scan to its dependent collectors", async () => {
+    const assignments = [
+      {
+        principalId: "user-1",
+        principalType: "USER",
+        leaseId: "lease-1",
+      },
+    ];
+    mockPrincipalStore.listAllAssignments.mockResolvedValue({
+      result: assignments,
+      nextPageIdentifier: null,
+    });
+    const activeLeases = [{ uuid: "lease-1", sandboxSpacesEnabled: true }];
+    mockLeaseStore.findByStatus.mockResolvedValue({
+      result: activeLeases,
+      nextPageIdentifier: null,
+    });
+
     await handler(scheduleEvent, mockedContext);
 
-    // leaseTemplates is fetched once in the handler and fanned out; the
-    // multi-user-lease collector consumes that shared array.
     expect(mockSummarizeMultiUserLeases).toHaveBeenCalledWith(
       [
         { leaseTemplateId: "t1", blueprintId: "bp-1" },
         { leaseTemplateId: "t2", blueprintId: undefined },
       ],
-      expect.anything(),
+      assignments,
     );
+    expect(mockSummarizePermissionProfiles).toHaveBeenCalledWith(
+      [
+        { leaseTemplateId: "t1", blueprintId: "bp-1" },
+        { leaseTemplateId: "t2", blueprintId: undefined },
+      ],
+      assignments,
+      activeLeases,
+      mockLeaseStore,
+      mockPrincipalStore,
+      testEnv.USER_PERMISSION_SET_ARN,
+    );
+    expect(mockSummarizePredictiveBudget).toHaveBeenCalledWith(
+      expect.anything(),
+      activeLeases,
+    );
+    expect(mockSummarizeSandboxSpaces).toHaveBeenCalledWith(activeLeases);
+    expect(mockPrincipalStore.listAllAssignments).toHaveBeenCalledOnce();
+    // One Active-lease scan shared by every collector that needs it.
+    expect(mockLeaseStore.findByStatus).toHaveBeenCalledOnce();
+    expect(mockLeaseStore.findByStatus).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "Active" }),
+    );
+  });
+
+  it("starts unrelated collectors without waiting for the assignment scan", async () => {
+    let resolveAssignments!: (value: {
+      result: never[];
+      nextPageIdentifier: null;
+    }) => void;
+    mockPrincipalStore.listAllAssignments.mockReturnValue(
+      new Promise((resolve) => {
+        resolveAssignments = resolve;
+      }),
+    );
+
+    const handlerPromise = handler(scheduleEvent, mockedContext);
+
+    await vi.waitFor(() => {
+      expect(mockCountM2mClients).toHaveBeenCalledOnce();
+      expect(mockSummarizeAccountPool).toHaveBeenCalledOnce();
+    });
+    expect(mockSummarizeMultiUserLeases).not.toHaveBeenCalled();
+    expect(mockSummarizePermissionProfiles).not.toHaveBeenCalled();
+
+    resolveAssignments({ result: [], nextPageIdentifier: null });
+    await handlerPromise;
+
+    expect(mockSummarizeMultiUserLeases).toHaveBeenCalledOnce();
+    expect(mockSummarizePermissionProfiles).toHaveBeenCalledOnce();
   });
 
   it("degrades a failing collector to its fallback without sinking the heartbeat", async () => {

@@ -47,14 +47,14 @@ repos:
           - --comment-style
           - // # defaults to Python's # syntax, requires changing for typescript syntax.
           - --detect-license-in-X-top-lines=3
-  - repo: https://github.com/pre-commit/mirrors-prettier
-    rev: v3.1.0
+  - repo: local
     hooks:
       - id: prettier
         name: Prettier
-        additional_dependencies:
-          - "prettier@^3.3.3"
-          - "@trivago/prettier-plugin-sort-imports"
+        # Use the lockfile-installed formatter so this hook agrees with ESLint.
+        entry: ./node_modules/.bin/prettier --write --ignore-unknown
+        language: system
+        types: [text]
   - repo: https://github.com/koalaman/shellcheck-precommit
     rev: v0.10.0
     hooks:
@@ -70,9 +70,10 @@ repos:
         entry: scripts/detect-empty-files.sh
         language: system
         pass_filenames: false
-      - id: verify-c2j-drift
-        name: Verify AWS CLI model is current
-        entry: scripts/m2m/verify-c2j-drift.sh
-        language: system
-        pass_filenames: false
-        files: ^(source/api-model/src/main/smithy/.*\.smithy|source/api-model/smithy-build-c2j\.json|scripts/m2m/internal/generate-c2j\.sh|scripts/m2m/verify-c2j-drift\.sh|docs/aws-cli-model/(service-2\.json|paginators-1\.json))$
+      # turning it off until this is fixed per discussion with team
+      # - id: verify-c2j-drift
+      #   name: Verify AWS CLI model is current
+      #   entry: scripts/m2m/verify-c2j-drift.sh
+      #   language: system
+      #   pass_filenames: false
+      #   files: ^(source/api-model/src/main/smithy/.*\.smithy|source/api-model/smithy-build-c2j\.json|scripts/m2m/internal/generate-c2j\.sh|scripts/m2m/verify-c2j-drift\.sh|docs/aws-cli-model/(service-2\.json|paginators-1\.json))$

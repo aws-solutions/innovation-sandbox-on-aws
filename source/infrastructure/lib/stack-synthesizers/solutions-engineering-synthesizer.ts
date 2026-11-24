@@ -7,9 +7,9 @@ import {
   type FileAssetSource,
   ISynthesisSession,
 } from "aws-cdk-lib";
-import { execSync } from "child_process";
-import fs from "fs";
-import path from "path";
+import { execSync } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
 
 const CLOUDFORMATION_TEMPLATE_LIMIT_BYTES = 1_000_000;
 const CLOUDFORMATION_TEMPLATE_WARNING_BYTES = 900_000;

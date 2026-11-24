@@ -45,6 +45,15 @@ vi.mock(
   },
 );
 
+const mockNavigate = vi.fn();
+vi.mock("react-router-dom", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react-router-dom")>();
+  return {
+    ...actual,
+    useNavigate: () => mockNavigate,
+  };
+});
+
 const mockUseUser = vi.fn();
 vi.mock("@amzn/innovation-sandbox-frontend/hooks/useUser", () => ({
   useUser: () => mockUseUser(),
@@ -104,9 +113,14 @@ describe("LeasePanel", () => {
     mockShowErrorToast.mockReset();
     mockUseUser.mockReset();
     mockUseGetConfigurations.mockReset();
+    mockNavigate.mockReset();
     mockUseUser.mockReturnValue({ user: ownerUser });
+    // Capability enabled so the owner-lease gate is what these tests exercise.
     mockUseGetConfigurations.mockReturnValue({
-      data: createConfiguration({ leases: defaultLeasesConfig }),
+      data: createConfiguration({
+        leases: defaultLeasesConfig,
+        agent: { sandboxSpacesEnabled: true },
+      }),
     });
   });
 
@@ -114,6 +128,7 @@ describe("LeasePanel", () => {
     const activeLease = createActiveLease({
       maxSpend: 100,
       totalCostAccrued: 25,
+      lastEvaluatedSpend: 20,
     });
     renderComponent(activeLease);
 
@@ -163,6 +178,7 @@ describe("LeasePanel", () => {
     const leaseWithBudget = createActiveLease({
       maxSpend: 1000,
       totalCostAccrued: 500,
+      lastEvaluatedSpend: null,
     });
 
     renderComponent(leaseWithBudget);
@@ -177,10 +193,24 @@ describe("LeasePanel", () => {
     ).toBeInTheDocument();
   });
 
+  test("shows the evaluated spend when it is above the billed total", () => {
+    renderComponent(
+      createActiveLease({
+        maxSpend: 100,
+        totalCostAccrued: 25,
+        lastEvaluatedSpend: 40,
+        bedrockTokenMonitoringEnabled: true,
+      }),
+    );
+
+    expect(screen.getByText("$40 of $100")).toBeInTheDocument();
+  });
+
   test("renders budget information correctly for a lease without max budget", () => {
     const leaseWithoutBudget = createActiveLease({
       maxSpend: undefined,
       totalCostAccrued: 10,
+      lastEvaluatedSpend: null,
     });
 
     renderComponent(leaseWithoutBudget);
@@ -345,6 +375,130 @@ describe("LeasePanel", () => {
       renderComponent(lease);
       expect(
         screen.queryByRole("button", { name: "Terminate lease" }),
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  describe("Open Space button", () => {
+    const enabledLeaseOverrides = {
+      userEmail: ownerEmail,
+      status: "Active" as const,
+      sandboxSpacesEnabled: true,
+      desiredAssignments: undefined,
+    };
+
+    test("shows button and navigates using lease.leaseId when access allowed", () => {
+      const lease: LeaseView = {
+        ...createActiveLease(enabledLeaseOverrides),
+        leaseId: "encoded-lease-id",
+      };
+      renderComponent(lease);
+
+      const button = screen.getByRole("button", { name: "Open Space" });
+      expect(button).toBeInTheDocument();
+
+      fireEvent.click(button);
+      expect(mockNavigate).toHaveBeenCalledWith(
+        "/leases/encoded-lease-id/sandbox-spaces",
+      );
+    });
+
+    test("disables button when the viewer is not an assignee of the lease", () => {
+      const lease: LeaseView = {
+        ...createActiveLease({
+          ...enabledLeaseOverrides,
+          userEmail: "other@example.com",
+        }),
+        leaseId: "encoded-lease-id",
+      };
+      renderComponent(lease);
+
+      const button = screen.getByRole("button", { name: "Open Space" });
+      expect(button).toHaveAttribute("aria-disabled", "true");
+
+      fireEvent.click(button);
+      expect(mockNavigate).not.toHaveBeenCalled();
+    });
+
+    test("disables button when the lease is shared only with a group", () => {
+      const lease: LeaseView = {
+        ...createActiveLease({
+          ...enabledLeaseOverrides,
+          userEmail: "other@example.com",
+          desiredAssignments: [
+            { principalId: "group-id", principalType: "GROUP" },
+          ],
+        }),
+        leaseId: "encoded-lease-id",
+      };
+      renderComponent(lease);
+
+      expect(
+        screen.getByRole("button", { name: "Open Space" }),
+      ).toHaveAttribute("aria-disabled", "true");
+    });
+
+    test.each(["Admin", "Manager"] as const)(
+      "disables button for a %s who is not an assignee of the lease",
+      (role) => {
+        mockUseUser.mockReturnValue({
+          user: {
+            ...ownerUser,
+            email: "elevated@example.com",
+            userId: "elevated-id",
+            roles: ["User", role],
+          },
+          isAdmin: role === "Admin",
+          isManager: role === "Manager",
+        });
+        const lease: LeaseView = {
+          ...createActiveLease({
+            ...enabledLeaseOverrides,
+            userEmail: "other@example.com",
+            desiredAssignments: [
+              { principalId: "group-id", principalType: "GROUP" },
+            ],
+          }),
+          leaseId: "encoded-lease-id",
+        };
+        renderComponent(lease);
+
+        expect(
+          screen.getByRole("button", { name: "Open Space" }),
+        ).toHaveAttribute("aria-disabled", "true");
+      },
+    );
+
+    test("hides button when sandboxSpacesEnabled is false on the lease", () => {
+      const lease: LeaseView = {
+        ...createActiveLease({
+          ...enabledLeaseOverrides,
+          sandboxSpacesEnabled: false,
+        }),
+        leaseId: "encoded-lease-id",
+      };
+      renderComponent(lease);
+
+      expect(
+        screen.queryByRole("button", { name: "Open Space" }),
+      ).not.toBeInTheDocument();
+    });
+
+    test("hides button when Sandbox Spaces is globally disabled", () => {
+      mockUseGetConfigurations.mockReturnValue({
+        data: createConfiguration({
+          leases: defaultLeasesConfig,
+          agent: { sandboxSpacesEnabled: false },
+        }),
+      });
+      const lease: LeaseView = {
+        ...createActiveLease(enabledLeaseOverrides),
+        leaseId: "encoded-lease-id",
+      };
+      renderComponent(lease);
+
+      expect(
+        screen.queryByRole("button", { name: "Open Space" }),
       ).not.toBeInTheDocument();
     });
   });

@@ -212,7 +212,7 @@ describe("ListAccounts", () => {
     expect(screen.getByText("Actions")).not.toBeDisabled();
   });
 
-  test("opens eject modal when 'Eject account' is selected", async () => {
+  test("opens eject modal with cleanup warning when 'Eject account' is selected", async () => {
     renderComponent();
     const user = userEvent.setup();
 
@@ -239,6 +239,8 @@ describe("ListAccounts", () => {
 
     const modalContent = within(modal);
 
+    expect(modal).toHaveTextContent(/does not run account cleanup/i);
+    expect(modal).toHaveTextContent(/continue to incur charges/i);
     expect(modalContent.getByText("1 account(s) to eject")).toBeInTheDocument();
 
     await waitFor(() =>

@@ -2,10 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { PersistedMonitoredLease } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
-import {
-  SandboxAccountStatus,
-  SandboxAccountStatusSchema,
-} from "@amzn/innovation-sandbox-shared/types/sandbox-account.js";
+import { SandboxAccountStatus } from "@amzn/innovation-sandbox-shared/types/sandbox-account.js";
 
 /**
  * Semantic suffixes for the ISB account tags. The tag key written to an account
@@ -25,7 +22,7 @@ export type IsbAccountTagSuffix = (typeof ISB_ACCOUNT_TAG_SUFFIXES)[number];
 export type IsbAccountTags = Partial<Record<IsbAccountTagSuffix, string>>;
 
 /** Valid values for the Status tag — alias of SandboxAccountStatus. */
-export const IsbStatusTagValueSchema = SandboxAccountStatusSchema;
+export { SandboxAccountStatusSchema as IsbStatusTagValueSchema } from "@amzn/innovation-sandbox-shared/types/sandbox-account.js";
 export type IsbStatusTagValue = SandboxAccountStatus;
 
 export const ISB_ACCOUNT_TAG_SPACE_LIMIT = 45;

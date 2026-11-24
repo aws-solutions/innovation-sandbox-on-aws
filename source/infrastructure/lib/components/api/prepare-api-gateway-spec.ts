@@ -1,5 +1,6 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
+import { EndpointAccessMode, SecurityPolicy } from "aws-cdk-lib/aws-apigateway";
 
 // The eight fixed OpenAPI 3.0 Path Item operation fields. Any other path-item key
 // (parameters, $ref, servers, summary, ...) is not an operation and is skipped.
@@ -16,21 +17,34 @@ const HTTP_METHODS: ReadonlySet<string> = new Set([
 
 // The API domains, spelled as the OpenAPI *path* first-segment
 // (`/leaseTemplates` -> `leaseTemplates`). This is a different namespace from the
-// model's kebab-case server projections (`lease-templates`), so it is NOT the same
-// list as `serverDomains()`. It is the source of the ApiDomain / DomainLambdaArns
-// types; `prepare-api-gateway-spec.test.ts` asserts it stays in sync with the
-// generated contract's paths.
+// model's kebab-case server projections (`lease-templates`), so it is NOT the
+// same list as `serverDomains()`. Public multi-word domains use lower camel case.
+// This is the source of the ApiDomain / DomainLambdaArns types;
+// `prepare-api-gateway-spec.test.ts` asserts it stays in sync with the generated
+// contract's paths.
 export const API_DOMAINS = [
   "accounts",
   "blueprints",
   "configurations",
   "leases",
   "leaseTemplates",
+  "permissionSets",
   "principals",
+  "sandboxAgent",
 ] as const;
 
 export type ApiDomain = (typeof API_DOMAINS)[number];
 export type DomainLambdaArns = Readonly<Record<ApiDomain, string>>;
+
+// Domains present in the public generated contract that are not yet routed
+// through the domain Lambda registry. Their paths are stripped from runtime
+// consumers until their implementation task adds the Lambda, authorization, and
+// API_DOMAINS entry. This lets contract and generated-binding work land before
+// deployment wiring without publishing a nonfunctional route.
+export const EXCLUDED_DOMAINS: ReadonlySet<string> = new Set<string>();
+
+export const isExcludedApiPath = (path: string): boolean =>
+  EXCLUDED_DOMAINS.has(path.split("/")[1] ?? ""); // NOSONAR typescript:S4158: intentionally empty between contract-first feature implementations.
 
 // The only gateway-enforced security scheme: SigV4 maps to AWS_IAM authorization.
 // Every other scheme in the contract (e.g. `isbIdentity`, the Lambda-verified
@@ -42,6 +56,14 @@ const INTEGRATION = "x-amazon-apigateway-integration";
 const REQUEST_VALIDATOR = "x-amazon-apigateway-request-validator";
 const REQUEST_VALIDATORS = "x-amazon-apigateway-request-validators";
 const NO_VALIDATION = "none";
+const SECURITY_POLICY = "x-amazon-apigateway-security-policy";
+const ENDPOINT_ACCESS_MODE = "x-amazon-apigateway-endpoint-access-mode";
+
+// TLS 1.2+ for the default execute-api endpoint (the service default is TLS_1_0).
+// Set in the document as well as on the RestApi resource: an OVERWRITE import of a
+// document without them resets the API to TLS_1_0.
+export const REST_API_SECURITY_POLICY = SecurityPolicy.TLS12_PFS_2025_EDGE;
+export const REST_API_ENDPOINT_ACCESS_MODE = EndpointAccessMode.STRICT;
 
 // AWS_PROXY integration URI. `${LambdaArn}` is substituted with each domain's
 // function ARN at synthesis; `${AWS::Partition}`/`${AWS::Region}` are resolved by
@@ -80,6 +102,14 @@ const integration = (lambdaArn: string) => ({
   httpMethod: "POST",
   uri: { "Fn::Sub": [INTEGRATION_URI_TEMPLATE, { LambdaArn: lambdaArn }] },
 });
+
+function stripExcludedDomainPaths(spec: OpenApiDocument): void {
+  for (const path of Object.keys(spec.paths)) {
+    if (isExcludedApiPath(path)) {
+      delete spec.paths[path];
+    }
+  }
+}
 
 /**
  * Reduces gateway authentication to a single uniform AWS_IAM (SigV4) requirement
@@ -162,10 +192,12 @@ function attachProxyIntegrations(
  * deployed by API Gateway, as a pure transform over a clone (the published
  * contract is left unchanged). In order:
  *
- * 1. Enforce uniform AWS_IAM (SigV4), dropping the Lambda-verified `isbIdentity`.
- * 2. Disable gateway request validation (preserve Lambda/JSend errors).
- * 3. Attach an aws_proxy integration to every operation (fail-closed on unknown
+ * 1. Strip paths for domains in `EXCLUDED_DOMAINS` (not runtime-routable yet).
+ * 2. Enforce uniform AWS_IAM (SigV4), dropping the Lambda-verified `isbIdentity`.
+ * 3. Disable gateway request validation (preserve Lambda/JSend errors).
+ * 4. Attach an aws_proxy integration to every operation (fail-closed on unknown
  *    domains, missing ARNs, malformed operations, or per-operation security).
+ * 5. Set the TLS security policy and endpoint access mode.
  *
  * Public paths, schemas, examples, descriptions, and servers are otherwise
  * preserved. Runs in memory during CDK synthesis — no second deployment spec.
@@ -175,8 +207,11 @@ export function prepareApiGatewaySpec(
   lambdaArns: DomainLambdaArns,
 ): OpenApiDocument {
   const spec = structuredClone(contract);
+  stripExcludedDomainPaths(spec);
   enforceUniformSigV4(spec);
   disableGatewayValidation(spec);
   attachProxyIntegrations(spec, lambdaArns);
+  spec[SECURITY_POLICY] = REST_API_SECURITY_POLICY;
+  spec[ENDPOINT_ACCESS_MODE] = REST_API_ENDPOINT_ACCESS_MODE;
   return spec;
 }

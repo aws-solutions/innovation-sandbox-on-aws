@@ -3,7 +3,9 @@
 import { Aws, Token } from "aws-cdk-lib";
 import {
   ApiDefinition,
+  CfnAccount,
   CfnRestApi,
+  EndpointType,
   LogGroupLogDestination,
   RestApiMode,
   SpecRestApi,
@@ -18,13 +20,17 @@ import { BlueprintsApi } from "@amzn/innovation-sandbox-infrastructure/component
 import { ConfigurationsApi } from "@amzn/innovation-sandbox-infrastructure/components/api/configurations-api";
 import { LeaseTemplatesApi } from "@amzn/innovation-sandbox-infrastructure/components/api/lease-templates-api";
 import { LeasesApi } from "@amzn/innovation-sandbox-infrastructure/components/api/leases-api";
+import { PermissionSetsApi } from "@amzn/innovation-sandbox-infrastructure/components/api/permission-sets-api";
 import {
   API_DOMAINS,
   ApiDomain,
   DomainLambdaArns,
   prepareApiGatewaySpec,
+  REST_API_ENDPOINT_ACCESS_MODE,
+  REST_API_SECURITY_POLICY,
 } from "@amzn/innovation-sandbox-infrastructure/components/api/prepare-api-gateway-spec";
 import { PrincipalsApi } from "@amzn/innovation-sandbox-infrastructure/components/api/principals-api";
+import { SandboxAgentApi } from "@amzn/innovation-sandbox-infrastructure/components/api/sandbox-agent-api";
 import { Waf } from "@amzn/innovation-sandbox-infrastructure/components/api/waf";
 import { IsbKmsKeys } from "@amzn/innovation-sandbox-infrastructure/components/kms";
 import { getContextFromMapping } from "@amzn/innovation-sandbox-infrastructure/helpers/cdk-context";
@@ -41,6 +47,8 @@ export interface RestApiProps {
   isbEventBus: EventBus;
   allowListedCidr: string[];
   durableCleanupFunctionArn: string;
+  /** Resolved SesIdentityArn CFN parameter; empty when no delegated identity is configured. */
+  sesIdentityArn: string;
 }
 
 export class RestApi extends SpecRestApi {
@@ -64,6 +72,8 @@ export class RestApi extends SpecRestApi {
         prepareApiGatewaySpec(openApiContract, lambdaArns),
       ),
       mode: RestApiMode.OVERWRITE,
+      // REST_API_SECURITY_POLICY is an edge-optimized policy.
+      endpointTypes: [EndpointType.EDGE],
       failOnWarnings: true,
       parameters: {
         basepath: "ignore",
@@ -79,6 +89,9 @@ export class RestApi extends SpecRestApi {
         throttlingBurstLimit: Token.asNumber(
           getContextFromMapping(scope, "apiThrottlingBurstLimit"),
         ),
+        // Explicit false deletes the cache cluster that earlier versions created;
+        // omitting the property leaves it running on upgraded stages.
+        cacheClusterEnabled: false,
       },
     });
 
@@ -88,6 +101,8 @@ export class RestApi extends SpecRestApi {
     const restApiResource = this.node.defaultChild as CfnRestApi;
     restApiResource.description = "Innovation Sandbox on AWS Rest API";
     restApiResource.overrideLogicalId("IsbOpenApiRestApi");
+    restApiResource.securityPolicy = REST_API_SECURITY_POLICY;
+    restApiResource.endpointAccessMode = REST_API_ENDPOINT_ACCESS_MODE;
 
     addCfnGuardSuppression(this.deploymentStage, [
       "API_GW_CACHE_ENABLED_AND_ENCRYPTED",
@@ -118,6 +133,10 @@ export class RestApi extends SpecRestApi {
       });
     }
   }
+
+  public get cloudWatchAccountResource(): CfnAccount | undefined {
+    return this.cloudWatchAccount;
+  }
 }
 
 type DomainLambdaFunctions = Readonly<Record<ApiDomain, IFunction>>;
@@ -132,7 +151,9 @@ function createDomainLambdaFunctions(
     accounts: new AccountsApi(scope, props).lambdaFunction,
     blueprints: new BlueprintsApi(scope, props).lambdaFunction,
     configurations: new ConfigurationsApi(scope, props).lambdaFunction,
+    permissionSets: new PermissionSetsApi(scope, props).lambdaFunction,
     principals: new PrincipalsApi(scope, props).lambdaFunction,
+    sandboxAgent: new SandboxAgentApi(scope, props).lambdaFunction,
   };
 }
 
@@ -145,6 +166,8 @@ function getDomainLambdaArns(
     configurations: lambdaFunctions.configurations.functionArn,
     leases: lambdaFunctions.leases.functionArn,
     leaseTemplates: lambdaFunctions.leaseTemplates.functionArn,
+    permissionSets: lambdaFunctions.permissionSets.functionArn,
     principals: lambdaFunctions.principals.functionArn,
+    sandboxAgent: lambdaFunctions.sandboxAgent.functionArn,
   };
 }

@@ -1,6 +1,7 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+import { Logger } from "@aws-lambda-powertools/logger";
 import {
   ConditionalCheckFailedException,
   DynamoDBClient,
@@ -19,11 +20,22 @@ import { mockClient } from "aws-sdk-client-mock";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  base64EncodeCompositeKey,
+  InvalidPageIdentifierError,
+} from "@amzn/innovation-sandbox-commons/data/encoding.js";
+import {
   BatchUnprocessedItemsError,
   ItemAlreadyExists,
 } from "@amzn/innovation-sandbox-commons/data/errors.js";
+import {
+  PERMISSION_SET_CACHE_PK,
+  permissionSetCacheSk,
+  PermissionSetSchemaVersion,
+  PersistedPermissionSetCacheItemSchema,
+} from "@amzn/innovation-sandbox-commons/data/permission-set/permission-set.js";
 import { DynamoPrincipalStore } from "@amzn/innovation-sandbox-commons/data/principal/dynamo-principal-store.js";
 import {
+  assignmentSk,
   GROUP_MEMBERSHIP_SK,
   groupPk,
   LEASE_SK_PREFIX,
@@ -34,7 +46,9 @@ import {
   PersistedGroupAssignmentSchema,
   PersistedGroupMembershipCacheSchema,
   PersistedUserAssignmentSchema,
+  PrincipalSchemaVersion,
 } from "@amzn/innovation-sandbox-commons/data/principal/principal.js";
+import { LogPatterns } from "@amzn/innovation-sandbox-commons/observability/logging.js";
 import { generateSchemaData } from "@amzn/innovation-sandbox-commons/test/generate-schema-data.js";
 
 const ddbDocClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
@@ -44,6 +58,11 @@ const TABLE_NAME = "test-principal-table";
 const VALID_UUID = "00000000-0000-4000-8000-000000000001";
 const VALID_UUID_2 = "00000000-0000-4000-8000-000000000002";
 const NOW = "2024-01-01T00:00:00.000Z";
+const BUILT_IN_PERMISSION_SET_ID = "ps-0123456789abcdef";
+const BUILT_IN_PERMISSION_SET_ARN = `arn:aws:sso:::permissionSet/ins-0123456789abcdef/${BUILT_IN_PERMISSION_SET_ID}`;
+const CUSTOM_PERMISSION_SET_ID = "ps-fedcba9876543210";
+const CUSTOM_PERMISSION_SET_ARN =
+  "arn:aws:sso:::permissionSet/ins-0123456789abcdef/ps-fedcba9876543210";
 
 function makeUserAssignment(overrides: Record<string, unknown> = {}) {
   return generateSchemaData(PersistedUserAssignmentSchema, {
@@ -52,8 +71,9 @@ function makeUserAssignment(overrides: Record<string, unknown> = {}) {
     userId: VALID_UUID,
     principalType: "USER",
     leaseId: VALID_UUID,
+    permissionSetArn: BUILT_IN_PERMISSION_SET_ARN,
     meta: {
-      schemaVersion: 1,
+      schemaVersion: PrincipalSchemaVersion,
       createdTime: NOW,
       lastEditTime: NOW,
     },
@@ -68,8 +88,9 @@ function makeGroupAssignment(overrides: Record<string, unknown> = {}) {
     leaseId: VALID_UUID,
     groupId: VALID_UUID,
     principalType: "GROUP",
+    permissionSetArn: BUILT_IN_PERMISSION_SET_ARN,
     meta: {
-      schemaVersion: 1,
+      schemaVersion: PrincipalSchemaVersion,
       createdTime: NOW,
       lastEditTime: NOW,
     },
@@ -83,6 +104,29 @@ function makeGroupMembershipCache(overrides: Record<string, unknown> = {}) {
     sk: GROUP_MEMBERSHIP_SK,
     groupIds: [VALID_UUID],
     ttl: Math.floor(Date.now() / 1000) + 86400,
+    ...overrides,
+  });
+}
+
+function makePermissionSetCacheItem(overrides: Record<string, unknown> = {}) {
+  const permissionSetId = `ps-${crypto
+    .randomUUID()
+    .replaceAll("-", "")
+    .slice(0, 16)}`;
+  return generateSchemaData(PersistedPermissionSetCacheItemSchema, {
+    pk: PERMISSION_SET_CACHE_PK,
+    sk: permissionSetCacheSk(permissionSetId),
+    permissionSetId,
+    permissionSetArn: `arn:aws:sso:::permissionSet/ins-0123456789abcdef/${permissionSetId}`,
+    name: "DeveloperAccess",
+    description: undefined,
+    sessionDuration: undefined,
+    syncedAt: NOW,
+    meta: {
+      schemaVersion: PermissionSetSchemaVersion,
+      createdTime: NOW,
+      lastEditTime: NOW,
+    },
     ...overrides,
   });
 }
@@ -147,7 +191,6 @@ describe("DynamoPrincipalStore", () => {
       mockDynamoClient.on(PutCommand).resolves({});
       const assignment = makeUserAssignment();
       delete (assignment as Record<string, unknown>)["accountId"];
-      delete (assignment as Record<string, unknown>)["permissionSetArn"];
       delete (assignment as Record<string, unknown>)["statusMessage"];
 
       await store.createUserAssignment(assignment);
@@ -155,7 +198,10 @@ describe("DynamoPrincipalStore", () => {
       const putCalls = mockDynamoClient.commandCalls(PutCommand);
       const writtenItem = putCalls[0]!.args[0].input.Item;
       expect(writtenItem).not.toHaveProperty("accountId");
-      expect(writtenItem).not.toHaveProperty("permissionSetArn");
+      expect(writtenItem).toHaveProperty(
+        "permissionSetArn",
+        BUILT_IN_PERMISSION_SET_ARN,
+      );
       expect(writtenItem).not.toHaveProperty("statusMessage");
     });
   });
@@ -249,6 +295,416 @@ describe("DynamoPrincipalStore", () => {
     });
   });
 
+  describe("tuple-aware assignment lookups", () => {
+    it("returns mixed legacy and tuple-keyed records for one principal and lease", async () => {
+      const legacy = makeUserAssignment({
+        permissionSetArn: BUILT_IN_PERMISSION_SET_ARN,
+      });
+      const tuple = makeUserAssignment({
+        sk: assignmentSk(VALID_UUID, CUSTOM_PERMISSION_SET_ID),
+        permissionSetArn: CUSTOM_PERMISSION_SET_ARN,
+      });
+      mockDynamoClient
+        .on(QueryCommand)
+        .resolvesOnce({
+          Items: [legacy],
+          LastEvaluatedKey: { pk: userPk(VALID_UUID), sk: legacy.sk },
+        })
+        .resolvesOnce({ Items: [tuple] });
+
+      const result = await store.getAssignmentsForPrincipalAndLease({
+        principalId: VALID_UUID,
+        principalType: "USER",
+        leaseId: VALID_UUID,
+      });
+
+      expect(result).toEqual([legacy, tuple]);
+      const calls = mockDynamoClient.commandCalls(QueryCommand);
+      expect(calls).toHaveLength(2);
+      expect(calls[0]!.args[0].input.ConsistentRead).toBe(true);
+      expect(calls[1]!.args[0].input.ConsistentRead).toBe(true);
+      expect(calls[0]!.args[0].input.ExpressionAttributeValues).toEqual({
+        ":pk": userPk(VALID_UUID),
+        ":skPrefix": leaseSk(VALID_UUID),
+      });
+      expect(calls[1]!.args[0].input.ExclusiveStartKey).toEqual({
+        pk: userPk(VALID_UUID),
+        sk: legacy.sk,
+      });
+    });
+
+    it("queries group assignments using the group principal key", async () => {
+      const groupAssignment = makeGroupAssignment();
+      mockDynamoClient.on(QueryCommand).resolves({ Items: [groupAssignment] });
+
+      const result = await store.getAssignmentsForPrincipalAndLease({
+        principalId: VALID_UUID,
+        principalType: "GROUP",
+        leaseId: VALID_UUID,
+      });
+
+      expect(result).toEqual([groupAssignment]);
+      expect(
+        mockDynamoClient.commandCalls(QueryCommand)[0]!.args[0].input
+          .ExpressionAttributeValues,
+      ).toEqual({
+        ":pk": groupPk(VALID_UUID),
+        ":skPrefix": leaseSk(VALID_UUID),
+      });
+    });
+
+    it("deletes one assignment record by its exact principal-table key", async () => {
+      const tuple = makeUserAssignment({
+        sk: assignmentSk(VALID_UUID, CUSTOM_PERMISSION_SET_ID),
+        permissionSetArn: CUSTOM_PERMISSION_SET_ARN,
+      });
+      mockDynamoClient.on(DeleteCommand).resolves({ Attributes: tuple });
+
+      const deleted = await store.deleteAssignment({
+        principalId: VALID_UUID,
+        principalType: "USER",
+        sk: tuple.sk,
+        expectedLastEditTime: NOW,
+      });
+
+      expect(deleted).toBe(true);
+      expect(mockDynamoClient.commandCalls(QueryCommand)).toHaveLength(0);
+      expect(
+        mockDynamoClient.commandCalls(DeleteCommand)[0]!.args[0].input,
+      ).toMatchObject({
+        Key: {
+          pk: userPk(VALID_UUID),
+          sk: tuple.sk,
+        },
+        ConditionExpression: "#meta.#lastEditTime = :expectedLastEditTime",
+        ExpressionAttributeValues: {
+          ":expectedLastEditTime": NOW,
+        },
+      });
+    });
+
+    it("returns false when an exact assignment record is already absent", async () => {
+      mockDynamoClient.on(DeleteCommand).resolves({});
+
+      const deleted = await store.deleteAssignment({
+        principalId: VALID_UUID,
+        principalType: "GROUP",
+        sk: leaseSk(VALID_UUID),
+      });
+
+      expect(deleted).toBe(false);
+      expect(
+        mockDynamoClient.commandCalls(DeleteCommand)[0]!.args[0].input,
+      ).toMatchObject({
+        Key: {
+          pk: groupPk(VALID_UUID),
+          sk: leaseSk(VALID_UUID),
+        },
+      });
+      expect(
+        mockDynamoClient.commandCalls(DeleteCommand)[0]!.args[0].input
+          .ConditionExpression,
+      ).toBeUndefined();
+    });
+
+    it("guards an exact record that originally had no last-edit timestamp", async () => {
+      mockDynamoClient.on(DeleteCommand).resolves({});
+
+      await store.deleteAssignment({
+        principalId: VALID_UUID,
+        principalType: "USER",
+        sk: leaseSk(VALID_UUID),
+        expectedLastEditTime: undefined,
+      });
+
+      expect(
+        mockDynamoClient.commandCalls(DeleteCommand)[0]!.args[0].input,
+      ).toMatchObject({
+        ConditionExpression: "attribute_not_exists(#meta.#lastEditTime)",
+      });
+    });
+
+    it("propagates a conditional conflict deleting an exact record", async () => {
+      mockDynamoClient.on(DeleteCommand).rejects(
+        new ConditionalCheckFailedException({
+          $metadata: {},
+          message: "Assignment changed",
+        }),
+      );
+
+      await expect(
+        store.deleteAssignment({
+          principalId: VALID_UUID,
+          principalType: "USER",
+          sk: leaseSk(VALID_UUID),
+          expectedLastEditTime: NOW,
+        }),
+      ).rejects.toBeInstanceOf(ConditionalCheckFailedException);
+    });
+
+    it("returns the first assignment when no permission-set ARN is specified", async () => {
+      const legacy = makeUserAssignment();
+      const tuple = makeUserAssignment({
+        sk: assignmentSk(VALID_UUID, CUSTOM_PERMISSION_SET_ID),
+        permissionSetArn: CUSTOM_PERMISSION_SET_ARN,
+      });
+      mockDynamoClient.on(QueryCommand).resolves({ Items: [legacy, tuple] });
+
+      const result = await store.findAssignment({
+        principalId: VALID_UUID,
+        principalType: "USER",
+        leaseId: VALID_UUID,
+      });
+
+      expect(result).toEqual(legacy);
+    });
+
+    it("matches an explicit permission set without treating a legacy record as a custom assignment", async () => {
+      const legacy = makeUserAssignment();
+      const tuple = makeUserAssignment({
+        sk: assignmentSk(VALID_UUID, CUSTOM_PERMISSION_SET_ID),
+        permissionSetArn: CUSTOM_PERMISSION_SET_ARN,
+      });
+      mockDynamoClient.on(QueryCommand).resolves({ Items: [legacy, tuple] });
+
+      const result = await store.findAssignment({
+        principalId: VALID_UUID,
+        principalType: "USER",
+        leaseId: VALID_UUID,
+        permissionSetArn: CUSTOM_PERMISSION_SET_ARN,
+      });
+
+      expect(result).toEqual(tuple);
+    });
+
+    it("matches a suffix-less legacy record by its persisted permission set ARN", async () => {
+      const legacy = makeUserAssignment();
+      mockDynamoClient.on(QueryCommand).resolves({ Items: [legacy] });
+
+      const result = await store.findAssignment({
+        principalId: VALID_UUID,
+        principalType: "USER",
+        leaseId: VALID_UUID,
+        permissionSetArn: BUILT_IN_PERMISSION_SET_ARN,
+      });
+
+      expect(result).toEqual(legacy);
+    });
+
+    it("matches a legacy record only to the built-in permission set when the lease default differs", async () => {
+      const legacy = makeUserAssignment({ permissionSetArn: undefined });
+      mockDynamoClient.on(QueryCommand).resolves({ Items: [legacy] });
+
+      const builtInResult = await store.findAssignment({
+        principalId: VALID_UUID,
+        principalType: "USER",
+        leaseId: VALID_UUID,
+        permissionSetArn: BUILT_IN_PERMISSION_SET_ARN,
+        builtInPermissionSetArn: BUILT_IN_PERMISSION_SET_ARN,
+      });
+      const customResult = await store.findAssignment({
+        principalId: VALID_UUID,
+        principalType: "USER",
+        leaseId: VALID_UUID,
+        permissionSetArn: CUSTOM_PERMISSION_SET_ARN,
+        builtInPermissionSetArn: BUILT_IN_PERMISSION_SET_ARN,
+      });
+
+      expect(builtInResult).toEqual(legacy);
+      expect(customResult).toBeUndefined();
+    });
+
+    it("does not treat a legacy record as a custom permission set", async () => {
+      const legacy = makeUserAssignment({ permissionSetArn: undefined });
+      mockDynamoClient.on(QueryCommand).resolves({ Items: [legacy] });
+
+      const result = await store.findAssignment({
+        principalId: VALID_UUID,
+        principalType: "USER",
+        leaseId: VALID_UUID,
+        permissionSetArn: CUSTOM_PERMISSION_SET_ARN,
+        builtInPermissionSetArn: BUILT_IN_PERMISSION_SET_ARN,
+      });
+
+      expect(result).toBeUndefined();
+    });
+
+    it("does not treat a bare-key record with a different stored ARN as the built-in permission set", async () => {
+      const legacy = makeUserAssignment({
+        permissionSetArn: CUSTOM_PERMISSION_SET_ARN,
+      });
+      mockDynamoClient.on(QueryCommand).resolves({ Items: [legacy] });
+
+      const result = await store.findAssignment({
+        principalId: VALID_UUID,
+        principalType: "USER",
+        leaseId: VALID_UUID,
+        permissionSetArn: BUILT_IN_PERMISSION_SET_ARN,
+        builtInPermissionSetArn: BUILT_IN_PERMISSION_SET_ARN,
+      });
+
+      expect(result).toBeUndefined();
+    });
+
+    it("deletes a matched record using its real tuple-keyed sort key", async () => {
+      const tuple = makeUserAssignment({
+        sk: assignmentSk(VALID_UUID, CUSTOM_PERMISSION_SET_ID),
+        permissionSetArn: CUSTOM_PERMISSION_SET_ARN,
+      });
+      mockDynamoClient
+        .on(QueryCommand)
+        .resolves({ Items: [makeUserAssignment(), tuple] });
+      mockDynamoClient.on(DeleteCommand).resolves({ Attributes: tuple });
+
+      const count = await store.deleteAssignmentsByLeasePrincipal({
+        principalId: VALID_UUID,
+        principalType: "USER",
+        leaseId: VALID_UUID,
+        permissionSetArn: CUSTOM_PERMISSION_SET_ARN,
+      });
+
+      expect(count).toBe(1);
+      expect(
+        mockDynamoClient.commandCalls(DeleteCommand)[0]!.args[0].input.Key,
+      ).toEqual({
+        pk: userPk(VALID_UUID),
+        sk: assignmentSk(VALID_UUID, CUSTOM_PERMISSION_SET_ID),
+      });
+    });
+
+    it("deletes both explicit and legacy records for the built-in permission set", async () => {
+      const legacy = makeUserAssignment({ permissionSetArn: undefined });
+      const explicitBuiltIn = makeUserAssignment({
+        sk: assignmentSk(VALID_UUID, BUILT_IN_PERMISSION_SET_ID),
+        permissionSetArn: BUILT_IN_PERMISSION_SET_ARN,
+      });
+      mockDynamoClient
+        .on(QueryCommand)
+        .resolves({ Items: [legacy, explicitBuiltIn] });
+      mockDynamoClient
+        .on(DeleteCommand)
+        .resolvesOnce({ Attributes: explicitBuiltIn })
+        .resolvesOnce({ Attributes: legacy });
+
+      const count = await store.deleteAssignmentsByLeasePrincipal({
+        principalId: VALID_UUID,
+        principalType: "USER",
+        leaseId: VALID_UUID,
+        permissionSetArn: BUILT_IN_PERMISSION_SET_ARN,
+        builtInPermissionSetArn: BUILT_IN_PERMISSION_SET_ARN,
+      });
+
+      expect(count).toBe(2);
+      expect(
+        mockDynamoClient
+          .commandCalls(DeleteCommand)
+          .map((call) => call.args[0].input.Key),
+      ).toEqual([
+        {
+          pk: userPk(VALID_UUID),
+          sk: assignmentSk(VALID_UUID, BUILT_IN_PERMISSION_SET_ID),
+        },
+        { pk: userPk(VALID_UUID), sk: leaseSk(VALID_UUID) },
+      ]);
+    });
+
+    it("deletes every assignment when the permission-set ARN is omitted", async () => {
+      const legacy = makeUserAssignment();
+      const tuple = makeUserAssignment({
+        sk: assignmentSk(VALID_UUID, CUSTOM_PERMISSION_SET_ID),
+        permissionSetArn: CUSTOM_PERMISSION_SET_ARN,
+      });
+      mockDynamoClient.on(QueryCommand).resolves({ Items: [legacy, tuple] });
+      mockDynamoClient
+        .on(DeleteCommand)
+        .resolvesOnce({ Attributes: legacy })
+        .resolvesOnce({ Attributes: tuple });
+
+      const count = await store.deleteAssignmentsByLeasePrincipal({
+        principalId: VALID_UUID,
+        principalType: "USER",
+        leaseId: VALID_UUID,
+      });
+
+      expect(count).toBe(2);
+      expect(
+        mockDynamoClient
+          .commandCalls(DeleteCommand)
+          .map((call) => call.args[0].input.Key),
+      ).toEqual([
+        { pk: userPk(VALID_UUID), sk: leaseSk(VALID_UUID) },
+        {
+          pk: userPk(VALID_UUID),
+          sk: assignmentSk(VALID_UUID, CUSTOM_PERMISSION_SET_ID),
+        },
+      ]);
+    });
+
+    it("counts only assignments that were actually deleted", async () => {
+      const tuple = makeUserAssignment({
+        sk: assignmentSk(VALID_UUID, CUSTOM_PERMISSION_SET_ID),
+        permissionSetArn: CUSTOM_PERMISSION_SET_ARN,
+      });
+      mockDynamoClient.on(QueryCommand).resolves({ Items: [tuple] });
+      mockDynamoClient.on(DeleteCommand).resolves({});
+
+      const count = await store.deleteAssignmentsByLeasePrincipal({
+        principalId: VALID_UUID,
+        principalType: "USER",
+        leaseId: VALID_UUID,
+        permissionSetArn: CUSTOM_PERMISSION_SET_ARN,
+      });
+
+      expect(count).toBe(0);
+    });
+
+    it("does not delete an assignment that changed after it was queried", async () => {
+      const tuple = makeUserAssignment({
+        sk: assignmentSk(VALID_UUID, CUSTOM_PERMISSION_SET_ID),
+        permissionSetArn: CUSTOM_PERMISSION_SET_ARN,
+      });
+      mockDynamoClient.on(QueryCommand).resolves({ Items: [tuple] });
+      mockDynamoClient.on(DeleteCommand).rejects(
+        new ConditionalCheckFailedException({
+          $metadata: {},
+          message: "Assignment changed",
+        }),
+      );
+
+      const count = await store.deleteAssignmentsByLeasePrincipal({
+        principalId: VALID_UUID,
+        principalType: "USER",
+        leaseId: VALID_UUID,
+        permissionSetArn: CUSTOM_PERMISSION_SET_ARN,
+      });
+
+      expect(count).toBe(0);
+      expect(
+        mockDynamoClient.commandCalls(DeleteCommand)[0]!.args[0].input,
+      ).toMatchObject({
+        ConditionExpression: "#meta.#lastEditTime = :expectedLastEditTime",
+        ExpressionAttributeValues: {
+          ":expectedLastEditTime": NOW,
+        },
+      });
+    });
+
+    it("does not delete a legacy record when targeting a custom permission set without the built-in ARN", async () => {
+      const legacy = makeUserAssignment({ permissionSetArn: undefined });
+      mockDynamoClient.on(QueryCommand).resolves({ Items: [legacy] });
+
+      const count = await store.deleteAssignmentsByLeasePrincipal({
+        principalId: VALID_UUID,
+        principalType: "USER",
+        leaseId: VALID_UUID,
+        permissionSetArn: CUSTOM_PERMISSION_SET_ARN,
+      });
+
+      expect(count).toBe(0);
+      expect(mockDynamoClient.commandCalls(DeleteCommand)).toHaveLength(0);
+    });
+  });
+
   describe("getAssignmentsForLease (LeaseIndex GSI)", () => {
     it("should query LeaseIndex GSI with leaseId", async () => {
       const userItem = makeUserAssignment();
@@ -280,7 +736,11 @@ describe("DynamoPrincipalStore", () => {
         .on(QueryCommand)
         .resolvesOnce({
           Items: [page1Item],
-          LastEvaluatedKey: { leaseId: VALID_UUID, pk: userPk(VALID_UUID) },
+          LastEvaluatedKey: {
+            leaseId: VALID_UUID,
+            pk: page1Item.pk,
+            sk: page1Item.sk,
+          },
         })
         .resolvesOnce({
           Items: [page2Item],
@@ -318,6 +778,22 @@ describe("DynamoPrincipalStore", () => {
       });
 
       expect(result.result).toHaveLength(0);
+    });
+
+    it("should reject a cursor for another lease", async () => {
+      const pageIdentifier = base64EncodeCompositeKey({
+        leaseId: VALID_UUID_2,
+        pk: userPk(VALID_UUID),
+        sk: leaseSk(VALID_UUID_2),
+      })!;
+
+      await expect(
+        store.getAssignmentsForLease({
+          leaseId: VALID_UUID,
+          pageIdentifier,
+        }),
+      ).rejects.toThrow(InvalidPageIdentifierError);
+      expect(mockDynamoClient.commandCalls(QueryCommand)).toHaveLength(0);
     });
   });
 
@@ -379,6 +855,21 @@ describe("DynamoPrincipalStore", () => {
       expect(page2.nextPageIdentifier).toBeNull();
 
       expect(mockDynamoClient.commandCalls(QueryCommand)).toHaveLength(2);
+    });
+
+    it("should reject a cursor for another user", async () => {
+      const pageIdentifier = base64EncodeCompositeKey({
+        pk: userPk(VALID_UUID_2),
+        sk: leaseSk(VALID_UUID),
+      })!;
+
+      await expect(
+        store.getDirectAssignmentsForUser({
+          userId: VALID_UUID,
+          pageIdentifier,
+        }),
+      ).rejects.toThrow(InvalidPageIdentifierError);
+      expect(mockDynamoClient.commandCalls(QueryCommand)).toHaveLength(0);
     });
   });
 
@@ -585,7 +1076,7 @@ describe("DynamoPrincipalStore", () => {
   });
 
   describe("getAllGroupAssignmentKeys (GroupIndex GSI scan)", () => {
-    it("should scan GroupIndex GSI and return (groupId, leaseId) tuples", async () => {
+    it("should scan GroupIndex GSI and return group IDs, lease IDs, and real sort keys", async () => {
       mockDynamoClient.on(ScanCommand).resolves({
         Items: [
           {
@@ -607,10 +1098,12 @@ describe("DynamoPrincipalStore", () => {
       expect(result).toContainEqual({
         groupId: VALID_UUID,
         leaseId: VALID_UUID,
+        sk: leaseSk(VALID_UUID),
       });
       expect(result).toContainEqual({
         groupId: VALID_UUID_2,
         leaseId: VALID_UUID_2,
+        sk: leaseSk(VALID_UUID_2),
       });
 
       const scanCalls = mockDynamoClient.commandCalls(ScanCommand);
@@ -642,10 +1135,12 @@ describe("DynamoPrincipalStore", () => {
       expect(result).toContainEqual({
         groupId: VALID_UUID,
         leaseId: VALID_UUID,
+        sk: leaseSk(VALID_UUID),
       });
       expect(result).toContainEqual({
         groupId: VALID_UUID,
         leaseId: VALID_UUID_2,
+        sk: leaseSk(VALID_UUID_2),
       });
     });
 
@@ -675,8 +1170,12 @@ describe("DynamoPrincipalStore", () => {
       const result = await store.getAllGroupAssignmentKeys();
 
       expect(result).toEqual([
-        { groupId: VALID_UUID, leaseId: VALID_UUID },
-        { groupId: VALID_UUID_2, leaseId: VALID_UUID_2 },
+        { groupId: VALID_UUID, leaseId: VALID_UUID, sk: leaseSk(VALID_UUID) },
+        {
+          groupId: VALID_UUID_2,
+          leaseId: VALID_UUID_2,
+          sk: leaseSk(VALID_UUID_2),
+        },
       ]);
       expect(mockDynamoClient.commandCalls(ScanCommand)).toHaveLength(2);
     });
@@ -731,7 +1230,20 @@ describe("DynamoPrincipalStore", () => {
 
       const result = await store.getAllGroupAssignmentKeys();
 
-      expect(result).toEqual([{ groupId: VALID_UUID, leaseId: VALID_UUID }]);
+      expect(result).toEqual([
+        { groupId: VALID_UUID, leaseId: VALID_UUID, sk: leaseSk(VALID_UUID) },
+      ]);
+    });
+
+    it("preserves tuple-keyed sort keys while parsing their lease IDs", async () => {
+      const sk = assignmentSk(VALID_UUID, CUSTOM_PERMISSION_SET_ID);
+      mockDynamoClient.on(ScanCommand).resolves({
+        Items: [{ groupId: VALID_UUID, pk: groupPk(VALID_UUID), sk }],
+      });
+
+      await expect(store.getAllGroupAssignmentKeys()).resolves.toEqual([
+        { groupId: VALID_UUID, leaseId: VALID_UUID, sk },
+      ]);
     });
   });
 
@@ -865,8 +1377,12 @@ describe("DynamoPrincipalStore", () => {
       expect(mockDynamoClient.commandCalls(BatchGetCommand)).toHaveLength(0);
     });
 
-    it("should fetch assignments by (groupId, leaseId) using the base table", async () => {
-      const item1 = makeGroupAssignment();
+    it("should fetch assignments by (groupId, sk) using the base table", async () => {
+      const tupleSk = assignmentSk(VALID_UUID, CUSTOM_PERMISSION_SET_ID);
+      const item1 = makeGroupAssignment({
+        sk: tupleSk,
+        permissionSetArn: CUSTOM_PERMISSION_SET_ARN,
+      });
       const item2 = makeGroupAssignment({
         sk: leaseSk(VALID_UUID_2),
         leaseId: VALID_UUID_2,
@@ -879,8 +1395,8 @@ describe("DynamoPrincipalStore", () => {
       });
 
       const result = await store.batchGetGroupAssignments([
-        { groupId: VALID_UUID, leaseId: VALID_UUID },
-        { groupId: VALID_UUID_2, leaseId: VALID_UUID_2 },
+        { groupId: VALID_UUID, sk: tupleSk },
+        { groupId: VALID_UUID_2, sk: leaseSk(VALID_UUID_2) },
       ]);
 
       expect(result).toHaveLength(2);
@@ -893,7 +1409,7 @@ describe("DynamoPrincipalStore", () => {
       expect(sentKeys).toHaveLength(2);
       expect(sentKeys).toContainEqual({
         pk: groupPk(VALID_UUID),
-        sk: leaseSk(VALID_UUID),
+        sk: tupleSk,
       });
       expect(sentKeys).toContainEqual({
         pk: groupPk(VALID_UUID_2),
@@ -907,7 +1423,7 @@ describe("DynamoPrincipalStore", () => {
       });
 
       const result = await store.batchGetGroupAssignments([
-        { groupId: VALID_UUID, leaseId: VALID_UUID },
+        { groupId: VALID_UUID, sk: leaseSk(VALID_UUID) },
       ]);
 
       expect(result).toEqual([]);
@@ -942,9 +1458,9 @@ describe("DynamoPrincipalStore", () => {
       });
 
       const result = await store.batchGetGroupAssignments([
-        { groupId: VALID_UUID, leaseId: VALID_UUID },
-        { groupId: VALID_UUID, leaseId: VALID_UUID_2 },
-        { groupId: VALID_UUID_2, leaseId: VALID_UUID },
+        { groupId: VALID_UUID, sk: leaseSk(VALID_UUID) },
+        { groupId: VALID_UUID, sk: leaseSk(VALID_UUID_2) },
+        { groupId: VALID_UUID_2, sk: leaseSk(VALID_UUID) },
       ]);
 
       expect(result).toEqual([validItem]);
@@ -957,9 +1473,9 @@ describe("DynamoPrincipalStore", () => {
       });
 
       await store.batchGetGroupAssignments([
-        { groupId: VALID_UUID, leaseId: VALID_UUID },
-        { groupId: VALID_UUID, leaseId: VALID_UUID },
-        { groupId: VALID_UUID, leaseId: VALID_UUID },
+        { groupId: VALID_UUID, sk: leaseSk(VALID_UUID) },
+        { groupId: VALID_UUID, sk: leaseSk(VALID_UUID) },
+        { groupId: VALID_UUID, sk: leaseSk(VALID_UUID) },
       ]);
 
       const calls = mockDynamoClient.commandCalls(BatchGetCommand);
@@ -975,7 +1491,9 @@ describe("DynamoPrincipalStore", () => {
 
       const keys = Array.from({ length: 250 }, (_, i) => ({
         groupId: VALID_UUID,
-        leaseId: `00000000-0000-4000-8000-${i.toString().padStart(12, "0")}`,
+        sk: leaseSk(
+          `00000000-0000-4000-8000-${i.toString().padStart(12, "0")}`,
+        ),
       }));
 
       await store.batchGetGroupAssignments(keys);
@@ -1008,7 +1526,7 @@ describe("DynamoPrincipalStore", () => {
         });
 
       const result = await store.batchGetGroupAssignments([
-        { groupId: VALID_UUID, leaseId: VALID_UUID },
+        { groupId: VALID_UUID, sk: leaseSk(VALID_UUID) },
       ]);
 
       expect(result).toEqual([item]);
@@ -1029,7 +1547,7 @@ describe("DynamoPrincipalStore", () => {
 
       await expect(
         store.batchGetGroupAssignments([
-          { groupId: VALID_UUID, leaseId: VALID_UUID },
+          { groupId: VALID_UUID, sk: leaseSk(VALID_UUID) },
         ]),
       ).rejects.toThrow(BatchUnprocessedItemsError);
 
@@ -1070,6 +1588,20 @@ describe("DynamoPrincipalStore", () => {
         25,
       );
       expect(calls[1]!.args[0].input.RequestItems![TABLE_NAME]).toHaveLength(5);
+    });
+
+    it("should deduplicate puts by sort key", async () => {
+      mockDynamoClient.on(BatchWriteCommand).resolves({});
+      const first = testCacheItem(1, { displayName: "First" });
+      const replacement = { ...first, displayName: "Replacement" };
+
+      await store.batchPutCacheItems([first, replacement]);
+
+      const requests =
+        mockDynamoClient.commandCalls(BatchWriteCommand)[0]!.args[0].input
+          .RequestItems![TABLE_NAME];
+      expect(requests).toHaveLength(1);
+      expect(requests![0]!.PutRequest!.Item!.displayName).toBe("Replacement");
     });
 
     it("should retry on unprocessed items", async () => {
@@ -1141,6 +1673,22 @@ describe("DynamoPrincipalStore", () => {
       expect(mockDynamoClient.commandCalls(BatchWriteCommand)).toHaveLength(0);
     });
 
+    it("should deduplicate deletes by sort key", async () => {
+      mockDynamoClient.on(BatchWriteCommand).resolves({});
+      const sk = `user#${crypto.randomUUID()}`;
+
+      await store.batchDeleteCacheItemsBySk([sk, sk]);
+
+      expect(
+        mockDynamoClient.commandCalls(BatchWriteCommand)[0]!.args[0].input
+          .RequestItems![TABLE_NAME],
+      ).toEqual([
+        {
+          DeleteRequest: { Key: { pk: "principalCache", sk } },
+        },
+      ]);
+    });
+
     it("should delete items in chunks of 25", async () => {
       mockDynamoClient.on(BatchWriteCommand).resolves({});
 
@@ -1152,6 +1700,224 @@ describe("DynamoPrincipalStore", () => {
 
       const calls = mockDynamoClient.commandCalls(BatchWriteCommand);
       expect(calls).toHaveLength(2);
+    });
+  });
+
+  describe("permission set cache CRUD", () => {
+    it("writes permission set cache items in batches and retries unprocessed items", async () => {
+      vi.useRealTimers();
+      const item = makePermissionSetCacheItem();
+      mockDynamoClient
+        .on(BatchWriteCommand)
+        .resolvesOnce({
+          UnprocessedItems: {
+            [TABLE_NAME]: [{ PutRequest: { Item: item } }],
+          },
+        })
+        .resolvesOnce({});
+
+      await store.batchPutPermissionSetCacheItems([item]);
+
+      expect(mockDynamoClient.commandCalls(BatchWriteCommand)).toHaveLength(2);
+    });
+
+    it("deduplicates permission set cache puts by sort key", async () => {
+      mockDynamoClient.on(BatchWriteCommand).resolves({});
+      const first = makePermissionSetCacheItem({ name: "First" });
+      const replacement = { ...first, name: "Replacement" };
+
+      await store.batchPutPermissionSetCacheItems([first, replacement]);
+
+      const requests =
+        mockDynamoClient.commandCalls(BatchWriteCommand)[0]!.args[0].input
+          .RequestItems![TABLE_NAME];
+      expect(requests).toHaveLength(1);
+      expect(requests![0]!.PutRequest!.Item!.name).toBe("Replacement");
+    });
+
+    it("chunks permission set cache puts into batches of 25", async () => {
+      mockDynamoClient.on(BatchWriteCommand).resolves({});
+      const items = Array.from({ length: 26 }, () =>
+        makePermissionSetCacheItem(),
+      );
+
+      await store.batchPutPermissionSetCacheItems(items);
+
+      const sizes = mockDynamoClient
+        .commandCalls(BatchWriteCommand)
+        .map((call) => call.args[0].input.RequestItems![TABLE_NAME]!.length)
+        .sort((a, b) => a - b);
+      expect(sizes).toEqual([1, 25]);
+    });
+
+    it("reads one registration consistently from its canonical key", async () => {
+      const item = makePermissionSetCacheItem();
+      mockDynamoClient.on(GetCommand).resolves({ Item: item });
+      await expect(
+        store.getPermissionSetCacheItem(item.permissionSetId),
+      ).resolves.toEqual(item);
+      expect(
+        mockDynamoClient.commandCalls(GetCommand)[0]!.args[0].input,
+      ).toEqual({
+        TableName: TABLE_NAME,
+        Key: { pk: PERMISSION_SET_CACHE_PK, sk: item.sk },
+        ConsistentRead: true,
+      });
+    });
+
+    it.each([undefined, { pk: PERMISSION_SET_CACHE_PK }])(
+      "does not authorize missing or invalid registration metadata",
+      async (Item) => {
+        mockDynamoClient.on(GetCommand).resolves({ Item });
+        await expect(
+          store.getPermissionSetCacheItem(CUSTOM_PERMISSION_SET_ID),
+        ).resolves.toBeUndefined();
+      },
+    );
+
+    it("propagates transient registration read failures", async () => {
+      mockDynamoClient.on(GetCommand).rejects(new Error("read unavailable"));
+      await expect(
+        store.getPermissionSetCacheItem(CUSTOM_PERMISSION_SET_ID),
+      ).rejects.toThrow("read unavailable");
+    });
+
+    it("uses consistent reads for every catalog page when authorizing API grants", async () => {
+      const item = makePermissionSetCacheItem();
+      mockDynamoClient
+        .on(QueryCommand)
+        .resolvesOnce({
+          Items: [item],
+          LastEvaluatedKey: { pk: item.pk, sk: item.sk },
+        })
+        .resolvesOnce({ Items: [] });
+      await store.getPermissionSetCacheItems({ consistentRead: true });
+      expect(mockDynamoClient.commandCalls(QueryCommand)).toHaveLength(2);
+      for (const call of mockDynamoClient.commandCalls(QueryCommand))
+        expect(call.args[0].input.ConsistentRead).toBe(true);
+    });
+
+    it("queries and validates every item in the permission set cache partition", async () => {
+      const first = makePermissionSetCacheItem();
+      const second = makePermissionSetCacheItem();
+      mockDynamoClient
+        .on(QueryCommand)
+        .resolvesOnce({
+          Items: [first],
+          LastEvaluatedKey: { pk: first.pk, sk: first.sk },
+        })
+        .resolvesOnce({ Items: [second] });
+
+      const result = await store.getPermissionSetCacheItems();
+
+      expect(result).toEqual([first, second]);
+      const calls = mockDynamoClient.commandCalls(QueryCommand);
+      expect(calls).toHaveLength(2);
+      expect(calls[0]!.args[0].input.ExpressionAttributeValues).toEqual({
+        ":pk": PERMISSION_SET_CACHE_PK,
+      });
+      expect(calls[1]!.args[0].input.ExclusiveStartKey).toEqual({
+        pk: first.pk,
+        sk: first.sk,
+      });
+    });
+
+    it("drops and warns about invalid permission set cache records", async () => {
+      const valid = makePermissionSetCacheItem();
+      const warn = vi
+        .spyOn(Logger.prototype, "warn")
+        .mockImplementation(() => {});
+      mockDynamoClient.on(QueryCommand).resolves({
+        Items: [valid, { pk: PERMISSION_SET_CACHE_PK }],
+      });
+
+      await expect(store.getPermissionSetCacheItems()).resolves.toEqual([
+        valid,
+      ]);
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining(LogPatterns.DataValidationWarning.pattern),
+        {
+          invalidRecordCount: 1,
+          error: expect.stringContaining("1 invalid records found"),
+        },
+      );
+    });
+
+    it("deletes permission set cache entries by their supplied sort keys", async () => {
+      mockDynamoClient.on(BatchWriteCommand).resolves({});
+      const first = makePermissionSetCacheItem();
+      const second = makePermissionSetCacheItem();
+
+      await store.batchDeletePermissionSetCacheItemsBySk([first.sk, second.sk]);
+
+      expect(
+        mockDynamoClient.commandCalls(BatchWriteCommand)[0]!.args[0].input
+          .RequestItems![TABLE_NAME],
+      ).toEqual([
+        {
+          DeleteRequest: { Key: { pk: PERMISSION_SET_CACHE_PK, sk: first.sk } },
+        },
+        {
+          DeleteRequest: {
+            Key: { pk: PERMISSION_SET_CACHE_PK, sk: second.sk },
+          },
+        },
+      ]);
+    });
+
+    it("deduplicates permission set cache deletes by sort key", async () => {
+      mockDynamoClient.on(BatchWriteCommand).resolves({});
+      const item = makePermissionSetCacheItem();
+
+      await store.batchDeletePermissionSetCacheItemsBySk([item.sk, item.sk]);
+
+      expect(
+        mockDynamoClient.commandCalls(BatchWriteCommand)[0]!.args[0].input
+          .RequestItems![TABLE_NAME],
+      ).toHaveLength(1);
+    });
+
+    it("chunks permission set cache deletes into batches of 25", async () => {
+      mockDynamoClient.on(BatchWriteCommand).resolves({});
+      const sks = Array.from(
+        { length: 26 },
+        () => makePermissionSetCacheItem().sk,
+      );
+
+      await store.batchDeletePermissionSetCacheItemsBySk(sks);
+
+      const sizes = mockDynamoClient
+        .commandCalls(BatchWriteCommand)
+        .map((call) => call.args[0].input.RequestItems![TABLE_NAME]!.length)
+        .sort((a, b) => a - b);
+      expect(sizes).toEqual([1, 25]);
+    });
+
+    it("retries only unprocessed permission set cache deletes", async () => {
+      vi.useRealTimers();
+      const first = makePermissionSetCacheItem();
+      const second = makePermissionSetCacheItem();
+      const unprocessedDelete = {
+        DeleteRequest: {
+          Key: { pk: PERMISSION_SET_CACHE_PK, sk: second.sk },
+        },
+      };
+      mockDynamoClient
+        .on(BatchWriteCommand)
+        .resolvesOnce({
+          UnprocessedItems: {
+            [TABLE_NAME]: [unprocessedDelete],
+          },
+        })
+        .resolvesOnce({});
+
+      await store.batchDeletePermissionSetCacheItemsBySk([first.sk, second.sk]);
+
+      const calls = mockDynamoClient.commandCalls(BatchWriteCommand);
+      expect(calls).toHaveLength(2);
+      expect(calls[1]!.args[0].input.RequestItems![TABLE_NAME]).toEqual([
+        unprocessedDelete,
+      ]);
     });
   });
 

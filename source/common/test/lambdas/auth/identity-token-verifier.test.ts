@@ -1,6 +1,7 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
-import { describe, expect, it } from "vitest";
+import { createSign, generateKeyPairSync } from "node:crypto";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import {
   IdentityTokenError,
@@ -22,6 +23,7 @@ const PROVIDER = buildCognitoAuthProvider(POOL_ID, SUB, "us-east-1");
 const env: IdentityVerifierEnv = {
   COGNITO_USER_POOL_ID: POOL_ID,
   COGNITO_APP_CLIENT_ID: "test-client-id",
+  COGNITO_MCP_CLIENT_ID: "test-mcp-client-id",
 };
 
 function buildEvent(overrides: {
@@ -152,6 +154,87 @@ describe("identity-token-verifier", () => {
         name: "IdentityTokenError",
         kind: "Missing",
       });
+    });
+  });
+
+  // The shared aws-jwt-verify mock ignores clientId, so these use the real
+  // library with locally signed tokens to exercise the `aud` check itself.
+  describe("app client audiences", () => {
+    const { privateKey, publicKey } = generateKeyPairSync("rsa", {
+      modulusLength: 2048,
+    });
+    const KID = "test-kid";
+    const { n, e } = publicKey.export({ format: "jwk" }) as {
+      n: string;
+      e: string;
+    };
+
+    function signIdToken(aud: string): string {
+      const now = Math.floor(Date.now() / 1000);
+      const encode = (part: object) =>
+        Buffer.from(JSON.stringify(part)).toString("base64url");
+      const unsigned = `${encode({ alg: "RS256", kid: KID, typ: "JWT" })}.${encode(
+        {
+          sub: SUB,
+          aud,
+          iss: `https://cognito-idp.us-east-1.amazonaws.com/${POOL_ID}`,
+          token_use: "id",
+          iat: now,
+          exp: now + 3600,
+        },
+      )}`;
+      const signature = createSign("RSA-SHA256")
+        .update(unsigned)
+        .sign(privateKey)
+        .toString("base64url");
+      return `${unsigned}.${signature}`;
+    }
+
+    let verify: typeof verifyAndExtractClaims;
+
+    beforeAll(async () => {
+      vi.resetModules(); // fresh verifier singleton, built with the real library
+      vi.doUnmock("aws-jwt-verify");
+      const { CognitoJwtVerifier } = await import("aws-jwt-verify");
+      const create = CognitoJwtVerifier.create.bind(CognitoJwtVerifier);
+      vi.spyOn(CognitoJwtVerifier, "create").mockImplementation(((
+        ...args: Parameters<typeof create>
+      ) => {
+        const verifier = create(...args);
+        // Serve the test key without fetching the pool's JWKS.
+        verifier.cacheJwks(
+          { keys: [{ kty: "RSA", n, e, kid: KID, alg: "RS256", use: "sig" }] },
+          POOL_ID,
+        );
+        return verifier;
+      }) as typeof create);
+      ({ verifyAndExtractClaims: verify } =
+        await import("@amzn/innovation-sandbox-commons/lambda/auth/identity-token-verifier.js"));
+    });
+
+    afterAll(() => {
+      vi.restoreAllMocks();
+      vi.resetModules();
+    });
+
+    it.each([
+      ["web", env.COGNITO_APP_CLIENT_ID],
+      ["MCP", env.COGNITO_MCP_CLIENT_ID],
+    ])("accepts ID tokens issued to the %s app client", async (_, aud) => {
+      const claims = await verify(
+        buildEvent({ identityToken: signIdToken(aud) }),
+        env,
+      );
+      expect(claims).toMatchObject({ sub: SUB, aud });
+    });
+
+    it("rejects ID tokens issued to any other app client", async () => {
+      await expect(
+        verify(
+          buildEvent({ identityToken: signIdToken("other-client-id") }),
+          env,
+        ),
+      ).rejects.toMatchObject({ name: "IdentityTokenError", kind: "Invalid" });
     });
   });
 });

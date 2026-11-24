@@ -34,6 +34,22 @@ export function grantIsbDbReadOnly(
   isbLambda.lambdaFunction.role!.attachInlinePolicy(dbReadOnlyPolicy);
 }
 
+export function grantIsbDbReadOnlyToRole(
+  scope: Construct,
+  role: Role,
+  ...tableNames: string[]
+) {
+  for (const tableName of tableNames) {
+    role.addToPolicy(new DDBReadPolicy(scope, { tableName }));
+  }
+
+  role.addToPolicy(
+    new KmsKeyEncryptDecryptPolicyStatement(scope, {
+      kmsKeyId: IsbComputeStack.sharedSpokeConfig.data.tableKmsKeyId,
+    }),
+  );
+}
+
 export function grantIsbDbReadWrite(
   scope: Construct,
   isbLambda: IsbLambdaFunction<any>,

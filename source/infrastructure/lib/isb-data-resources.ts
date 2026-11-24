@@ -1,6 +1,6 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
-import { Aws, Fn, RemovalPolicy, Token, aws_ssm } from "aws-cdk-lib";
+import { Aws, Duration, Fn, RemovalPolicy, Token, aws_ssm } from "aws-cdk-lib";
 import {
   CfnIdentityPool,
   CfnIdentityPoolRoleAttachment,
@@ -36,7 +36,10 @@ import { IsbKmsKeys } from "@amzn/innovation-sandbox-infrastructure/components/k
 import { getContextFromMapping } from "@amzn/innovation-sandbox-infrastructure/helpers/cdk-context";
 import { addCfnGuardSuppression } from "@amzn/innovation-sandbox-infrastructure/helpers/cfn-guard";
 import { UniqueStackIdPart } from "@amzn/innovation-sandbox-infrastructure/helpers/cfn-utils";
-import { isDevMode } from "@amzn/innovation-sandbox-infrastructure/helpers/deployment-mode";
+import {
+  MCP_CLIENT_CALLBACK_URLS,
+  isDevMode,
+} from "@amzn/innovation-sandbox-infrastructure/helpers/deployment-mode";
 
 const supportedSchemas = ["1"];
 
@@ -55,8 +58,12 @@ export class IsbDataResources {
   principalTable: Table;
   cleanupReportTable: Table;
   configTable: Table;
+  sandboxSpacesUsageTable: Table;
+  leaseCostHistoryTable: Table;
   userPool: UserPool;
   userPoolClient: UserPoolClient;
+  /** Public client for MCP/IDE sign-in, separate from the web console client. */
+  mcpUserPoolClient: UserPoolClient;
   userPoolDomain: UserPoolDomain;
   cognitoDomainPrefix: string;
   identityPool: CfnIdentityPool;
@@ -177,6 +184,33 @@ export class IsbDataResources {
       timeToLiveAttribute: "ttl",
     });
 
+    // Sandbox Spaces Usage table — Tracks per-user monthly token budget counters for Sandbox Spaces.
+    this.sandboxSpacesUsageTable = new Table(scope, "SandboxSpacesUsageTable", {
+      partitionKey: { name: "pk", type: AttributeType.STRING },
+      sortKey: { name: "sk", type: AttributeType.STRING },
+      billingMode: BillingMode.PAY_PER_REQUEST,
+      pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },
+      encryption: TableEncryption.CUSTOMER_MANAGED,
+      encryptionKey: this.tableKmsKey,
+      deletionProtection: !devMode,
+      removalPolicy: tableRemovalPolicy,
+      timeToLiveAttribute: "ttl",
+    });
+
+    // Lease cost history — per-lease time series of cost observations, breach
+    // records and Bedrock token rows, keyed by { leaseUuid, sk: "<PREFIX>#<iso8601>" }.
+    this.leaseCostHistoryTable = new Table(scope, "LeaseCostHistoryTable", {
+      partitionKey: { name: "leaseUuid", type: AttributeType.STRING },
+      sortKey: { name: "sk", type: AttributeType.STRING },
+      billingMode: BillingMode.PAY_PER_REQUEST,
+      pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },
+      encryption: TableEncryption.CUSTOMER_MANAGED,
+      encryptionKey: this.tableKmsKey,
+      deletionProtection: !devMode,
+      removalPolicy: tableRemovalPolicy,
+      timeToLiveAttribute: "ttl",
+    });
+
     // One item per configuration section, keyed by { section, sk: "current" }.
     // No explicit tableName — CloudFormation generates one so a retry after a
     // rolled-back deploy does not collide with a RETAINed table of the same name.
@@ -232,22 +266,48 @@ export class IsbDataResources {
 
     // Token validity via L1 escape hatch — CDK's L2 rejects token-based Duration values,
     // but we want these in the CFN mapping so operators can edit the template directly.
-    const cfnClient = this.userPoolClient.node
-      .defaultChild as CfnUserPoolClient;
-    cfnClient.accessTokenValidity = Token.asNumber(
-      getContextFromMapping(scope, "cognitoAccessTokenValidityMinutes"),
-    );
-    cfnClient.idTokenValidity = Token.asNumber(
-      getContextFromMapping(scope, "cognitoIdTokenValidityMinutes"),
-    );
-    cfnClient.refreshTokenValidity = Token.asNumber(
-      getContextFromMapping(scope, "cognitoRefreshTokenValidityDays"),
-    );
-    cfnClient.tokenValidityUnits = {
-      accessToken: "minutes",
-      idToken: "minutes",
-      refreshToken: "days",
+    const applyTokenValidity = (client: UserPoolClient) => {
+      const cfnClient = client.node.defaultChild as CfnUserPoolClient;
+      cfnClient.accessTokenValidity = Token.asNumber(
+        getContextFromMapping(scope, "cognitoAccessTokenValidityMinutes"),
+      );
+      cfnClient.idTokenValidity = Token.asNumber(
+        getContextFromMapping(scope, "cognitoIdTokenValidityMinutes"),
+      );
+      cfnClient.refreshTokenValidity = Token.asNumber(
+        getContextFromMapping(scope, "cognitoRefreshTokenValidityDays"),
+      );
+      cfnClient.tokenValidityUnits = {
+        accessToken: "minutes",
+        idToken: "minutes",
+        refreshToken: "days",
+      };
     };
+    applyTokenValidity(this.userPoolClient);
+
+    // Separate public client for MCP/IDE sign-in
+    this.mcpUserPoolClient = this.userPool.addClient("McpClient", {
+      userPoolClientName: `${props.namespace}-isb-mcp`,
+      generateSecret: false,
+      enableTokenRevocation: true,
+      refreshTokenRotationGracePeriod: Duration.seconds(60),
+      oAuth: {
+        flows: { authorizationCodeGrant: true },
+        scopes: [OAuthScope.OPENID, OAuthScope.EMAIL, OAuthScope.PROFILE],
+        callbackUrls: MCP_CLIENT_CALLBACK_URLS,
+      },
+      supportedIdentityProviders: [
+        {
+          name: samlProvider.providerName,
+        },
+      ],
+    });
+    applyTokenValidity(this.mcpUserPoolClient);
+    // No native or custom sign-in flows (SRP, password, custom, choice-based): this
+    // client is used only through the hosted UI's authorization-code + PKCE flow.
+    const cfnMcpClient = this.mcpUserPoolClient.node
+      .defaultChild as CfnUserPoolClient;
+    cfnMcpClient.explicitAuthFlows = [];
 
     // Cognito Domain — uses region + stack ID suffix (not namespace) because Cognito
     // domain prefixes must be lowercase and the Namespace parameter allows uppercase.
@@ -267,6 +327,10 @@ export class IsbDataResources {
       cognitoIdentityProviders: [
         {
           clientId: this.userPoolClient.userPoolClientId,
+          providerName: this.userPool.userPoolProviderName,
+        },
+        {
+          clientId: this.mcpUserPoolClient.userPoolClientId,
           providerName: this.userPool.userPoolProviderName,
         },
       ],
@@ -310,6 +374,29 @@ export class IsbDataResources {
     // Match against the quoted token (`"Admin"`) rather than the bare name so a future role
     // whose name shares a substring with another (e.g. SuperManager) can't silently match
     // the lower-tier rule.
+    const isbRoleRules = {
+      rules: [
+        {
+          claim: "custom:isb_roles",
+          matchType: "Contains",
+          value: '"Admin"',
+          roleArn: adminRole.roleArn,
+        },
+        {
+          claim: "custom:isb_roles",
+          matchType: "Contains",
+          value: '"Manager"',
+          roleArn: managerRole.roleArn,
+        },
+        {
+          claim: "custom:isb_roles",
+          matchType: "Contains",
+          value: '"User"',
+          roleArn: userRole.roleArn,
+        },
+      ],
+    };
+
     new CfnIdentityPoolRoleAttachment(scope, "IsbIdentityPoolRoleAttachment", {
       identityPoolId: this.identityPool.ref,
       roles: {
@@ -320,28 +407,13 @@ export class IsbDataResources {
           type: "Rules",
           ambiguousRoleResolution: "Deny",
           identityProvider: `${this.userPool.userPoolProviderName}:${this.userPoolClient.userPoolClientId}`,
-          rulesConfiguration: {
-            rules: [
-              {
-                claim: "custom:isb_roles",
-                matchType: "Contains",
-                value: '"Admin"',
-                roleArn: adminRole.roleArn,
-              },
-              {
-                claim: "custom:isb_roles",
-                matchType: "Contains",
-                value: '"Manager"',
-                roleArn: managerRole.roleArn,
-              },
-              {
-                claim: "custom:isb_roles",
-                matchType: "Contains",
-                value: '"User"',
-                roleArn: userRole.roleArn,
-              },
-            ],
-          },
+          rulesConfiguration: isbRoleRules,
+        },
+        mcpCognitoProvider: {
+          type: "Rules",
+          ambiguousRoleResolution: "Deny",
+          identityProvider: `${this.userPool.userPoolProviderName}:${this.mcpUserPoolClient.userPoolClientId}`,
+          rulesConfiguration: isbRoleRules,
         },
       },
     });
@@ -377,12 +449,15 @@ export class IsbDataResources {
         blueprintTable: this.blueprintTable.tableName,
         principalTable: this.principalTable.tableName,
         cleanupReportTable: this.cleanupReportTable.tableName,
+        sandboxSpacesUsageTable: this.sandboxSpacesUsageTable.tableName,
+        leaseCostHistoryTable: this.leaseCostHistoryTable.tableName,
         tableKmsKeyId: this.tableKmsKey.keyId,
         solutionVersion: getContextFromMapping(scope, "version"),
         supportedSchemas: JSON.stringify(supportedSchemas),
         cognitoUserPoolId: this.userPool.userPoolId,
         cognitoUserPoolArn: this.userPool.userPoolArn,
         cognitoAppClientId: this.userPoolClient.userPoolClientId,
+        cognitoMcpClientId: this.mcpUserPoolClient.userPoolClientId,
         cognitoIdentityPoolId: this.identityPool.ref,
         cognitoDomain: this.cognitoDomainPrefix,
         awsAccessPortalUrl: props.awsAccessPortalUrl,

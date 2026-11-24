@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import createWrapper from "@cloudscape-design/components/test-utils/dom";
-import { screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { BrowserRouter as Router } from "react-router-dom";
@@ -25,8 +25,31 @@ import {
   ApiPaginatedResult,
   ApiResponse,
 } from "@amzn/innovation-sandbox-frontend/types";
+import type { PermissionSetReference } from "@amzn/innovation-sandbox-shared/types/permission-set.js";
 
 const mockNavigate = vi.fn();
+const ownerPrincipalId = "11111111-1111-4111-8111-111111111111";
+const sharedPrincipalId = "22222222-2222-4222-8222-222222222222";
+const groupPrincipalId = "33333333-3333-4333-8333-333333333333";
+const developerPermissionSet: PermissionSetReference = {
+  permissionSetArn:
+    "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-0123456789abcdef",
+  permissionSetId: "ps-0123456789abcdef",
+  name: "DeveloperAccess",
+  availability: "AVAILABLE",
+};
+const auditorPermissionSet: PermissionSetReference = {
+  permissionSetArn:
+    "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-1123456789abcdef",
+  permissionSetId: "ps-1123456789abcdef",
+  name: "AuditorAccess",
+  availability: "AVAILABLE",
+};
+const hydratedBasicLeaseTemplate: LeaseTemplateView = {
+  ...mockBasicLeaseTemplate,
+  defaultPermissionSet: developerPermissionSet,
+  allowedPermissionSets: [developerPermissionSet, auditorPermissionSet],
+};
 
 vi.mock("react-router-dom", async () => {
   const actual = await vi.importActual("react-router-dom");
@@ -46,19 +69,19 @@ vi.mock("@amzn/innovation-sandbox-frontend/components/Toast", () => ({
 // The real typeahead has its own test file.
 const TYPEAHEAD_FIXTURE = [
   {
-    principalId: "user-1",
+    principalId: ownerPrincipalId,
     principalType: "USER" as const,
     displayName: "Test User",
     email: "user@example.com",
   },
   {
-    principalId: "shared-1",
+    principalId: sharedPrincipalId,
     principalType: "USER" as const,
     displayName: "Shared User",
     email: "shared@example.com",
   },
   {
-    principalId: "group-1",
+    principalId: groupPrincipalId,
     principalType: "GROUP" as const,
     displayName: "Engineering",
   },
@@ -68,17 +91,17 @@ vi.mock(
   () => ({
     PrincipalTypeahead: ({
       onSelect,
-      excludePrincipalIds = [],
+      shouldExclude = () => false,
       type = "all",
     }: {
       onSelect: (p: (typeof TYPEAHEAD_FIXTURE)[number]) => void;
-      excludePrincipalIds?: string[];
+      shouldExclude?: (p: (typeof TYPEAHEAD_FIXTURE)[number]) => boolean;
       type?: "users" | "groups" | "all";
     }) => (
       <div data-testid="typeahead-stub">
         {TYPEAHEAD_FIXTURE.filter(
           (p) =>
-            !excludePrincipalIds.includes(p.principalId) &&
+            !shouldExclude(p) &&
             (type === "all" ||
               (type === "users" && p.principalType === "USER") ||
               (type === "groups" && p.principalType === "GROUP")),
@@ -100,16 +123,37 @@ describe("AssignLease", () => {
       </Router>,
     );
 
-  // Drive the user-selection step via the mocked typeahead — single click
-  // populates userEmail with "user@example.com".
+  // Drive the user-selection step via the mocked typeahead.
   const pickUser = async (user: ReturnType<typeof userEvent.setup>) => {
     await user.click(
       await screen.findByRole("button", { name: "Pick user@example.com" }),
     );
   };
 
+  const selectPermissionSet = async (
+    displayName: string,
+    permissionSetArn: string,
+  ) => {
+    const row = (await screen.findByText(displayName)).closest("tr")!;
+    const select = createWrapper(row).findSelect()!;
+    select.openDropdown();
+    select.selectOptionByValue(permissionSetArn, {
+      expandToViewport: true,
+    });
+  };
+
   beforeEach(() => {
     vi.clearAllMocks();
+    server.use(
+      http.get(
+        `${getConfig().ApiUrl}/leaseTemplates/${mockBasicLeaseTemplate.uuid}`,
+        () =>
+          HttpResponse.json({
+            status: "success",
+            data: hydratedBasicLeaseTemplate,
+          }),
+      ),
+    );
   });
 
   // Get mocked functions
@@ -147,7 +191,7 @@ describe("AssignLease", () => {
     ).toContain("Select user");
     expect(
       wizard?.findMenuNavigationLink(3)?.getElement().textContent,
-    ).toContain("Share access");
+    ).toContain("Configure access");
     expect(
       wizard?.findMenuNavigationLink(4)?.getElement().textContent,
     ).toContain("Terms of Service");
@@ -236,6 +280,9 @@ describe("AssignLease", () => {
     expect(
       createWrapper().findWizard()?.findMenuNavigationLink(2, "active"),
     ).not.toBeNull();
+    expect(
+      screen.getByText("You must provide a valid user"),
+    ).toBeInTheDocument();
 
     // Pick a user — wizard advances to step 3.
     await pickUser(user);
@@ -244,6 +291,54 @@ describe("AssignLease", () => {
       const wizard = createWrapper().findWizard();
       expect(wizard?.findMenuNavigationLink(3, "active")).not.toBeNull();
     });
+  });
+
+  test("waits for the selected template before configuring access", async () => {
+    const user = userEvent.setup();
+    let finishLoadingTemplate: (() => void) | undefined;
+    const templateLoading = new Promise<void>((resolve) => {
+      finishLoadingTemplate = resolve;
+    });
+
+    server.use(
+      http.get(
+        `${getConfig().ApiUrl}/leaseTemplates/${mockBasicLeaseTemplate.uuid}`,
+        async () => {
+          await templateLoading;
+          return HttpResponse.json({
+            status: "success",
+            data: hydratedBasicLeaseTemplate,
+          });
+        },
+      ),
+    );
+
+    renderComponent();
+
+    await user.click(await screen.findByText(mockBasicLeaseTemplate.name));
+    await user.click(await screen.findByRole("button", { name: /next/i }));
+    await pickUser(user);
+    await user.click(await screen.findByRole("button", { name: /next/i }));
+
+    expect(
+      await screen.findByText("Loading permission sets..."),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("typeahead-stub")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /next/i })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+
+    await act(async () => {
+      finishLoadingTemplate?.();
+      await templateLoading;
+    });
+
+    expect(await screen.findByTestId("typeahead-stub")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /next/i })).not.toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
   });
 
   test("validates terms acceptance in step 4", async () => {
@@ -261,7 +356,7 @@ describe("AssignLease", () => {
     await pickUser(user);
     await user.click(await screen.findByRole("button", { name: /next/i }));
 
-    // Skip Share access step
+    // Skip Configure access step
     await user.click(await screen.findByRole("button", { name: /next/i }));
 
     // Try to proceed without accepting terms
@@ -300,7 +395,7 @@ describe("AssignLease", () => {
     await pickUser(user);
     await user.click(await screen.findByRole("button", { name: /next/i }));
 
-    // Skip Share access step
+    // Skip Configure access step
     await user.click(await screen.findByRole("button", { name: /next/i }));
 
     const termsCheckbox = screen.getByLabelText(
@@ -357,7 +452,7 @@ describe("AssignLease", () => {
     await pickUser(user);
     await user.click(await screen.findByRole("button", { name: /next/i }));
 
-    // Skip Share access step
+    // Skip Configure access step
     await user.click(await screen.findByRole("button", { name: /next/i }));
 
     const termsCheckbox = screen.getByLabelText(
@@ -410,7 +505,7 @@ describe("AssignLease", () => {
     await pickUser(user);
     await user.click(await screen.findByRole("button", { name: /next/i }));
 
-    // Skip Share access step
+    // Skip Configure access step
     await user.click(await screen.findByRole("button", { name: /next/i }));
 
     const termsCheckbox = screen.getByLabelText(
@@ -514,7 +609,7 @@ describe("AssignLease", () => {
     ).not.toBeInTheDocument();
   });
 
-  test("shows the Share access step and submits assignments", async () => {
+  test("submits the permission sets selected while configuring access", async () => {
     const user = userEvent.setup();
 
     let postBody:
@@ -524,6 +619,7 @@ describe("AssignLease", () => {
           assignments?: Array<{
             principalId: string;
             principalType: "USER" | "GROUP";
+            permissionSetArn: string;
           }>;
         }
       | undefined;
@@ -547,7 +643,7 @@ describe("AssignLease", () => {
     await pickUser(user);
     await user.click(await screen.findByRole("button", { name: /next/i }));
 
-    // Step 3: Share access. The wizard should be on this step now.
+    // Step 3: Configure access. The wizard should be on this step now.
     await waitFor(() => {
       const wizard = createWrapper().findWizard();
       expect(wizard?.findMenuNavigationLink(3, "active")).not.toBeNull();
@@ -555,6 +651,10 @@ describe("AssignLease", () => {
     // Stage one extra principal.
     await user.click(
       await screen.findByRole("button", { name: "Pick shared@example.com" }),
+    );
+    await selectPermissionSet(
+      "Shared User",
+      auditorPermissionSet.permissionSetArn,
     );
     await user.click(await screen.findByRole("button", { name: /next/i }));
 
@@ -574,10 +674,21 @@ describe("AssignLease", () => {
     await waitFor(() => expect(postBody).toBeDefined());
     expect(postBody?.userEmail).toBe("user@example.com");
     expect(postBody?.assignments).toEqual([
-      { principalId: "shared-1", principalType: "USER" },
+      {
+        principalId: ownerPrincipalId,
+        principalType: "USER",
+        permissionSetArn: developerPermissionSet.permissionSetArn,
+      },
+      {
+        principalId: sharedPrincipalId,
+        principalType: "USER",
+        permissionSetArn: auditorPermissionSet.permissionSetArn,
+      },
     ]);
     // Display fields are stripped — backend POST body schema is .strict().
-    expect(postBody?.assignments?.[0]).not.toHaveProperty("displayName");
-    expect(postBody?.assignments?.[0]).not.toHaveProperty("email");
+    for (const assignment of postBody?.assignments ?? []) {
+      expect(assignment).not.toHaveProperty("displayName");
+      expect(assignment).not.toHaveProperty("email");
+    }
   });
 });

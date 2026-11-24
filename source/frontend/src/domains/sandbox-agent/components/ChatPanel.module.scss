@@ -1,0 +1,23 @@
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
+// Cloudscape has no fitted chat primitive; these styles keep the
+// header and prompt fixed while only the message region scrolls.
+.root {
+  display: flex;
+  flex-direction: column;
+  block-size: 100%;
+  min-block-size: 0;
+}
+
+.fitted {
+  position: relative;
+  flex-grow: 1;
+  min-block-size: 0;
+}
+
+.scroller {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+}

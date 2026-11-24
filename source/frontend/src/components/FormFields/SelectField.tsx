@@ -5,10 +5,11 @@ import { FormField, Select } from "@cloudscape-design/components";
 import type { FormFieldProps } from "@cloudscape-design/components/form-field";
 import type { SelectProps } from "@cloudscape-design/components/select";
 import {
-  useController,
-  UseControllerProps,
   type FieldPath,
+  type FieldPathValue,
   type FieldValues,
+  useController,
+  type UseControllerProps,
 } from "react-hook-form";
 
 export interface SelectFieldProps<
@@ -20,11 +21,17 @@ export interface SelectFieldProps<
   /** FormField wrapper props (label, description, constraintText, etc.) */
   formFieldProps?: Omit<FormFieldProps, "errorText">;
   /** Select component props and event handlers */
-  selectProps?: Omit<SelectProps, "selectedOption"> & {
+  selectProps: Omit<SelectProps, "selectedOption"> & {
     /** Function to convert form value to SelectProps.Option */
-    valueToOption: (value: any) => SelectProps.Option | null;
+    valueToOption: (
+      value: FieldPathValue<TFieldValues, TName>,
+    ) => SelectProps.Option | null;
     /** Function to convert SelectProps.Option to form value */
-    optionToValue: (option: SelectProps.Option | null) => any;
+    optionToValue: (
+      option: SelectProps.Option | null,
+    ) => FieldPathValue<TFieldValues, TName>;
+    /** Return false to reject a converted value before updating form state. */
+    shouldUpdateValue?: (value: FieldPathValue<TFieldValues, TName>) => boolean;
   };
 }
 
@@ -35,7 +42,7 @@ export default function SelectField<
   controllerProps,
   formFieldProps,
   selectProps,
-}: SelectFieldProps<TFieldValues, TName>) {
+}: Readonly<SelectFieldProps<TFieldValues, TName>>) {
   const {
     field: {
       onBlur: onFieldBlur,
@@ -49,10 +56,11 @@ export default function SelectField<
   const {
     valueToOption,
     optionToValue,
+    shouldUpdateValue,
     onChange: customOnChange,
     onBlur: customOnBlur,
     ...restSelectProps
-  } = selectProps || { valueToOption: () => null, optionToValue: () => null };
+  } = selectProps;
 
   return (
     <FormField {...formFieldProps} errorText={fieldError?.message}>
@@ -62,7 +70,9 @@ export default function SelectField<
         selectedOption={valueToOption(fieldValue)}
         onChange={(event) => {
           const newValue = optionToValue(event.detail.selectedOption);
-          onFieldChange(newValue);
+          if (shouldUpdateValue?.(newValue) ?? true) {
+            onFieldChange(newValue);
+          }
           customOnChange?.(event);
         }}
         onBlur={(event) => {

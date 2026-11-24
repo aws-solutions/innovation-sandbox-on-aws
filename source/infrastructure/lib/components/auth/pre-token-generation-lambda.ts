@@ -3,7 +3,7 @@
 import { Role } from "aws-cdk-lib/aws-iam";
 import { CfnPermission } from "aws-cdk-lib/aws-lambda";
 import { Construct } from "constructs";
-import path from "path";
+import path from "node:path";
 
 import { PreTokenGenerationEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/pre-token-generation-environment.js";
 import { IsbLambdaFunction } from "@amzn/innovation-sandbox-infrastructure/components/isb-lambda-function";

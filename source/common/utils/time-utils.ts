@@ -38,6 +38,12 @@ export function calculateDurationInMinutes(
 }
 
 export function calculateTtlInEpochSeconds(ttlDays: number) {
-  // DynamoDB expects ttl to be in epoch second format
-  return Math.floor(DateTime.now().plus({ days: ttlDays }).valueOf() / 1000);
+  // DynamoDB expects ttl to be in epoch second format.
+  //
+  // now() rather than DateTime.now(): luxon's plus({ days }) is calendar
+  // arithmetic in the DateTime's own zone, so on a local clock a window that
+  // straddles a DST transition is 23 or 25 hours per day rather than 24. Every
+  // other clock read in this module is UTC, and callers stamping the same ttl
+  // should not depend on the host's zone.
+  return Math.floor(now().plus({ days: ttlDays }).valueOf() / 1000);
 }

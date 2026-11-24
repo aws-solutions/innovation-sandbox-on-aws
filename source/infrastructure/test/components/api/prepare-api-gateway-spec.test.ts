@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import {
   API_DOMAINS,
   DomainLambdaArns,
+  EXCLUDED_DOMAINS,
   OpenApiDocument,
   prepareApiGatewaySpec,
 } from "@amzn/innovation-sandbox-infrastructure/components/api/prepare-api-gateway-spec";
@@ -43,7 +44,9 @@ const lambdaArns: DomainLambdaArns = {
   configurations: "arn:configurations",
   leases: "arn:leases",
   leaseTemplates: "arn:lease-templates",
+  permissionSets: "arn:permission-sets",
   principals: "arn:principals",
+  sandboxAgent: "arn:sandbox-agent",
 };
 
 const methods = (document: OpenApiDocument) =>
@@ -57,25 +60,43 @@ describe("prepareApiGatewaySpec", () => {
   it("keeps API_DOMAINS in sync with the generated contract's path segments", () => {
     // The contract is the single source of truth for domains; API_DOMAINS mirrors
     // it to provide the ApiDomain / DomainLambdaArns types. If the contract adds or
-    // renames a domain, this fails until API_DOMAINS (and the Lambda wiring) follow.
+    // renames a domain, this fails until API_DOMAINS (and the Lambda wiring) follow
+    // — unless the domain is in EXCLUDED_DOMAINS (not runtime-routable yet).
     const fromContract = [
       ...new Set(Object.keys(contract.paths).map((p) => p.split("/")[1])),
-    ].sort();
-    expect([...API_DOMAINS].sort()).toEqual(fromContract);
+    ].filter((domain) => !EXCLUDED_DOMAINS.has(domain ?? ""));
+    expect([...API_DOMAINS].sort()).toEqual(fromContract.sort());
   });
 
-  it("keeps every generated operation and literal configuration route", () => {
+  it("keeps every generated operation (except EXCLUDED_DOMAINS) and literal configuration route", () => {
     const spec = prepareApiGatewaySpec(contract, lambdaArns);
 
-    expect(methods(spec).sort()).toEqual(methods(contract).sort());
-    expect(spec.paths["/configurations/{section}"]).toBeUndefined();
-    const configurationPaths = Object.keys(contract.paths).filter((pathName) =>
-      pathName.startsWith("/configurations/"),
+    const expectedMethods = methods(contract).filter(
+      (m) => !EXCLUDED_DOMAINS.has(m.split(" ")[1]?.split("/")[1] ?? ""),
     );
-    expect(configurationPaths.length).toBeGreaterThan(0);
+    expect(methods(spec).sort()).toEqual(expectedMethods.sort());
+    expect(spec.paths["/permissionSets"]).toBeDefined();
+    expect(spec.paths["/configurations/{section}"]).toBeUndefined();
+    // Per-section config paths use literal paths (no /{section} pattern).
+    // Sub-resource paths like /configurations/agent/models/{modelId} are allowed.
+    const configSectionPaths = Object.keys(contract.paths).filter(
+      (pathName) =>
+        pathName.startsWith("/configurations/") &&
+        !pathName.startsWith("/configurations/agent/"),
+    );
+    expect(configSectionPaths.length).toBeGreaterThan(0);
     expect(
-      configurationPaths.every((pathName) => !pathName.includes("{")),
+      configSectionPaths.every((pathName) => !pathName.includes("{")),
     ).toBe(true);
+  });
+
+  it("sets the TLS security policy and endpoint access mode", () => {
+    const spec = prepareApiGatewaySpec(contract, lambdaArns);
+
+    expect(spec["x-amazon-apigateway-security-policy"]).toBe(
+      "SecurityPolicy_TLS12_PFS_2025_EDGE",
+    );
+    expect(spec["x-amazon-apigateway-endpoint-access-mode"]).toBe("STRICT");
   });
 
   it("preserves the public contract and does not mutate its input", () => {

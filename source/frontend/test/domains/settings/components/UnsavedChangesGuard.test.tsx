@@ -134,15 +134,31 @@ describe("UnsavedChangesProvider", () => {
   it("arms the native beforeunload prompt only while dirty", async () => {
     const user = userEvent.setup();
     renderWithDataRouter();
+    const dispatchBeforeUnload = () => {
+      const event = new Event("beforeunload", { cancelable: true });
+      // BeforeUnloadEvent has an independent returnValue field; the generic
+      // Event implementation instead exposes the cancellation state here.
+      Object.defineProperty(event, "returnValue", {
+        value: "",
+        writable: true,
+      });
+      window.dispatchEvent(event);
+      return event;
+    };
 
-    // Pristine: beforeunload not armed.
-    let event = new Event("beforeunload", { cancelable: true });
-    window.dispatchEvent(event);
+    // Pristine: neither modern nor legacy prompts are armed.
+    let event = dispatchBeforeUnload();
     expect(event.defaultPrevented).toBe(false);
+    expect(event.returnValue).toBe("");
 
     await user.type(screen.getByLabelText("Name"), "-edited");
-    event = new Event("beforeunload", { cancelable: true });
-    window.dispatchEvent(event);
+    event = dispatchBeforeUnload();
     expect(event.defaultPrevented).toBe(true);
+    expect(event.returnValue).toBeTruthy();
+
+    await user.click(screen.getByRole("button", { name: "Fake save" }));
+    event = dispatchBeforeUnload();
+    expect(event.defaultPrevented).toBe(false);
+    expect(event.returnValue).toBe("");
   });
 });

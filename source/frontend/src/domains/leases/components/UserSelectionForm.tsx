@@ -7,30 +7,66 @@ import {
   FormField,
   SpaceBetween,
 } from "@cloudscape-design/components";
-import { useFormContext } from "react-hook-form";
+import { useFormContext, useWatch } from "react-hook-form";
 
 import { PrincipalTypeahead } from "@amzn/innovation-sandbox-frontend/domains/leases/components/PrincipalTypeahead";
+import type { IdcPrincipalView } from "@amzn/innovation-sandbox-frontend/domains/principals/model";
 
-// Form-state shape this component touches. Both AssignLeaseFormValues and
-// any other parent schema with these fields satisfy it. userDisplayName is
-// persisted alongside userEmail so the "Selected: …" indicator survives
-// wizard back/forward navigation.
 type UserSelectionFormShape = {
-  userEmail: string;
-  userDisplayName?: string;
+  selectedUser?: {
+    principalId: string;
+    email: string;
+    displayName?: string;
+  };
+  assignments?: unknown[];
 };
 
 export type UserSelectionFormProps = {
   enablePrincipalSearch?: boolean;
+  clearAssignmentsOnChange?: boolean;
 };
 
 export const UserSelectionForm = ({
   enablePrincipalSearch = true,
+  clearAssignmentsOnChange = false,
 }: UserSelectionFormProps = {}) => {
-  const { setValue, watch } = useFormContext<UserSelectionFormShape>();
+  const {
+    formState: { errors },
+    control,
+    getValues,
+    setValue,
+  } = useFormContext<UserSelectionFormShape>();
 
-  const userDisplayName = watch("userDisplayName");
-  const userEmail = watch("userEmail");
+  const selectedUser = useWatch({ control, name: "selectedUser" });
+
+  const selectUser = (principal: IdcPrincipalView) => {
+    if (!principal.email) return;
+
+    const currentUser = getValues("selectedUser");
+    const assignments = getValues("assignments");
+    if (
+      clearAssignmentsOnChange &&
+      principal.principalId !== currentUser?.principalId &&
+      assignments?.length
+    ) {
+      setValue("assignments", undefined, {
+        shouldValidate: true,
+        shouldDirty: true,
+      });
+    }
+    setValue(
+      "selectedUser",
+      {
+        principalId: principal.principalId,
+        email: principal.email,
+        displayName: principal.displayName,
+      },
+      {
+        shouldValidate: true,
+        shouldDirty: true,
+      },
+    );
+  };
 
   return (
     <Container>
@@ -38,28 +74,20 @@ export const UserSelectionForm = ({
         <FormField
           label="User"
           description="Search by name or email, or type an email and click Add to resolve."
+          errorText={errors.selectedUser?.message}
         >
           <PrincipalTypeahead
             type="users"
             placeholder="Search or enter user email"
             ariaLabel="Search users"
             enablePrincipalSearch={enablePrincipalSearch}
-            onSelect={(p) => {
-              if (!p.email) return;
-              setValue("userEmail", p.email, {
-                shouldValidate: true,
-                shouldDirty: true,
-              });
-              setValue("userDisplayName", p.displayName, {
-                shouldDirty: true,
-              });
-            }}
+            onSelect={selectUser}
           />
         </FormField>
-        {userDisplayName && (
+        {selectedUser?.displayName && (
           <Box variant="small">
-            Selected: <strong>{userDisplayName}</strong>
-            {userEmail ? ` (${userEmail})` : ""}
+            Selected: <strong>{selectedUser.displayName}</strong>
+            {` (${selectedUser.email})`}
           </Box>
         )}
       </SpaceBetween>

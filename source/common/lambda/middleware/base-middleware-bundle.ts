@@ -12,11 +12,13 @@ import { BaseLambdaEnvironment } from "@amzn/innovation-sandbox-commons/lambda/e
 import environmentValidatorMiddleware, {
   ValidatedEnvironment,
 } from "@amzn/innovation-sandbox-commons/lambda/middleware/environment-validator.js";
+import { injectLambdaContextWithEventSanitizer } from "@amzn/innovation-sandbox-commons/lambda/middleware/inject-sanitized-lambda-context.js";
 
 export type BaseLambdaSchema = z.ZodType<BaseLambdaEnvironment>;
 
 export interface BaseMiddlewareBundleOptions<T extends BaseLambdaSchema> {
   logger: Logger;
+  eventLogSanitizer?: (event: unknown) => unknown;
   moduleName: string;
   tracer: Tracer;
   environmentSchema: T;
@@ -34,13 +36,20 @@ export default function baseMiddlewareBundle<T extends BaseLambdaSchema>(
     module: opts.moduleName,
   });
 
+  const injectContextOptions = {
+    logEvent: process.env.AWS_LAMBDA_LOG_LEVEL === "DEBUG",
+    resetKeys: true,
+  };
+  const contextInjector = opts.eventLogSanitizer
+    ? injectLambdaContextWithEventSanitizer(
+        logger,
+        opts.eventLogSanitizer,
+        injectContextOptions,
+      )
+    : injectLambdaContext(logger, injectContextOptions);
+
   return middy()
     .use(environmentValidatorMiddleware({ schema, logger }))
-    .use(
-      injectLambdaContext(logger, {
-        logEvent: process.env.AWS_LAMBDA_LOG_LEVEL === "DEBUG",
-        resetKeys: true,
-      }),
-    )
+    .use(contextInjector)
     .use(captureLambdaHandler(tracer));
 }

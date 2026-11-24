@@ -1,14 +1,15 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { FormField, Toggle } from "@cloudscape-design/components";
+import { FormField, SpaceBetween, Toggle } from "@cloudscape-design/components";
 import type { FormFieldProps } from "@cloudscape-design/components/form-field";
 import type { ToggleProps } from "@cloudscape-design/components/toggle";
+import type { ReactNode } from "react";
 import {
-  useController,
-  UseControllerProps,
   type FieldPath,
   type FieldValues,
+  useController,
+  UseControllerProps,
 } from "react-hook-form";
 
 export interface ToggleFieldProps<
@@ -28,6 +29,11 @@ export interface ToggleFieldProps<
    * given (that takes precedence).
    */
   stateLabel?: boolean;
+  /** Maps a non-boolean form value to the toggle state. Defaults to `Boolean(value)`. */
+  valueToChecked?: (value: TFieldValues[TName]) => boolean;
+  /** Maps the toggle state back to the form value. Defaults to the boolean itself. */
+  checkedToValue?: (checked: boolean) => TFieldValues[TName];
+  toggleSuffix?: ReactNode;
 }
 
 export default function ToggleField<
@@ -38,7 +44,10 @@ export default function ToggleField<
   formFieldProps,
   toggleProps,
   stateLabel,
-}: ToggleFieldProps<TFieldValues, TName>) {
+  valueToChecked = Boolean,
+  checkedToValue = (checked) => checked as TFieldValues[TName],
+  toggleSuffix,
+}: Readonly<ToggleFieldProps<TFieldValues, TName>>) {
   const {
     field: {
       onBlur: onFieldBlur,
@@ -59,28 +68,39 @@ export default function ToggleField<
 
   // An explicit `children` always wins; otherwise `stateLabel` renders a live
   // "Enabled"/"Disabled" label from the current value.
-  const label =
-    children ??
-    (stateLabel ? (fieldValue ? "Enabled" : "Disabled") : undefined);
+  const checked = valueToChecked(fieldValue);
+  const stateText = checked ? "Enabled" : "Disabled";
+  const label = children ?? (stateLabel ? stateText : undefined);
+
+  const toggle = (
+    <Toggle
+      {...restToggleProps}
+      name={fieldName}
+      checked={checked}
+      ref={fieldRef}
+      onChange={(event) => {
+        onFieldChange(checkedToValue(event.detail.checked));
+        customOnChange?.(event);
+      }}
+      onBlur={(event) => {
+        onFieldBlur();
+        customOnBlur?.(event);
+      }}
+    >
+      {label}
+    </Toggle>
+  );
 
   return (
     <FormField {...formFieldProps} errorText={fieldError?.message}>
-      <Toggle
-        {...restToggleProps}
-        name={fieldName}
-        checked={fieldValue}
-        ref={fieldRef}
-        onChange={(event) => {
-          onFieldChange(event.detail.checked);
-          customOnChange?.(event);
-        }}
-        onBlur={(event) => {
-          onFieldBlur();
-          customOnBlur?.(event);
-        }}
-      >
-        {label}
-      </Toggle>
+      {toggleSuffix ? (
+        <SpaceBetween direction="horizontal" size="xs" alignItems="center">
+          {toggle}
+          {toggleSuffix}
+        </SpaceBetween>
+      ) : (
+        toggle
+      )}
     </FormField>
   );
 }

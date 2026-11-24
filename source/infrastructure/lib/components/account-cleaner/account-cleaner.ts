@@ -13,9 +13,9 @@ import { LambdaFunction as LambdaFunctionTarget } from "aws-cdk-lib/aws-events-t
 import { Effect, Policy, PolicyStatement, Role } from "aws-cdk-lib/aws-iam";
 import { Alias } from "aws-cdk-lib/aws-lambda";
 import { Construct } from "constructs";
-import fs from "fs";
 import yaml from "js-yaml";
-import path from "path";
+import fs from "node:fs";
+import path from "node:path";
 
 import { BaseLambdaEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/base-lambda-environment.js";
 import { DurableCleanupLambdaEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/durable-cleanup-lambda-environment.js";
@@ -92,11 +92,18 @@ export class AccountCleaner extends Construct {
       ],
     });
 
-    const usePrivateEcr = new CfnCondition(this, "UsePrivateEcrRepo", {
-      expression: Fn.conditionNot(
-        Fn.conditionEquals(getContextFromMapping(this, "privateEcrRepo"), ""),
-      ),
-    });
+    const usePrivateAccountCleanerEcr = new CfnCondition(
+      this,
+      "UsePrivateEcrRepo",
+      {
+        expression: Fn.conditionNot(
+          Fn.conditionEquals(
+            getContextFromMapping(this, "privateAccountCleanerEcrRepo"),
+            "",
+          ),
+        ),
+      },
+    );
 
     const fullVersionImageTag = getContextFromMapping(this, "publicEcrTag");
     const versionParts = Fn.split(".", fullVersionImageTag);
@@ -117,7 +124,7 @@ export class AccountCleaner extends Construct {
       Repository.fromRepositoryName(
         this,
         "EcrRepo",
-        getContextFromMapping(this, "privateEcrRepo"),
+        getContextFromMapping(this, "privateAccountCleanerEcrRepo"),
       ),
       "latest",
     );
@@ -153,6 +160,10 @@ export class AccountCleaner extends Construct {
               value: sandboxAccountRoleName,
               type: BuildEnvironmentVariableType.PLAINTEXT,
             },
+            ISB_NAMESPACE: {
+              value: props.namespace,
+              type: BuildEnvironmentVariableType.PLAINTEXT,
+            },
             ACCOUNT_POOL_CONFIG_PARAM_ARN: {
               value:
                 IsbComputeStack.sharedSpokeConfig.parameterArns
@@ -175,33 +186,39 @@ export class AccountCleaner extends Construct {
     cfnProject.addPropertyOverride(
       "Environment.Image",
       Fn.conditionIf(
-        usePrivateEcr.logicalId,
+        usePrivateAccountCleanerEcr.logicalId,
         privateImage.imageId,
         publicImage.imageId,
       ).toString(),
     );
 
     // Conditionally add necessary permissions for private image if provided
-    const privateEcrRepoPolicy = new Policy(this, "PrivateEcrRepoPolicy", {
-      roles: [codeBuildCleanupProject.role!],
-      statements: [
-        new PolicyStatement({
-          effect: Effect.ALLOW,
-          actions: [
-            "ecr:BatchCheckLayerAvailability",
-            "ecr:GetDownloadUrlForLayer",
-            "ecr:BatchGetImage",
-          ],
-          resources: [privateImage.repository?.repositoryArn!],
-        }),
-        new PolicyStatement({
-          effect: Effect.ALLOW,
-          actions: ["ecr:GetAuthorizationToken"],
-          resources: ["*"],
-        }),
-      ],
-    });
-    Aspects.of(privateEcrRepoPolicy).add(new ConditionAspect(usePrivateEcr));
+    const privateAccountCleanerEcrRepoPolicy = new Policy(
+      this,
+      "PrivateEcrRepoPolicy",
+      {
+        roles: [codeBuildCleanupProject.role!],
+        statements: [
+          new PolicyStatement({
+            effect: Effect.ALLOW,
+            actions: [
+              "ecr:BatchCheckLayerAvailability",
+              "ecr:GetDownloadUrlForLayer",
+              "ecr:BatchGetImage",
+            ],
+            resources: [privateImage.repository?.repositoryArn!],
+          }),
+          new PolicyStatement({
+            effect: Effect.ALLOW,
+            actions: ["ecr:GetAuthorizationToken"],
+            resources: ["*"],
+          }),
+        ],
+      },
+    );
+    Aspects.of(privateAccountCleanerEcrRepoPolicy).add(
+      new ConditionAspect(usePrivateAccountCleanerEcr),
+    );
 
     grantIsbSsmParameterRead(
       codeBuildCleanupProject.role! as Role,

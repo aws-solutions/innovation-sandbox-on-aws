@@ -4,6 +4,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  AccessAndSharingValidationSchema,
   BudgetSettingsValidationSchema,
   CostReportSettingsValidationSchema,
   createBudgetSettingsValidationSchema,
@@ -14,9 +15,53 @@ import {
 import {
   BasicDetailsValidationSchema,
   createLeaseTemplateWizardValidationSchema,
+  createSandboxSpacesEditValidationSchema,
+  SANDBOX_SPACES_CONSTRAINTS,
 } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/validation";
 
+const defaultPermissionSet = {
+  permissionSetArn:
+    "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-0123456789abcdef",
+  permissionSetId: "ps-0123456789abcdef",
+  name: "test_IsbUsersPS",
+  availability: "AVAILABLE" as const,
+};
+
 describe("Lease Template Validation", () => {
+  describe("AccessAndSharingValidationSchema", () => {
+    it("allows a default without additional permission sets", () => {
+      const result = AccessAndSharingValidationSchema.safeParse({
+        allowOwnerToShareLease: false,
+        defaultPermissionSet,
+        allowedPermissionSets: [],
+      });
+
+      expect(result.success).toBe(true);
+    });
+
+    it("limits the form to 19 additional permission sets", () => {
+      const result = AccessAndSharingValidationSchema.safeParse({
+        allowOwnerToShareLease: false,
+        defaultPermissionSet,
+        allowedPermissionSets: Array.from({ length: 20 }, (_, index) => {
+          const permissionSetId = `ps-${index.toString(16).padStart(16, "0")}`;
+          return {
+            ...defaultPermissionSet,
+            permissionSetArn: `arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/${permissionSetId}`,
+            permissionSetId,
+          };
+        }),
+      });
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.issues[0].message).toBe(
+          "Choose no more than 19 additional permission sets.",
+        );
+      }
+    });
+  });
+
   describe("BasicDetailsValidationSchema", () => {
     it("validates valid basic details", () => {
       const validData = {
@@ -169,7 +214,9 @@ describe("Lease Template Validation", () => {
       const result = schema.safeParse(invalidData);
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.error.issues[0].message).toContain("exceed maximum");
+        expect(result.error.issues[0].message).toContain(
+          "Must be less than the Terminate lease amount ($1,000.00)",
+        );
       }
     });
   });
@@ -316,6 +363,10 @@ describe("Lease Template Validation", () => {
       const validData = {
         costReportGroupEnabled: false,
         selectedCostReportGroup: undefined,
+        sandboxSpacesEnabled: false,
+        allowedModelIds: [],
+        defaultPermissionSet,
+        allowedPermissionSets: [],
       };
 
       const result = schema.safeParse(validData);
@@ -348,10 +399,75 @@ describe("Lease Template Validation", () => {
         durationThresholds: [],
         costReportGroupEnabled: false,
         selectedCostReportGroup: undefined,
+        sandboxSpacesEnabled: false,
+        allowedModelIds: [],
+        defaultPermissionSet,
+        allowedPermissionSets: [],
       };
 
       const result = schema.safeParse(validData);
       expect(result.success).toBe(true);
+    });
+
+    it("applies the predictive-budget rules through the merged wizard schema", () => {
+      const schema = createLeaseTemplateWizardValidationSchema({
+        globalMaxBudget: 5000,
+        requireMaxBudget: false,
+        globalMaxDurationHours: 720,
+        requireMaxDuration: false,
+        requireCostReportGroup: false,
+      });
+
+      const baseData = {
+        name: "Test Template",
+        requiresApproval: true,
+        visibility: "PRIVATE" as const,
+        allowOwnerToShareLease: false,
+        blueprintEnabled: false,
+        maxBudgetEnabled: true,
+        maxSpend: 1000,
+        maxDurationEnabled: true,
+        leaseDurationInHours: 168,
+        durationThresholds: [],
+        costReportGroupEnabled: false,
+        selectedCostReportGroup: undefined,
+        predictiveBudgetEnabled: true,
+        sandboxSpacesEnabled: false,
+        allowedModelIds: [],
+        defaultPermissionSet,
+        allowedPermissionSets: [],
+      };
+
+      const predictedAtMax = schema.safeParse({
+        ...baseData,
+        budgetThresholds: [
+          { dollarsSpent: 1000, action: "ALERT", triggerOn: "PREDICTED" },
+        ],
+      });
+      expect(predictedAtMax.success).toBe(false);
+
+      const predictedBelowMax = schema.safeParse({
+        ...baseData,
+        budgetThresholds: [
+          { dollarsSpent: 999.99, action: "ALERT", triggerOn: "PREDICTED" },
+        ],
+      });
+      expect(predictedBelowMax.success).toBe(true);
+
+      const reportedAtMax = schema.safeParse({
+        ...baseData,
+        budgetThresholds: [
+          { dollarsSpent: 1000, action: "ALERT", triggerOn: "REPORTED" },
+        ],
+      });
+      expect(reportedAtMax.success).toBe(false);
+
+      const badRateCap = schema.safeParse({
+        ...baseData,
+        budgetThresholds: [],
+        rateLimits: [{ basis: "DAILY", rate: -1, action: "ALERT" }],
+      });
+      expect(badRateCap.success).toBe(false);
     });
 
     it("validates all config-based rules together", () => {
@@ -382,6 +498,130 @@ describe("Lease Template Validation", () => {
       if (!result.success) {
         expect(result.error.issues.length).toBeGreaterThan(0);
       }
+    });
+  });
+
+  describe("createSandboxSpacesEditValidationSchema", () => {
+    const base = { sandboxSpacesEnabled: true, allowedModelIds: ["m1", "m2"] };
+
+    const messagesFor = (
+      values: Record<string, unknown>,
+      enabledModelIds?: string[],
+    ) => {
+      const result = createSandboxSpacesEditValidationSchema({
+        enabledModelIds,
+      }).safeParse(values);
+      return result.success
+        ? []
+        : result.error.issues.map((issue) => [
+            issue.path.join("."),
+            issue.message,
+          ]);
+    };
+
+    it("accepts an enabled default that is one of the selected models", () => {
+      expect(messagesFor({ ...base, defaultModelId: "m1" }, ["m1"])).toEqual(
+        [],
+      );
+    });
+
+    it("accepts an unset default", () => {
+      expect(messagesFor({ ...base, defaultModelId: undefined }, [])).toEqual(
+        [],
+      );
+    });
+
+    it("rejects a default that is not enabled, even when it is selected", () => {
+      expect(messagesFor({ ...base, defaultModelId: "m1" }, ["m2"])).toEqual([
+        [
+          "defaultModelId",
+          SANDBOX_SPACES_CONSTRAINTS.ERROR_DEFAULT_MODEL_DISABLED,
+        ],
+      ]);
+    });
+
+    it("rejects an enabled default outside the selected models", () => {
+      expect(
+        messagesFor({ ...base, defaultModelId: "m3" }, ["m1", "m2", "m3"]),
+      ).toEqual([
+        [
+          "defaultModelId",
+          SANDBOX_SPACES_CONSTRAINTS.ERROR_DEFAULT_MODEL_NOT_SELECTED,
+        ],
+      ]);
+    });
+
+    it("skips the enabled-ness rule until the catalog has loaded", () => {
+      expect(messagesFor({ ...base, defaultModelId: "m1" })).toEqual([]);
+    });
+
+    it("allows turning Sandbox Spaces off with a disabled default when no model is enabled", () => {
+      expect(
+        messagesFor(
+          { ...base, sandboxSpacesEnabled: false, defaultModelId: "m1" },
+          [],
+        ),
+      ).toEqual([]);
+    });
+
+    it("rejects limiting to no models, which would save as every enabled model", () => {
+      expect(
+        messagesFor({
+          sandboxSpacesEnabled: true,
+          allowedModelIds: [],
+          limitModels: true,
+        }),
+      ).toEqual([
+        [
+          "allowedModelIds",
+          SANDBOX_SPACES_CONSTRAINTS.ERROR_NO_MODELS_SELECTED,
+        ],
+      ]);
+    });
+
+    it("rejects limiting to models that are all disabled", () => {
+      expect(
+        messagesFor(
+          {
+            sandboxSpacesEnabled: true,
+            allowedModelIds: ["m1", "m2"],
+            limitModels: true,
+          },
+          ["m3"],
+        ),
+      ).toEqual([
+        [
+          "allowedModelIds",
+          SANDBOX_SPACES_CONSTRAINTS.ERROR_NO_ENABLED_MODELS_SELECTED,
+        ],
+      ]);
+    });
+
+    it("accepts a limited selection with at least one enabled model, or before the catalog has loaded", () => {
+      const values = {
+        sandboxSpacesEnabled: true,
+        allowedModelIds: ["m1", "m2"],
+        limitModels: true,
+      };
+      expect(messagesFor(values, ["m2"])).toEqual([]);
+      expect(messagesFor(values)).toEqual([]);
+    });
+
+    it("accepts an empty selection when the limit is off or Sandbox Spaces is off", () => {
+      expect(
+        messagesFor({
+          sandboxSpacesEnabled: true,
+          allowedModelIds: [],
+          limitModels: false,
+        }),
+      ).toEqual([]);
+      expect(
+        messagesFor({
+          sandboxSpacesEnabled: false,
+          allowedModelIds: [],
+          limitModels: true,
+        }),
+      ).toEqual([]);
     });
   });
 });

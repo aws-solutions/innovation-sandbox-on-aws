@@ -25,7 +25,7 @@ export type NumberFieldProps<
 export default function NumberField<
   TFieldValues extends FieldValues = FieldValues,
   TName extends FieldPath<TFieldValues> = FieldPath<TFieldValues>,
->({ inputProps, ...rest }: NumberFieldProps<TFieldValues, TName>) {
+>({ inputProps, ...rest }: Readonly<NumberFieldProps<TFieldValues, TName>>) {
   return (
     <InputField
       {...rest}

@@ -32,6 +32,9 @@ validation:
     - "arn:aws:iam::*:role/InnovationSandbox-*"
     # IAMRole filter: stacksets-exec-*
     - "arn:aws:iam::*:role/stacksets-exec-*"
+    # OAM link from the Isb-*-ObservabilityLinks StackSet; Nuke cannot remove it
+    # (Resource Explorer does not index links yet, so this is forward-looking)
+    - "arn:aws:oam:*:*:link/*"
 
     # =========================================================================
     # AWS Organizations

@@ -8,17 +8,21 @@ Create a lease template that defines conditions for sandbox account usage.
 
 ## Wizard steps
 
-**Basic Details**: Template name, description, visibility (Public/Private), approval requirements, and sharing options.
+**Basic details**: Template name, description, availability for user lease requests, and approval requirements.
 
-**Blueprint Selection**: Select a blueprint to automatically deploy infrastructure. Adds 5-30 minutes to provisioning.
+**Blueprint**: Choose whether leases start with a blueprint's resources already deployed. When enabled, select one blueprint for a ready-to-use environment; when disabled, users receive an empty account. Blueprint deployment typically adds 5-30 minutes to provisioning.
 
-**Budget Settings**: Spending limits and thresholds for alerts or account freezes.
+**Access and sharing**: When lease sharing is enabled globally, choose whether lease owners can manage access. Then add up to 20 permission sets available for assignments and set the default from the selected-permission-sets table. The default cannot be removed until another selected permission set replaces it.
 
-**Lease Duration**: Time limits and duration-based thresholds.
+**Sandbox Space**: Configure optional AI chat access and available models. Enabling it turns on Amazon Bedrock token monitoring in the next step.
 
-**Cost Report Settings**: Assign to a cost allocation group for financial tracking.
+**Budget**: Configure cost tracking, a maximum budget, budget thresholds, and spend rate thresholds. Amazon Bedrock token monitoring is required while Sandbox Spaces is enabled.
 
-**Review and Submit**: Review all settings before creating.
+**Duration**: Time limits and duration-based thresholds.
+
+**Cost reporting**: Assign to a cost allocation group for financial tracking.
+
+**Review and submit**: Review all settings before creating the template.
 
 ---
 

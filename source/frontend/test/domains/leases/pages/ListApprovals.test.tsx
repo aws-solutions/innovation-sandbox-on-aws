@@ -31,6 +31,7 @@ class ResizeObserver {
 window.ResizeObserver = ResizeObserver;
 
 const OWNER_PRINCIPAL_ID = "11111111-1111-4111-8111-111111111111";
+const OWNER_EMAIL = "owner@example.com";
 const USER_ONE_PRINCIPAL_ID = "22222222-2222-4222-8222-222222222222";
 const GROUP_PRINCIPAL_ID = "33333333-3333-4333-8333-333333333333";
 const USER_TWO_PRINCIPAL_ID = "44444444-4444-4444-8444-444444444444";
@@ -245,8 +246,13 @@ describe("ListApprovals", () => {
     // desiredAssignments includes the owner as the first entry,
     // so 4 entries = owner + 3 shared principals
     const leaseWithAssignments = createPendingLease({
+      userEmail: OWNER_EMAIL,
       desiredAssignments: [
-        { principalId: OWNER_PRINCIPAL_ID, principalType: "USER" },
+        {
+          principalId: OWNER_PRINCIPAL_ID,
+          principalType: "USER",
+          email: OWNER_EMAIL,
+        },
         { principalId: USER_ONE_PRINCIPAL_ID, principalType: "USER" },
         { principalId: GROUP_PRINCIPAL_ID, principalType: "GROUP" },
         { principalId: USER_TWO_PRINCIPAL_ID, principalType: "USER" },
@@ -265,8 +271,74 @@ describe("ListApprovals", () => {
     const link = screen.getByText("3 principals").closest("a");
     expect(link).toHaveAttribute(
       "href",
-      "/approvals/test-lease-123?tab=sharing",
+      "/approvals/test-lease-123?tab=access",
     );
+  });
+
+  test("counts every legacy desired assignment when the owner is absent", async () => {
+    const leaseWithAssignments = createPendingLease({
+      userEmail: OWNER_EMAIL,
+      desiredAssignments: [
+        { principalId: USER_ONE_PRINCIPAL_ID, principalType: "USER" },
+        { principalId: GROUP_PRINCIPAL_ID, principalType: "GROUP" },
+      ],
+    });
+    mockLeaseApi.returns([leaseWithAssignments]);
+    server.use(mockLeaseApi.getHandler());
+
+    renderComponent();
+
+    await waitFor(() => {
+      expect(screen.getByText("2 principals")).toBeInTheDocument();
+    });
+  });
+
+  test("counts distinct shared principals rather than permission-set tuples", async () => {
+    const leaseWithAssignments = createPendingLease({
+      userEmail: OWNER_EMAIL,
+      desiredAssignments: [
+        {
+          principalId: OWNER_PRINCIPAL_ID,
+          principalType: "USER",
+          email: OWNER_EMAIL,
+          permissionSetArn:
+            "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-0123456789abcdef",
+        },
+        {
+          principalId: OWNER_PRINCIPAL_ID,
+          principalType: "USER",
+          email: OWNER_EMAIL,
+          permissionSetArn:
+            "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-1123456789abcdef",
+        },
+        {
+          principalId: USER_ONE_PRINCIPAL_ID,
+          principalType: "USER",
+          permissionSetArn:
+            "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-0123456789abcdef",
+        },
+        {
+          principalId: USER_ONE_PRINCIPAL_ID,
+          principalType: "USER",
+          permissionSetArn:
+            "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-1123456789abcdef",
+        },
+        {
+          principalId: USER_ONE_PRINCIPAL_ID,
+          principalType: "GROUP",
+          permissionSetArn:
+            "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-0123456789abcdef",
+        },
+      ],
+    });
+    mockLeaseApi.returns([leaseWithAssignments]);
+    server.use(mockLeaseApi.getHandler());
+
+    renderComponent();
+
+    await waitFor(() => {
+      expect(screen.getByText("2 principals")).toBeInTheDocument();
+    });
   });
 
   test("displays dash when lease has no desired assignments", async () => {
@@ -294,8 +366,13 @@ describe("ListApprovals", () => {
   test("displays dash when lease has only the owner in desired assignments", async () => {
     // Only the owner entry (no additional shared principals)
     const leaseWithOwnerOnly = createPendingLease({
+      userEmail: OWNER_EMAIL,
       desiredAssignments: [
-        { principalId: OWNER_PRINCIPAL_ID, principalType: "USER" },
+        {
+          principalId: OWNER_PRINCIPAL_ID,
+          principalType: "USER",
+          email: OWNER_EMAIL,
+        },
       ],
     });
     mockLeaseApi.returns([leaseWithOwnerOnly]);
@@ -318,8 +395,13 @@ describe("ListApprovals", () => {
   test("displays singular principal text for single shared assignment", async () => {
     // Owner + 1 shared = 2 entries, displays "1 principal"
     const leaseWithOneShared = createPendingLease({
+      userEmail: OWNER_EMAIL,
       desiredAssignments: [
-        { principalId: OWNER_PRINCIPAL_ID, principalType: "USER" },
+        {
+          principalId: OWNER_PRINCIPAL_ID,
+          principalType: "USER",
+          email: OWNER_EMAIL,
+        },
         { principalId: USER_TWO_PRINCIPAL_ID, principalType: "USER" },
       ],
     });

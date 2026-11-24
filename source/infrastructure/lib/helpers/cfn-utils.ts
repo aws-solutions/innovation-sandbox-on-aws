@@ -104,9 +104,7 @@ const parameterLabelsKey = "ParameterLabels";
 
 function initCfnInterface(scope: Construct): void {
   const stack = Stack.of(scope);
-  if (!stack.templateOptions.metadata) {
-    stack.templateOptions.metadata = {};
-  }
+  stack.templateOptions.metadata ??= {};
   const metadata = stack.templateOptions.metadata;
   if (!(cfnInterfaceKey in metadata)) {
     metadata[cfnInterfaceKey] = {};
@@ -152,8 +150,8 @@ export class ConditionAspect<
   T extends new (...args: never[]) => CfnResource,
 > implements IAspect {
   constructor(
-    private condition: CfnCondition,
-    private resourceType?: T,
+    private readonly condition: CfnCondition,
+    private readonly resourceType?: T,
   ) {}
 
   visit(node: IConstruct): void {
@@ -183,7 +181,7 @@ export interface YesNoParameterProps extends ParameterWithLabelProps {
 
 export class YesNoParameter extends ParameterWithLabel {
   private condition?: CfnCondition;
-  private conditionId: string;
+  private readonly conditionId: string;
 
   constructor(scope: Construct, id: string, props?: ParameterWithLabelProps) {
     super(scope, id, {
@@ -194,13 +192,11 @@ export class YesNoParameter extends ParameterWithLabel {
   }
 
   getCondition(): CfnCondition {
-    if (!this.condition) {
-      this.condition = yesNoCondition(
-        this.stack,
-        this.conditionId,
-        this.valueAsString,
-      );
-    }
+    this.condition ??= yesNoCondition(
+      this.stack,
+      this.conditionId,
+      this.valueAsString,
+    );
     return this.condition;
   }
 }
@@ -226,15 +222,13 @@ export class OptionalParameter extends ParameterWithLabel {
   }
 
   private getCondition(): CfnCondition {
-    if (!this.condition) {
-      this.condition = new CfnCondition(
-        this.stack,
-        `${this.node.id}EmptyCondition`,
-        {
-          expression: Fn.conditionEquals(this.valueAsString, ""),
-        },
-      );
-    }
+    this.condition ??= new CfnCondition(
+      this.stack,
+      `${this.node.id}EmptyCondition`,
+      {
+        expression: Fn.conditionEquals(this.valueAsString, ""),
+      },
+    );
     return this.condition;
   }
 
@@ -259,29 +253,27 @@ export class OptionalListParameter extends ParameterWithLabel {
     super(scope, id, {
       ...props,
       type: "CommaDelimitedList",
-      default: "",
+      default: props.default ?? "",
     });
   }
 
   get hasValuesCondition(): CfnCondition {
-    if (!this._hasValuesCondition) {
-      this._hasValuesCondition = new CfnCondition(
-        this.stack,
-        `Has${this.node.id}`,
-        {
-          expression: Fn.conditionNot(
-            Fn.conditionEquals(Fn.join("", this.valueAsList), ""),
-          ),
-        },
-      );
-    }
+    this._hasValuesCondition ??= new CfnCondition(
+      this.stack,
+      `Has${this.node.id}`,
+      {
+        expression: Fn.conditionNot(
+          Fn.conditionEquals(Fn.join("", this.valueAsList), ""),
+        ),
+      },
+    );
     return this._hasValuesCondition;
   }
 }
 
 export class EnabledDisabledParameter extends ParameterWithLabel {
   private condition?: CfnCondition;
-  private conditionId: string;
+  private readonly conditionId: string;
 
   constructor(scope: Construct, id: string, props?: ParameterWithLabelProps) {
     super(scope, id, {
@@ -295,13 +287,11 @@ export class EnabledDisabledParameter extends ParameterWithLabel {
   }
 
   getCondition(): CfnCondition {
-    if (!this.condition) {
-      this.condition = enabledDisabledCondition(
-        this.stack,
-        this.conditionId,
-        this.valueAsString,
-      );
-    }
+    this.condition ??= enabledDisabledCondition(
+      this.stack,
+      this.conditionId,
+      this.valueAsString,
+    );
     return this.condition;
   }
 }

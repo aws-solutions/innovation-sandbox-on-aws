@@ -4,7 +4,6 @@
 import {
   Box,
   Button,
-  Container,
   Header,
   SpaceBetween,
 } from "@cloudscape-design/components";
@@ -19,8 +18,10 @@ import { ErrorPanel } from "@amzn/innovation-sandbox-frontend/components/ErrorPa
 import {
   BudgetSettingsForm,
   BudgetSettingsFormValues,
+  toTemplateBudgetFields,
 } from "@amzn/innovation-sandbox-frontend/components/Forms/BudgetSettingsForm";
 import { createBudgetSettingsValidationSchema } from "@amzn/innovation-sandbox-frontend/components/Forms/validation";
+import { InfoLink } from "@amzn/innovation-sandbox-frontend/components/InfoLink";
 import { Loader } from "@amzn/innovation-sandbox-frontend/components/Loader";
 import { Markdown } from "@amzn/innovation-sandbox-frontend/components/Markdown";
 import {
@@ -57,6 +58,10 @@ export const EditBudgetSettings = () => {
   } = useGetConfigurations();
   const globalMaxBudget = config?.leases.maxBudget;
   const requireMaxBudget = config?.leases.requireMaxBudget || false;
+  const allowPredictiveBudgetControls =
+    config?.leases.allowPredictiveBudgetControls || false;
+  const allowBedrockTokenMonitoring =
+    config?.leases.allowBedrockTokenMonitoring || false;
 
   // Create dynamic schema based on requirements
   const schema = useMemo(
@@ -73,12 +78,16 @@ export const EditBudgetSettings = () => {
       maxBudgetEnabled: false,
       maxSpend: undefined,
       budgetThresholds: [],
+      predictiveBudgetEnabled: false,
+      bedrockTokenMonitoringEnabled: false,
+      rateLimits: [],
     },
   });
 
   const {
     handleSubmit,
     reset,
+    trigger,
     formState: { isValid, isDirty },
   } = methods;
 
@@ -90,9 +99,19 @@ export const EditBudgetSettings = () => {
           leaseTemplate.maxSpend !== undefined && leaseTemplate.maxSpend > 0,
         maxSpend: leaseTemplate.maxSpend,
         budgetThresholds: leaseTemplate.budgetThresholds || [],
+        predictiveBudgetEnabled: leaseTemplate.predictiveBudgetEnabled ?? false,
+        bedrockTokenMonitoringEnabled:
+          leaseTemplate.bedrockTokenMonitoringEnabled ?? false,
+        rateLimits: leaseTemplate.rateLimits ?? [],
       });
     }
   }, [leaseTemplate, reset]);
+
+  useEffect(() => {
+    if (leaseTemplate && config) {
+      trigger();
+    }
+  }, [leaseTemplate, config, schema, trigger]);
 
   // Set page breadcrumb on page init
   useEffect(() => {
@@ -116,7 +135,7 @@ export const EditBudgetSettings = () => {
       const updatedLeaseTemplate: LeaseTemplateView = {
         ...leaseTemplate,
         maxSpend: budgetEnabled ? data.maxSpend : undefined,
-        budgetThresholds: data.budgetThresholds,
+        ...toTemplateBudgetFields(data),
       };
 
       await updateLeaseTemplate(updatedLeaseTemplate);
@@ -163,18 +182,35 @@ export const EditBudgetSettings = () => {
   }
 
   return (
-    <ContentLayout>
+    <ContentLayout
+      header={
+        <Header
+          variant="h1"
+          info={<InfoLink markdown="edit-lease-template-budget" />}
+          description="Spending limit, thresholds and rate thresholds"
+        >
+          Edit Budget Settings
+        </Header>
+      }
+    >
       <FormProvider {...methods}>
         <form onSubmit={handleSubmit(onSubmit)}>
           <SpaceBetween size="l">
-            <Container
-              header={<Header variant="h2">Edit Budget Settings</Header>}
-            >
-              <BudgetSettingsForm
-                requireMaxBudget={requireMaxBudget}
-                globalMaxBudget={globalMaxBudget}
-              />
-            </Container>
+            <BudgetSettingsForm
+              requireMaxBudget={requireMaxBudget}
+              globalMaxBudget={globalMaxBudget}
+              variant="template"
+              allowPredictiveBudgetControls={allowPredictiveBudgetControls}
+              persistedPredictiveBudgetEnabled={
+                leaseTemplate.predictiveBudgetEnabled
+              }
+              allowBedrockTokenMonitoring={allowBedrockTokenMonitoring}
+              sandboxSpacesEnabled={leaseTemplate.sandboxSpacesEnabled}
+              persistedBedrockTokenMonitoringEnabled={
+                leaseTemplate.bedrockTokenMonitoringEnabled
+              }
+              leaseDurationInHours={leaseTemplate.leaseDurationInHours}
+            />
 
             <Box float="right">
               <SpaceBetween direction="horizontal" size="xs">

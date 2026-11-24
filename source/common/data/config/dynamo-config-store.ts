@@ -1,5 +1,6 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
+import { Logger } from "@aws-lambda-powertools/logger";
 import {
   ConditionalCheckFailedException,
   TransactionCanceledException,
@@ -8,12 +9,27 @@ import {
   BatchGetCommand,
   DynamoDBDocumentClient,
   GetCommand,
+  paginateQuery,
+  PutCommand,
+  QueryCommand,
   TransactWriteCommand,
   UpdateCommand,
 } from "@aws-sdk/lib-dynamodb";
 import { backOff } from "exponential-backoff";
 import { z } from "zod";
 
+import {
+  AGENT_MODELS_SECTION,
+  AgentModelAdminUpdate,
+  AgentModelCatalogSchemaVersion,
+  AgentModelCreate,
+  AgentModelCreateSchema,
+  agentModelSk,
+  parseAgentModelRow,
+  PersistedAgentModelCatalogKeySchema,
+  PersistedAgentModelCatalogRow,
+  PersistedAgentModelCatalogRowSchema,
+} from "@amzn/innovation-sandbox-commons/data/config/agent-model-catalog.js";
 import {
   ConfigStore,
   ConflictError,
@@ -24,6 +40,10 @@ import {
   PersistedLastSavedBy,
   PersistedLastSavedBySchema,
 } from "@amzn/innovation-sandbox-commons/data/config/config.js";
+import {
+  base64EncodeCompositeKey,
+  decodePageIdentifier,
+} from "@amzn/innovation-sandbox-commons/data/encoding.js";
 import { BatchGetUnprocessedKeysError } from "@amzn/innovation-sandbox-commons/data/errors.js";
 import {
   checkSchemaVersion,
@@ -31,6 +51,7 @@ import {
   ItemWithMetadata,
   SchemaMismatchException,
 } from "@amzn/innovation-sandbox-commons/data/metadata.js";
+import { LogPatterns } from "@amzn/innovation-sandbox-commons/observability/logging.js";
 import { nowAsIsoDatetimeString } from "@amzn/innovation-sandbox-commons/utils/time-utils.js";
 import {
   ConfigSchemas,
@@ -38,11 +59,19 @@ import {
   ConfigWriteSchemas,
 } from "@amzn/innovation-sandbox-shared/types/configuration.js";
 
+const logger = new Logger();
+
 const CURRENT_SK = "current";
 
 const SUPPORTED_VERSIONS_SCHEMA = createVersionRangeSchema(
   1,
   ConfigSchemaVersion,
+);
+
+/** Version range accepted when reading agent-model catalog rows. */
+const CATALOG_SUPPORTED_VERSIONS_SCHEMA = createVersionRangeSchema(
+  1,
+  AgentModelCatalogSchemaVersion,
 );
 
 // The store always writes all three meta fields together; a stored record
@@ -115,12 +144,34 @@ export class DynamoConfigStore implements ConfigStore {
             PersistedConfigSectionData<ConfigSection>
           >
         )[section] = this.toSectionData(section, item);
-      } catch {
-        // Resilience: a corrupt/unsupported section falls back to code defaults so
-        // one bad record can't fail the fleet-wide config load (getAllSections feeds
-        // isbConfigMiddleware). This is intentionally NOT surfaced here; the
-        // per-section read used for editing (getSection) is not resilient and
-        // surfaces the same corruption as a 500 naming the section.
+      } catch (error: unknown) {
+        // Skip a malformed section; missing sections fall back to code defaults.
+        // Logged for the operator only: the returned map is partial either way,
+        // so the caller still cannot tell the two apart.
+        //
+        // Paths and issue codes, never the zod message, which quotes failing
+        // values -- a section carries the terms-of-service text and operator
+        // email addresses. Joined raw, safe only because no config field is a
+        // `z.record`; an issue inside one would put the KEY on the path.
+        logger.warn(
+          `${LogPatterns.DataValidationWarning.pattern}: skipping a config section that failed schema validation`,
+          {
+            section,
+            ...(error instanceof z.ZodError
+              ? {
+                  invalidPaths: error.issues.map((issue) =>
+                    issue.path.join("."),
+                  ),
+                  issueCodes: error.issues.map((issue) => issue.code),
+                }
+              : // Not zod: `toSectionData` throws SchemaMismatchException, whose
+                // message carries the stored schemaVersion and the supported
+                // range, and no config field value.
+                {
+                  error: error instanceof Error ? error.message : String(error),
+                }),
+          },
+        );
       }
     }
     return sections;
@@ -128,11 +179,13 @@ export class DynamoConfigStore implements ConfigStore {
 
   public async getSection<T extends ConfigSection>(
     section: T,
+    options?: { consistentRead?: boolean },
   ): Promise<PersistedConfigSectionData<T> | null> {
     const result = await this.ddbClient.send(
       new GetCommand({
         TableName: this.tableName,
         Key: { section, sk: CURRENT_SK },
+        ConsistentRead: options?.consistentRead,
       }),
     );
     if (!result.Item) {
@@ -151,7 +204,7 @@ export class DynamoConfigStore implements ConfigStore {
     const now = nowAsIsoDatetimeString();
 
     // Enforce `.strict()` + field bounds at runtime before any write.
-    const parsed = (ConfigWriteSchemas[section] as z.ZodTypeAny).parse(data);
+    const parsed = (ConfigWriteSchemas[section] as z.ZodType).parse(data);
 
     const setParts: string[] = [];
     const names: Record<string, string> = { "#meta": "meta" };
@@ -187,8 +240,10 @@ export class DynamoConfigStore implements ConfigStore {
       values[":now"] = now;
       values[":schemaVersion"] = ConfigSchemaVersion;
       values[":expected"] = expectedLastEditTime;
-      setParts.push("#meta.#lastEditTime = :now");
-      setParts.push("#meta.#schemaVersion = :schemaVersion");
+      setParts.push(
+        "#meta.#lastEditTime = :now",
+        "#meta.#schemaVersion = :schemaVersion",
+      );
       conditionExpression = "#meta.#lastEditTime = :expected";
     }
 
@@ -278,32 +333,319 @@ export class DynamoConfigStore implements ConfigStore {
   }
 
   /**
-   * Reassembles a stored item into a typed {@link PersistedConfigSectionData}: enforces
-   * the supported schema version, validates the config fields against the
-   * section's `.strict()` read schema (key/audit/meta attributes excluded), and
-   * normalizes a missing `lastSavedBy` to `null`.
+   * Shared read-assembly for `toSectionData` and `getAgentModels`:
+   * version check → strip composite keys → validate meta.
+   */
+  private stripAndValidateMeta(
+    item: Record<string, any>,
+    versionSchema: z.ZodType<number>,
+  ): {
+    fields: Record<string, unknown>;
+    lastSavedBy: unknown;
+    meta: z.infer<typeof StoredMetaSchema>;
+  } {
+    checkSchemaVersion(item as ItemWithMetadata, versionSchema);
+    const { section: _section, sk: _sk, lastSavedBy, meta, ...fields } = item;
+    const metaResult = StoredMetaSchema.safeParse(meta);
+    if (!metaResult.success) {
+      throw new SchemaMismatchException(
+        `Stored config item has invalid meta: ${metaResult.error.message}`,
+      );
+    }
+    return { fields, lastSavedBy, meta: metaResult.data };
+  }
+
+  /**
+   * Reassembles a stored section item into a typed {@link PersistedConfigSectionData}.
+   * Normalizes a missing `lastSavedBy` to `null`.
    */
   private toSectionData<T extends ConfigSection>(
     section: T,
     item: Record<string, any>,
   ): PersistedConfigSectionData<T> {
-    checkSchemaVersion(item as ItemWithMetadata, SUPPORTED_VERSIONS_SCHEMA);
-    const { section: _section, sk: _sk, lastSavedBy, meta, ...fields } = item;
-    // Reject a corrupt (incomplete) meta here rather than forwarding a
-    // half-populated one, which would drop the concurrency token downstream.
-    const metaResult = StoredMetaSchema.safeParse(meta);
-    if (!metaResult.success) {
-      throw new SchemaMismatchException(
-        `Stored config item for section '${section}' has invalid meta.`,
-      );
-    }
-    const parsedFields = (ConfigSchemas[section] as z.ZodTypeAny).parse(
+    const { fields, lastSavedBy, meta } = this.stripAndValidateMeta(
+      item,
+      SUPPORTED_VERSIONS_SCHEMA,
+    );
+    const parsedFields = (ConfigSchemas[section] as z.ZodType).parse(
       fields,
     ) as z.infer<(typeof ConfigSchemas)[T]>;
     return {
       ...parsedFields,
       lastSavedBy: lastSavedBy ?? null,
-      meta: metaResult.data,
+      meta,
+    } as PersistedConfigSectionData<T>;
+  }
+
+  /**
+   * Returns all rows under `section = "agentModels"` via a paginated Query.
+   * Follows the same read pattern as `toSectionData`: strips composite-key
+   * fields, validates meta with `StoredMetaSchema`, enforces schema-version
+   * range with `checkSchemaVersion`, then parses fields against the strict
+   * catalog schema. Rows that fail any of these checks are dropped and logged
+   * (fail-open), so a single corrupt row does not break the settings page or
+   * Worker cache load.
+   */
+  public async getAgentModels(options?: {
+    consistentRead?: boolean;
+  }): Promise<PersistedAgentModelCatalogRow[]> {
+    const paginator = paginateQuery(
+      { client: this.ddbClient },
+      {
+        TableName: this.tableName,
+        KeyConditionExpression: "#section = :section",
+        ExpressionAttributeNames: { "#section": "section" },
+        ExpressionAttributeValues: { ":section": AGENT_MODELS_SECTION },
+        ConsistentRead: options?.consistentRead,
+      },
+    );
+
+    const rows: PersistedAgentModelCatalogRow[] = [];
+    for await (const page of paginator) {
+      for (const item of page.Items ?? []) {
+        const sk = item.sk as string | undefined;
+        try {
+          // Steps 1–3 (version, key strip, meta). Step 4: parse full row schema.
+          const { fields, lastSavedBy, meta } = this.stripAndValidateMeta(
+            item,
+            CATALOG_SUPPORTED_VERSIONS_SCHEMA,
+          );
+          rows.push(
+            PersistedAgentModelCatalogRowSchema.parse({
+              ...fields,
+              lastSavedBy,
+              meta,
+            }),
+          );
+        } catch (error) {
+          logger.warn(
+            `${LogPatterns.DataValidationWarning.pattern}: dropping agent-model catalog row that failed schema validation`,
+            {
+              section: AGENT_MODELS_SECTION,
+              sk,
+              ...(error instanceof z.ZodError
+                ? {
+                    invalidPaths: error.issues.map((i) => i.path.join(".")),
+                    issueCodes: error.issues.map((i) => i.code),
+                  }
+                : {
+                    error:
+                      error instanceof Error ? error.message : String(error),
+                  }),
+            },
+          );
+        }
+      }
+    }
+    return rows;
+  }
+
+  /** Returns one catalog row by modelId, or undefined when absent or invalid. */
+  public async getAgentModel(
+    modelId: string,
+  ): Promise<PersistedAgentModelCatalogRow | undefined> {
+    const sk = agentModelSk(modelId);
+    const result = await this.ddbClient.send(
+      new GetCommand({
+        TableName: this.tableName,
+        Key: { section: AGENT_MODELS_SECTION, sk },
+      }),
+    );
+    if (!result.Item) return undefined;
+    try {
+      const { fields, lastSavedBy, meta } = this.stripAndValidateMeta(
+        result.Item,
+        CATALOG_SUPPORTED_VERSIONS_SCHEMA,
+      );
+      return PersistedAgentModelCatalogRowSchema.parse({
+        ...fields,
+        lastSavedBy,
+        meta,
+      });
+    } catch (error) {
+      logger.warn(
+        `${LogPatterns.DataValidationWarning.pattern}: agent-model catalog row failed schema validation`,
+        {
+          section: AGENT_MODELS_SECTION,
+          sk,
+          ...(error instanceof z.ZodError
+            ? {
+                invalidPaths: error.issues.map((i) => i.path.join(".")),
+                issueCodes: error.issues.map((i) => i.code),
+              }
+            : {
+                error: error instanceof Error ? error.message : String(error),
+              }),
+        },
+      );
+      return undefined;
+    }
+  }
+
+  public async getAgentModelsPaginated(props: {
+    pageSize?: number;
+    pageIdentifier?: string;
+  }): Promise<{
+    rows: PersistedAgentModelCatalogRow[];
+    nextPageIdentifier: string | null;
+  }> {
+    const { pageSize, pageIdentifier } = props;
+    const result = await this.ddbClient.send(
+      new QueryCommand({
+        TableName: this.tableName,
+        KeyConditionExpression: "#section = :section",
+        ExpressionAttributeNames: { "#section": "section" },
+        ExpressionAttributeValues: { ":section": AGENT_MODELS_SECTION },
+        ...(pageSize === undefined ? {} : { Limit: pageSize }),
+        ...(pageIdentifier === undefined
+          ? {}
+          : {
+              ExclusiveStartKey: decodePageIdentifier(
+                pageIdentifier,
+                (decoded) => PersistedAgentModelCatalogKeySchema.parse(decoded),
+              ),
+            }),
+      }),
+    );
+
+    const rows: PersistedAgentModelCatalogRow[] = [];
+    for (const item of result.Items ?? []) {
+      const sk = item.sk as string | undefined;
+      try {
+        const { fields, lastSavedBy, meta } = this.stripAndValidateMeta(
+          item,
+          CATALOG_SUPPORTED_VERSIONS_SCHEMA,
+        );
+        rows.push(
+          PersistedAgentModelCatalogRowSchema.parse({
+            ...fields,
+            lastSavedBy,
+            meta,
+          }),
+        );
+      } catch (error) {
+        logger.warn(
+          `${LogPatterns.DataValidationWarning.pattern}: dropping agent-model catalog row that failed schema validation`,
+          {
+            section: AGENT_MODELS_SECTION,
+            sk,
+            ...(error instanceof z.ZodError
+              ? {
+                  invalidPaths: error.issues.map((i) => i.path.join(".")),
+                  issueCodes: error.issues.map((i) => i.code),
+                }
+              : {
+                  error: error instanceof Error ? error.message : String(error),
+                }),
+          },
+        );
+      }
+    }
+
+    return {
+      rows,
+      nextPageIdentifier: base64EncodeCompositeKey(result.LastEvaluatedKey),
     };
+  }
+
+  /**
+   * Add-only discovery write. Re-fetches never overwrite existing rows.
+   * @throws {ConflictError} when the row already exists.
+   */
+  public async putModelRow(
+    row: AgentModelCreate,
+    addedBy: PersistedLastSavedBy,
+  ): Promise<PersistedAgentModelCatalogRow> {
+    const validatedAddedBy = PersistedLastSavedBySchema.parse(addedBy);
+    const now = nowAsIsoDatetimeString();
+
+    // Parse first so defaults (e.g. enabled: false) are applied.
+    const parsed = AgentModelCreateSchema.parse(row);
+    const sk = agentModelSk(parsed.modelId);
+
+    const item = {
+      section: AGENT_MODELS_SECTION,
+      sk,
+      ...parsed,
+      addedAt: now,
+      lastSavedBy: validatedAddedBy,
+      meta: {
+        createdTime: now,
+        lastEditTime: now,
+        schemaVersion: AgentModelCatalogSchemaVersion,
+      },
+    };
+
+    try {
+      await this.ddbClient.send(
+        new PutCommand({
+          TableName: this.tableName,
+          Item: item,
+          ConditionExpression:
+            "attribute_not_exists(#section) AND attribute_not_exists(#sk)",
+          ExpressionAttributeNames: { "#section": "section", "#sk": "sk" },
+        }),
+      );
+    } catch (error: unknown) {
+      if (error instanceof ConditionalCheckFailedException) {
+        throw new ConflictError("Agent model row already exists.");
+      }
+      throw error;
+    }
+
+    return parseAgentModelRow(item);
+  }
+
+  /**
+   * Admin enable/disable toggle. Updates `enabled`, stamps `lastSavedBy` and
+   * `meta.lastEditTime`, OCC-guarded on `expectedLastEditTime`.
+   *
+   * @throws {ConflictError} when the condition fails (stale token).
+   */
+  public async updateModelAdminFields(
+    modelId: string,
+    update: AgentModelAdminUpdate,
+    editedBy: PersistedLastSavedBy,
+    expectedLastEditTime: string,
+  ): Promise<PersistedAgentModelCatalogRow> {
+    const validatedEditedBy = PersistedLastSavedBySchema.parse(editedBy);
+    const now = nowAsIsoDatetimeString();
+    const sk = agentModelSk(modelId);
+
+    try {
+      const result = await this.ddbClient.send(
+        new UpdateCommand({
+          TableName: this.tableName,
+          Key: { section: AGENT_MODELS_SECTION, sk },
+          UpdateExpression:
+            "SET #enabled = :enabled, #lastSavedBy = :lastSavedBy, " +
+            "#meta.#lastEditTime = :now, #meta.#schemaVersion = :schemaVersion",
+          ConditionExpression: "#meta.#lastEditTime = :expected",
+          ExpressionAttributeNames: {
+            "#enabled": "enabled",
+            "#lastSavedBy": "lastSavedBy",
+            "#meta": "meta",
+            "#lastEditTime": "lastEditTime",
+            "#schemaVersion": "schemaVersion",
+          },
+          ExpressionAttributeValues: {
+            ":enabled": update.enabled,
+            ":lastSavedBy": validatedEditedBy,
+            ":now": now,
+            ":schemaVersion": AgentModelCatalogSchemaVersion,
+            ":expected": expectedLastEditTime,
+          },
+          ReturnValues: "ALL_NEW",
+        }),
+      );
+      return parseAgentModelRow(result.Attributes ?? {});
+    } catch (error: unknown) {
+      if (error instanceof ConditionalCheckFailedException) {
+        throw new ConflictError(
+          "Agent model row was modified by another process.",
+        );
+      }
+      throw error;
+    }
   }
 }

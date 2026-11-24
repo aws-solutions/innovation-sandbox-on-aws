@@ -3,12 +3,14 @@
 import { z } from "zod";
 
 import { BaseApiLambdaEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/base-api-lambda-environment.js";
+import { AwsAccountIdSchema } from "@amzn/innovation-sandbox-commons/utils/zod.js";
 
 export const LeaseLambdaEnvironmentSchema =
   BaseApiLambdaEnvironmentSchema.extend({
     CONFIG_TABLE_NAME: z.string(),
     ISB_NAMESPACE: z.string(),
     LEASE_TABLE_NAME: z.string(),
+    LEASE_COST_HISTORY_TABLE_NAME: z.string(),
     LEASE_TEMPLATE_TABLE_NAME: z.string(),
     PRINCIPAL_TABLE_NAME: z.string(),
     INTERMEDIATE_ROLE_ARN: z.string(),
@@ -20,8 +22,9 @@ export const LeaseLambdaEnvironmentSchema =
     SANDBOX_ACCOUNT_ROLE_NAME: z.string(),
     ACCOUNT_POOL_CONFIG_PARAM_ARN: z.string(),
     IDC_CONFIG_PARAM_ARN: z.string(),
-    ORG_MGT_ACCOUNT_ID: z.string(),
-    HUB_ACCOUNT_ID: z.string(),
+    ORG_MGT_ACCOUNT_ID: AwsAccountIdSchema,
+    HUB_ACCOUNT_ID: AwsAccountIdSchema,
+    SANDBOX_SPACES_USAGE_TABLE_NAME: z.string(),
   });
 
 export type LeaseLambdaEnvironment = z.infer<

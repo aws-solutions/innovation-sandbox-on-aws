@@ -5,7 +5,7 @@
 // `as unknown as CommandCtor` casts (the generated commands have per-section
 // input/output types that can't be expressed in one map type), so a section↔
 // command swap — the exact mistake the casts could hide — compiles. This table
-// asserts each of the twelve entries points at the correctly-named command.
+// asserts every configured section points at the correctly-named command.
 import { describe, expect, it } from "vitest";
 
 import * as client from "@amzn/innovation-sandbox-api-client";
@@ -22,6 +22,7 @@ const SECTIONS = [
   ["maintenance", "Maintenance"],
   ["termsOfService", "TermsOfService"],
   ["costReporting", "CostReporting"],
+  ["agent", "Agent"],
 ] as const;
 
 describe("configuration response schemas", () => {
@@ -48,6 +49,9 @@ describe("configuration response schemas", () => {
         leaseSharingEnabled: false,
         enablePrincipalSearch: true,
         groupAssignmentMode: "NONE",
+        allowPredictiveBudgetControls: false,
+        serviceBreakdownEnabled: false,
+        allowBedrockTokenMonitoring: false,
         lastSavedBy: null,
       }).success,
     ).toBe(true);
@@ -68,7 +72,7 @@ describe("configuration section → Command dispatch", () => {
     },
   );
 
-  it("covers exactly the six config sections in both maps", () => {
+  it("matches the configuration sections for get and update actions", () => {
     const keys = SECTIONS.map(([section]) => section).sort();
     expect(Object.keys(GET_SECTION_COMMANDS).sort()).toEqual(keys);
     expect(Object.keys(UPDATE_SECTION_COMMANDS).sort()).toEqual(keys);

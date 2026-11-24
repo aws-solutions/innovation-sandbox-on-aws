@@ -40,6 +40,8 @@ describe("SsmDataStackConfigStore", () => {
         blueprintTable: "BlueprintTable",
         principalTable: "PrincipalTable",
         cleanupReportTable: "CleanupReportTable",
+        sandboxSpacesUsageTable: "SandboxSpacesUsageTable",
+        leaseCostHistoryTable: "LeaseCostHistoryTable",
         tableKmsKeyId: "key-123",
         solutionVersion: "1.0.0",
         supportedSchemas: "1",
@@ -47,6 +49,7 @@ describe("SsmDataStackConfigStore", () => {
         cognitoUserPoolArn:
           "arn:aws:cognito-idp:us-east-1:123456789012:userpool/us-east-1_abc123",
         cognitoAppClientId: "1234567890abcdef",
+        cognitoMcpClientId: "fedcba0987654321",
         cognitoIdentityPoolId: "us-east-1:00000000-0000-0000-0000-000000000000",
         cognitoDomain: "test-isb",
         awsAccessPortalUrl: "https://d-0000000000.awsapps.com/start",

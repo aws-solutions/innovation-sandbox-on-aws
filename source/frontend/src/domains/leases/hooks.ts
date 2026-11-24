@@ -14,6 +14,8 @@ import { getLeaseService } from "@amzn/innovation-sandbox-frontend/domains/lease
 import { SharedLeaseQueryAccessType } from "@amzn/innovation-sandbox-frontend/domains/leases/smithy-client";
 import {
   AssignmentPrincipalRef,
+  CostHistoryPageOptions,
+  CostHistoryRange,
   LeasePatchRequest,
   NewLeaseRequest,
 } from "@amzn/innovation-sandbox-frontend/domains/leases/types";
@@ -84,6 +86,18 @@ export const useGetLeaseById = (
   });
 };
 
+/**
+ * Reads the lease that `useGetLeaseById` holds again, for a view that sets the
+ * lease's own figures beside ones it has just read again, so that neither is
+ * older than the other. The lease's query keeps its own options, polling
+ * included.
+ */
+export const useRefetchLeaseById = (uuid: string | undefined) => {
+  const client = useQueryClient();
+  return () =>
+    client.refetchQueries({ queryKey: ["leases", uuid], exact: true });
+};
+
 export const useLeasesForCurrentUser = () => {
   const { user } = useUser();
   const userEmail = user ? getUserEmail(user) : undefined;
@@ -119,8 +133,13 @@ export const useUpdateLease = () => {
   return useMutation({
     mutationFn: async (request: LeasePatchRequest) =>
       await getLeaseService().updateLease(request),
-    onSuccess: () => {
+    onSuccess: (_data, request) => {
       client.invalidateQueries({ queryKey: ["leases"], refetchType: "all" });
+      // The cost summary figures budget exhaustion against maxSpend.
+      client.invalidateQueries({
+        queryKey: ["leaseCostHistory", request.leaseId, "costSummary"],
+        refetchType: "all",
+      });
     },
   });
 };
@@ -214,11 +233,16 @@ export const useGetAssignments = (leaseId?: string) => {
     queryFn: async () => await getLeaseService().getAssignments(leaseId!),
     enabled: !!leaseId,
     refetchOnMount: "always",
-    placeholderData: keepPreviousData,
   });
 };
 
-export const useUpdateAssignments = () => {
+type UseUpdateAssignmentsOptions = {
+  refetchAssignmentsOnSuccess?: boolean;
+};
+
+export const useUpdateAssignments = ({
+  refetchAssignmentsOnSuccess = true,
+}: UseUpdateAssignmentsOptions = {}) => {
   const client = useQueryClient();
   return useMutation({
     mutationFn: async ({
@@ -228,19 +252,21 @@ export const useUpdateAssignments = () => {
       leaseId: string;
       assignments: AssignmentPrincipalRef[];
     }) => await getLeaseService().updateAssignments(leaseId, assignments),
-    onSuccess: (_data, variables) => {
-      client.invalidateQueries({
-        queryKey: ["assignments", variables.leaseId],
-        refetchType: "all",
-      });
-      client.invalidateQueries({
-        queryKey: ["leases"],
-        refetchType: "all",
-      });
-      client.invalidateQueries({
-        queryKey: ["sharedLeases"],
-        refetchType: "all",
-      });
+    onSuccess: async (_result, { leaseId }) => {
+      await Promise.all([
+        client.invalidateQueries({
+          queryKey: ["assignments", leaseId],
+          refetchType: refetchAssignmentsOnSuccess ? "all" : "none",
+        }),
+        client.invalidateQueries({
+          queryKey: ["leases"],
+          refetchType: "all",
+        }),
+        client.invalidateQueries({
+          queryKey: ["sharedLeases"],
+          refetchType: "all",
+        }),
+      ]);
     },
   });
 };
@@ -291,5 +317,117 @@ export const useUnfreezeLease = (options?: { skipInvalidation?: boolean }) => {
         });
       }
     },
+  });
+};
+
+export const useGetLeaseCostSummary = (leaseId: string | undefined) => {
+  return useQuery({
+    queryKey: ["leaseCostHistory", leaseId, "costSummary"],
+    queryFn: async () => await getLeaseService().getLeaseCostSummary(leaseId!),
+    enabled: !!leaseId,
+    refetchOnMount: "always",
+  });
+};
+
+export const useGetLeaseBedrockTokenHistory = (
+  leaseId: string | undefined,
+  page: CostHistoryPageOptions,
+) => {
+  return useQuery({
+    queryKey: [
+      "leaseCostHistory",
+      leaseId,
+      "bedrockTokenHistoryPage",
+      page.maxResults,
+      page.pageIdentifier,
+      page.afterTimestamp,
+      page.beforeTimestamp,
+    ],
+    queryFn: async () =>
+      await getLeaseService().getLeaseBedrockTokenHistory(leaseId!, page),
+    enabled: !!leaseId,
+    refetchOnMount: "always",
+  });
+};
+
+/**
+ * The newest Bedrock token reading before a range's start, which the range's
+ * first change is measured from: one page of one reading, ending at the start,
+ * which the exclusive upper bound leaves out. Not read without a start; keyed by
+ * it, so a new range reads its own.
+ */
+export const useGetLeaseBedrockTokenBaseline = (
+  leaseId: string | undefined,
+  rangeStart: string | undefined,
+) => {
+  return useQuery({
+    queryKey: ["leaseCostHistory", leaseId, "bedrockTokenBaseline", rangeStart],
+    queryFn: async () =>
+      await getLeaseService().getLeaseBedrockTokenHistory(leaseId!, {
+        beforeTimestamp: rangeStart!,
+        maxResults: 1,
+      }),
+    enabled: !!leaseId && rangeStart !== undefined,
+    refetchOnMount: "always",
+  });
+};
+
+export const useGetMergedLeaseCostHistory = (
+  leaseId: string | undefined,
+  range?: CostHistoryRange,
+) => {
+  return useQuery({
+    queryKey: [
+      "leaseCostHistory",
+      leaseId,
+      "costHistory",
+      range?.afterTimestamp,
+      range?.beforeTimestamp,
+    ],
+    queryFn: async () =>
+      await getLeaseService().getMergedLeaseCostHistory(leaseId!, range),
+    enabled: !!leaseId,
+    refetchOnMount: "always",
+  });
+};
+
+export const useGetMergedLeaseBedrockTokenHistory = (
+  leaseId: string | undefined,
+  range?: CostHistoryRange,
+) => {
+  return useQuery({
+    queryKey: [
+      "leaseCostHistory",
+      leaseId,
+      "bedrockTokenHistory",
+      range?.afterTimestamp,
+      range?.beforeTimestamp,
+    ],
+    queryFn: async () =>
+      await getLeaseService().getMergedLeaseBedrockTokenHistory(
+        leaseId!,
+        range,
+      ),
+    enabled: !!leaseId,
+    refetchOnMount: "always",
+  });
+};
+
+export const useGetMergedLeaseBreachHistory = (
+  leaseId: string | undefined,
+  range?: CostHistoryRange,
+) => {
+  return useQuery({
+    queryKey: [
+      "leaseCostHistory",
+      leaseId,
+      "breachHistory",
+      range?.afterTimestamp,
+      range?.beforeTimestamp,
+    ],
+    queryFn: async () =>
+      await getLeaseService().getMergedLeaseBreachHistory(leaseId!, range),
+    enabled: !!leaseId,
+    refetchOnMount: "always",
   });
 };
